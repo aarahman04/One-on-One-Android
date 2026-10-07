@@ -76,6 +76,10 @@ class FakeAccountApi(val session: FakeSession) : AccountApi {
         check(!unregisterFails) { "offline" }
         session.operations.add("unregister")
     }
+    override suspend fun nickname(id: String, body: NicknameBody) { }
+    override suspend fun leave(id: String) = LeaveResponse(LeaveResult("leave_pending", 1, 4, false, false))
+    override suspend fun cancelLeave(id: String) = LeaveResponse(LeaveResult("active", 0, null, false, false))
+    override suspend fun confirmEnd(id: String) = LeaveResponse(LeaveResult("terminated", 5, 0, true, true))
 }
 
 fun connection(status: String, requester: Boolean) = CurrentConnection(

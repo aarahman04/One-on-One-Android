@@ -6,6 +6,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PATCH
 import retrofit2.http.Path
 
 @Serializable data class Me(val userId: String, val connectionCode: String)
@@ -15,6 +16,9 @@ import retrofit2.http.Path
 @Serializable data class BlockedUser(val blockedUserId: String, val createdAt: String)
 @Serializable data class BlocksResult(val blocks: List<BlockedUser>)
 @Serializable data class CurrentResult(val connection: CurrentConnection?)
+@Serializable data class NicknameBody(val nickname: String)
+@Serializable data class LeaveResult(val status: String, val myLeaveStep: Int, val daysRemaining: Int?, val bothLeaving: Boolean, val terminated: Boolean)
+@Serializable data class LeaveResponse(val leave: LeaveResult)
 @Serializable data class CurrentConnection(
     val id: String,
     val status: String,
@@ -45,4 +49,8 @@ interface AccountApi {
     @POST("api/connections/{id}/decline") suspend fun decline(@Path("id") id: String): JsonObject
     @POST("api/connections/{id}/cancel") suspend fun cancel(@Path("id") id: String): JsonObject
     @POST("api/push/token/unregister") suspend fun unregister(@Body body: TokenBody)
+    @PATCH("api/connections/{id}/nickname") suspend fun nickname(@Path("id") id: String, @Body body: NicknameBody)
+    @POST("api/connections/{id}/leave") suspend fun leave(@Path("id") id: String): LeaveResponse
+    @POST("api/connections/{id}/leave/cancel") suspend fun cancelLeave(@Path("id") id: String): LeaveResponse
+    @POST("api/connections/{id}/leave/confirm-end") suspend fun confirmEnd(@Path("id") id: String): LeaveResponse
 }
