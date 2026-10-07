@@ -250,3 +250,41 @@ requested only when their cards are composed; no offline maps or tile prefetch.
 Themes are per-device, wallpapers shared, and legacy line style renders bubbles
 as the reference currently does. Export pages existing REST history and escapes
 all HTML content; it includes attachment metadata rather than permanent media URLs.
+
+## A7 — shrinker and release gates
+
+```mermaid
+flowchart TD
+    PR[PR / main checks] --> Debug[Debug assembly / strict lint / JVM tests]
+    Debug --> R8[Unsigned minified APK and AAB / release lint]
+    R8 --> Native[64-bit LOAD + RELRO + APK ZIP static checks]
+    Native --> Smoke[Unsigned smoke artifacts / mapping]
+    Manual[Owner manual workflow dispatch] --> Checks[Same green checks]
+    Checks --> Secrets[Restore existing upload key / production config]
+    Secrets --> Cert[Original SHA-1 + SHA-256 assertions]
+    Cert --> Signed[Signed APK + AAB / identity + version + native checks]
+    Signed --> Owner[Owner signed-device + old-app upgrade / 16 KB runtime]
+    Claude[Claude A4 + A5 integration] --> Owner
+    Owner --> Console[Manual Data Safety / permissions / internal-track review]
+```
+
+R8 keeps dynamic protocol/engine and WebRTC JNI boundaries with consumer rules
+for Android/framework DI/serialization/database/background work. Two exact Ktor
+JMX warnings are excluded because the pinned detector catches their absence on
+Android; all other unresolved dependencies fail the build. Mapping is retained.
+Resource shrinking and dependency ART profiles are enabled without claiming a
+measured app baseline profile or authenticated runtime verification.
+
+The native checker examines actual ELF64 headers for arm64-v8a/x86_64 in APK/AAB
+and verifies stored APK entry offsets. RELRO is checked against writable segment
+ranges rather than rejecting safe whole-LOAD endpoints solely for a nonzero
+modulo. This static evidence doesn't replace a final 16 KB runtime test. See the
+[Android linker source](https://android.googlesource.com/platform/bionic/+/main/linker/linker_phdr.cpp)
+and [page-size guidance](https://developer.android.com/guide/practices/page-sizes).
+
+Unsigned smoke artifacts and any local debug-signed minified copy are separate
+from manual CI's real upload-key artifacts. Signed CI still verifies the original
+certificate and Firebase/package/version assertions; it never uploads to Play.
+Final release requires Claude's reserved features plus owner phone/Console gates.
+The release checklist is a Data Safety draft grounded in current native behavior
+and the web privacy/API references, with final SDK/provider/call review explicit.

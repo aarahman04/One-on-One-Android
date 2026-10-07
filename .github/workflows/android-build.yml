@@ -38,6 +38,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build, lint and unit-test without secrets
         run: ./gradlew --no-daemon assembleDebug lintDebug testDebugUnitTest
+      - name: Smoke-test minified release without signing credentials
+        run: |
+          ./gradlew --no-daemon assembleRelease bundleRelease lintRelease
+          python3 scripts/check_native_libs.py --self-test
+          python3 scripts/check_native_libs.py app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/bundle/release/app-release.aab
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 app/build/outputs/apk/release/app-release-unsigned.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android-debug
@@ -45,6 +51,15 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/reports/lint-results-debug.html
             app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release-smoke-unsigned
+          path: |
+            app/build/outputs/apk/release/app-release-unsigned.apk
+            app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/mapping/release/mapping.txt
+            app/build/reports/lint-results-release.html
           if-no-files-found: error
 
   release:
@@ -128,12 +143,15 @@ jobs:
           grep -Fq "name='app.web.oneonone'" apk-badging.txt
           grep -Fq "versionCode='$APP_VERSION_CODE'" apk-badging.txt
           grep -Fq "versionName='$APP_VERSION_NAME'" apk-badging.txt
+          python3 scripts/check_native_libs.py "$APK" "$AAB"
+          "$TOOLS/zipalign" -c -P 16 -v 4 "$APK"
       - uses: actions/upload-artifact@v4
         with:
           name: android-release
           path: |
             app/build/outputs/bundle/release/app-release.aab
             app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/mapping/release/mapping.txt
           if-no-files-found: error
       - name: Scrub credentials
         if: always()

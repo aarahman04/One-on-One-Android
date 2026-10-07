@@ -8,8 +8,8 @@
 | A3 | Merged, PR #5; green CI; device QA pending | Killed-app notifications |
 | A4 | Not started | Emergency alarm |
 | A5 | Not started | Earpiece-correct voice/video calls |
-| A6 | Complete locally; PR/CI pending | Feature parity |
-| A7 | Not started | Release hardening and Play checklist |
+| A6 | Merged, PR #6; green CI; device QA pending | Feature parity |
+| A7 | Implemented; merge gated by CI; device QA pending | Release hardening and Play checklist |
 
 ## A0 â€” 2026-10-07
 
@@ -416,3 +416,61 @@ Debug APK installed on the existing API 36 emulator, MainActivity rendered sign-
 its process remained alive and AndroidRuntime showed no crash. Host resource pressure
 caused a System UI ANR, so this is limited launch evidence, not functional feature QA.
 No real phone, live Google login, upload, location, or two-account workflow tested.
+
+## A7 — release preparation (2026-10-07)
+
+Branch: `a7/release-prep`. A6 merged as [PR #6](https://github.com/aarahman04/One-on-One-Android/pull/6)
+with [green CI](https://github.com/aarahman04/One-on-One-Android/actions/runs/37606564240).
+Both main repos were pulled first; the contract snapshot still matches its authority.
+
+- Release enables R8 optimization/resource shrinking with explicit Socket.IO,
+  WebRTC JNI, Supabase/Ktor, serialization and Hilt boundary rules plus the SDK
+  consumer rules. Ktor's optional IntelliJ debugger probes desktop JMX in a
+  Throwable-guarded block; only those exact two missing JMX types get exclusions,
+  verified against 3.6.0 bytecode. No blanket warning suppression.
+- Every PR now also builds unsigned minified APK/AAB, checks release lint, verifies
+  64-bit native LOAD/RELRO geometry and APK ZIP alignment, and saves R8 mapping in
+  a clearly unsigned smoke artifact. Signed manual CI retains all certificate,
+  Firebase project, identity and version assertions and adds native checks/mapping.
+- A cross-platform stdlib Python check validates both 64-bit ABIs without installing
+  another NDK in CI. Its self-test covers safe whole-segment RELRO page rounding,
+  unsafe protected writable bytes and insufficient LOAD alignment. Actual release
+  APK/AAB each pass six native libraries; SDK zipalign -P16 passes. No dependency
+  upgrade was needed: graphics-path's non-aligned RELRO endpoint covers its entire
+  LOAD region, so rounding reaches no other writable bytes (verified against the
+  pinned binary and Android linker; runtime 16 KB test still required).
+- docs/RELEASE-CHECKLIST.md contains a source-grounded Data Safety draft, native and
+  SDK/provider collection/sharing review, deletion/retained-report behavior, all
+  owner Play/Firebase/OAuth/secrets/version/internal-testing steps and full Xiaomi
+  final QA. Current official personal-account testing guidance is 12 testers/14
+  continuous days where applicable, correcting the stale read-only web note of 20.
+- Version defaults remain 5 / 2.0.0-dev. No Play upload, workflow dispatch or key
+  replacement. No custom baseline profile captured without final authenticated
+  device flows; dependency ART profiles remain packaged.
+
+Local checks: `gradlew.bat assembleDebug lintDebug testDebugUnitTest assembleRelease
+bundleRelease lintRelease` passed; 32 JVM tests pass, debug/release lint report no
+issues, minified APK/AAB and mapping are generated. Native checker self-test,
+actual APK/AAB geometry and SDK zipalign passed. aapt2 verifies package
+app.web.oneonone, versionCode 5 and target 37. No API-contract gaps.
+
+Original artifacts are unsigned (upload key unavailable); a separate minified APK
+copy uses the already-existing debug key for emulator smoke only. Android repo
+Actions secrets are absent, so signed release CI cannot run until the owner
+restores the existing values. Expected certificate checks are unchanged.
+
+Shared changes: app Gradle release configuration, CI steps/artifacts, README and
+MainActivity's system-bar icon contrast follows the stored app theme. No manifest,
+nav, catalog, frozen socket/cards/handlers or A4/A5 behavior
+changed in A7. Full phone checklist is in RELEASE-CHECKLIST.md; all A2/A3/A6
+checkpoint items remain pending on the owner's HyperOS phone. A4/A5 integration,
+production-configured signed-device QA, 16 KB runtime, old-app upgrade tests and
+manual Console review are release gates, not claimed completed here.
+
+Final minified launch smoke: a separate existing-debug-key-signed copy of the
+release APK installed and cold-launched on API 36 (4 KB pages, 3442 ms). Sign-in
+rendered, system-bar icons were legible against the stored dark theme, the app
+process remained alive, and its AndroidRuntime log contained no crash. The
+emulator showed a System UI ANR and unrelated com.android.phone crash; after
+dismissing the system dialog, sign-in remained visible. This is limited launch
+verification, not a physical-phone, authenticated SDK or 16 KB runtime test.
