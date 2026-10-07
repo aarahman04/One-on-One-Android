@@ -3,7 +3,7 @@
 | Milestone | Status | Scope |
 | --- | --- | --- |
 | A0 | Complete; Xiaomi device gate pending | Native scaffold, theme/icons, stack, CI and setup |
-| A1 | Not started | Auth and connection |
+| A1 | Complete locally; PR/CI pending | Auth and connection |
 | A2 | Not started | Chat core and transport |
 | A3 | Not started | Killed-app notifications |
 | A4 | Not started | Emergency alarm |
@@ -78,3 +78,67 @@ the same existing credentials plus all four VITE_* configuration secrets.
 - [ ] No microphone, camera, location or notification permission prompts in A0.
 - [ ] Report results before authorizing A1. Auth/chat/push/alarm/call testing
   belongs to later milestones and is not expected to work in this build.
+
+## A1 — auth and connection (2026-10-07)
+
+- Credential Manager Google button flow, a fresh random raw nonce / SHA-256 Google
+  nonce, and Supabase `signInWith(IDToken)` (the Kotlin SDK's ID-token sign-in API).
+  Supabase owns persistent sessions and automatic refresh. Missing public build
+  configuration produces a visible error; secret-free CI builds remain launchable.
+- Shared Retrofit/OkHttp REST client adds Bearer auth. Concurrent 401s serialize
+  refresh and reuse a newer token, retry once, then clear only the rejected session
+  on another 401. Temporary refresh failures preserve session storage. Redirects
+  are disabled on the authenticated client so credentials stay on the API origin.
+- Server-driven boot routes, local age 18+/Terms gate, show/copy/regenerate code,
+  request, waiting/cancel, incoming accept/decline, blocked list/unblock, settings,
+  sign-out and typed account deletion confirmation. Active/leave_pending routes to
+  an A1 conversation placeholder; actual chat is A2. No alarm/call implementation.
+- Connection polling runs only while resumed, at 3-second intervals. A failed
+  poll keeps the last successful view with an error; it never invents a connection.
+  Sign-out unregisters the stored push token before dropping auth and preserves
+  the session if unregister fails. Deletion waits for server success; cascades
+  remove token rows, then local session/token state is cleared.
+- Local ignored config now uses the existing deployed Railway origin from the
+  read-only `.env.production` and the Google audience explicitly in the contract.
+  No web files changed. The Android API snapshot matches the authoritative file.
+- Shared-file changes: MainActivity delegates to AppNavigation/AppViewModel;
+  libs.versions.toml adds coroutines-test for required ViewModel tests. Manifest
+  and application remain unchanged in A1.
+- Phase-2/user authorization supersedes the earlier stop/never-merge delivery
+  wording: one PR per milestone, merge only after green CI, continue autonomously.
+
+### Verification
+
+`gradlew.bat assembleDebug lintDebug testDebugUnitTest` passed with zero lint
+issues; final check results and PR/CI links are recorded in the milestone report.
+Tests cover nonce hashing, code validation, birthday boundary, gate and pending/live
+routing, failed polls retaining state, connection actions, sign-out unregister
+ordering/failure, deletion ordering, one-refresh/retry, terminal 401 and concurrent
+401 deduplication. No physical device is connected; no device test is claimed.
+
+`gradlew.bat signingReport` passed. Debug SHA-1:
+`ED:02:08:A3:38:18:A4:18:40:AC:EF:D9:BD:C2:B2:0C:ED:37:55:9D`.
+Register it for `app.web.oneonone` in Firebase/Google Cloud before device sign-in.
+
+### Xiaomi / HyperOS device checklist (owner)
+
+- [ ] Install the locally configured debug APK; register its debug SHA-1 first.
+- [ ] Sign in, dismiss the picker, sign out, choose another Google account.
+- [ ] Fresh-device adult birthday proceeds; under-18 stops; Terms requires the
+      checkbox and both legal links work. Rotate/relaunch after accepting.
+- [ ] Copy/regenerate the 8-character ID. Old code stops accepting new requests.
+- [ ] With two accounts: request/cancel, incoming decline, request/accept; both
+      route to the conversation placeholder. Pending changes sync while resumed.
+- [ ] Reopen a restored session and live connection; background/resume and rotate.
+- [ ] Lose network during polling/actions: visible error, retry succeeds, no
+      duplicate connection. Session refresh/expired-session routing needs device QA.
+- [ ] Blocked list displays outbound blocks; unblock does not restore conversation.
+- [ ] On a disposable test account, type delete and confirm account deletion;
+      errors preserve the signed-in screen and successful deletion returns to login.
+- [ ] Large fonts and TalkBack: scrollable screens, labelled fields/checkbox,
+      Material buttons and no controls hidden by system bars.
+
+## Contract gaps
+
+A1: none. Google OAuth certificate registration is an external device setup step,
+not an API gap. Alarm/call seams will be created in A2/A3 as instructed.
