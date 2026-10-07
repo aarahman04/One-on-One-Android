@@ -1,4 +1,7 @@
 <resources>
     <string name="app_name">One on One</string>
     <string name="tagline">One connection. One conversation.</string>
+    <string name="alarm_title">🚨 Emergency alarm</string>
+    <string name="alarm_text">Tap to open the chat and silence</string>
+    <string name="alarm_silence">Silence</string>
 </resources>

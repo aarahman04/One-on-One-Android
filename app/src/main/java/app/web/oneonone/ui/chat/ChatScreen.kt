@@ -217,8 +217,9 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     if (report || reportMessage != null) ReportDialog(connection, reportMessage, features) { report = false; reportMessage = null }
     if (block) BlockDialog(connection, features, close = { block = false }, refresh = onRefresh)
     if (alarm) AlertDialog(onDismissRequest = { alarm = false }, title = { Text("Send an emergency alarm?") },
-        text = { Text("Only use this for an emergency. Alarm ringing is coming soon.") },
-        confirmButton = { TextButton(onClick = { vm.sendCard("alarm", JsonObject(emptyMap()), replyTo); vm.draft(""); vm.reply(null); alarm = false }) { Text("Send alarm") } },
+        text = { Text("This sounds an alarm on their phone, even when it's locked. Use it only for a genuine emergency.") },
+        // A raise is never a reply (web sends replyTo null).
+        confirmButton = { TextButton(onClick = { vm.sendCard("alarm", JsonObject(emptyMap()), null); vm.draft(""); vm.reply(null); alarm = false }) { Text("Send alarm") } },
         dismissButton = { TextButton(onClick = { alarm = false }) { Text("Cancel") } })
     duplicate?.let { tempId -> AlertDialog(onDismissRequest = { duplicate = null }, title = { Text("Resend this message?") },
         text = { Text("Its delivery is unknown. Check the conversation first; resending can create a duplicate.") },
