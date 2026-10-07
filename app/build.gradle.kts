@@ -114,5 +114,7 @@ dependencies {
     implementation(libs.coil.gif)
     implementation(libs.coil.cache.control)
     testImplementation(libs.junit)
+    // Real org.json for unit tests (android.jar ships only stubs); call signaling is JSON.
+    testImplementation(libs.orgjson)
     testImplementation(libs.coroutines.test)
 }
