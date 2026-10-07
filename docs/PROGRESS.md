@@ -474,3 +474,25 @@ process remained alive, and its AndroidRuntime log contained no crash. The
 emulator showed a System UI ANR and unrelated com.android.phone crash; after
 dismissing the system dialog, sign-in remained visible. This is limited launch
 verification, not a physical-phone, authenticated SDK or 16 KB runtime test.
+
+## A4 — emergency alarm (2026-10-07, Claude)
+
+Branch `a4/alarm`. Owner: Claude (per `docs/prompts/gpt-sol-6.1-phase2.md`).
+
+- `alarm/AlarmPolicy` (pure, unit-tested): the card state and "should ring" rules, derived only from server-backed messages. The card is disabled ("sending…") until the raise has its server id, so an ack/cancel can never carry a temp id (the web re-pop bug). A ring stops only on a SERVER-CONFIRMED ack/cancel (a message with an id), or when the user silences it or it auto-clears.
+- `alarm/AlarmService`: foreground service (`mediaPlayback`) playing a looping USAGE_ALARM `res/raw/alarm.wav` + vibration, ongoing notification with a full-screen intent, Silence action, auto-clear at raise + 2 min. Every stop path removes the notification with the service. Per-ring random token on its PendingIntents; MainActivity (exported) acts on alarm extras only with a matching token and strips them so a recreate can't replay. Alarm PendingIntents use their own action + request codes so they don't collide with the message notification's MainActivity intent.
+- `alarm/AlarmCoordinator`: binds the frozen `AlarmPushHandler` seam. Inputs: FCM data (killed/backgrounded) and the live chat's messages (socket + history), deduped by alarmId. If the FGS start is refused, a fallback notification on `alarm_fallback` (own alarm sound) is posted.
+- `alarm/HandledAlarms`: acked/cancelled/silenced/auto-cleared ids (last 50) in SharedPreferences. A handled id never rings again on resync, relaunch or a late FCM.
+- Channels: GPT's `alarm` channel (with a sound, which would double the player) is deleted; new silent `alarm_ring` plus `alarm_fallback`. MainActivity is now `singleTop`.
+- Chat: the `/alarm` raise is sent with `replyTo = null` (it was the current reply target).
+
+Verified: `assembleDebug lintDebug testDebugUnitTest` pass locally; 10 AlarmPolicy tests. NOT device-verified.
+
+### Device checklist (two phones, owner)
+- [ ] Phone B app killed (swiped away), Autostart on: A sends /alarm → B rings at alarm volume with a full-screen alert over the lock screen.
+- [ ] B taps the notification → ring stops, chat opens, the card says "tap to acknowledge"; tap → "acknowledging…" → "acknowledged" on both phones.
+- [ ] A sends /alarm, then A taps "tap to cancel" right away → B's ring stops; both cards show "cancelled". Reopen both apps: nothing rings again, cards stay "cancelled".
+- [ ] Silence from the notification action: ring stops and does not restart after opening the app.
+- [ ] No ack: B's ring stops by itself after 2 minutes; the card shows "expired".
+- [ ] Do Not Disturb on: note whether it rings (depends on the phone's alarm-stream DND settings).
+

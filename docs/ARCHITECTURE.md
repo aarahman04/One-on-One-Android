@@ -288,3 +288,26 @@ certificate and Firebase/package/version assertions; it never uploads to Play.
 Final release requires Claude's reserved features plus owner phone/Console gates.
 The release checklist is a Data Safety draft grounded in current native behavior
 and the web privacy/API references, with final SDK/provider/call review explicit.
+
+## Emergency alarm (A4)
+
+```mermaid
+flowchart LR
+  FCM["FCM data type=alarm
+(alarmId = raise id, ack, cancelled)"] --> Router[PushRouter] --> Coord[AlarmCoordinator]
+  Msgs["MessageService.messages
+(socket + history)"] --> Coord
+  Coord -- "raise, not handled, < 2 min" --> Svc["AlarmService FGS
+USAGE_ALARM loop + vibration
+full-screen notification"]
+  Coord -- "FGS start refused" --> Fallback["alarm_fallback notification"]
+  Coord -- "server-confirmed ack/cancel" --> Stop[stop + mark handled]
+  Tap["Notification tap / Silence
+(token-checked)"] --> Stop
+  Svc -- "2 min auto-clear" --> Stop
+  Stop --> Handled[(HandledAlarms)]
+  Handled -. "never re-ring" .-> Coord
+  Card["AlarmCard
+(state from AlarmPolicy)"] -- "ack/cancel with SERVER raise id" --> MessageService
+```
+
