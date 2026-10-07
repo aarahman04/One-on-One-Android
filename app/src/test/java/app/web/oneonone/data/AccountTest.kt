@@ -50,6 +50,10 @@ class FakeDeviceStore : DeviceStore {
     override suspend fun onboardingSeen() = seenOnboarding
     override suspend fun markOnboardingSeen() { seenOnboarding = true }
     override suspend fun claimNotification(messageId: String) = true
+    override val theme = MutableStateFlow("dark")
+    override suspend fun setTheme(value: String) { theme.value = value }
+    override suspend fun letterSignature() = ""
+    override suspend fun saveLetterSignature(value: String) { }
 }
 
 open class FakeAccountApi(val session: FakeSession) : AccountApi {
@@ -87,6 +91,10 @@ open class FakeAccountApi(val session: FakeSession) : AccountApi {
     override suspend fun leave(id: String) = LeaveResponse(LeaveResult("leave_pending", 1, 4, false, false))
     override suspend fun cancelLeave(id: String) = LeaveResponse(LeaveResult("active", 0, null, false, false))
     override suspend fun confirmEnd(id: String) = LeaveResponse(LeaveResult("terminated", 5, 0, true, true))
+    override suspend fun wallpaper(id: String, body: WallpaperBody) { }
+    override suspend fun block(id: String) { }
+    override suspend fun reportConnection(id: String, body: ReportBody) { }
+    override suspend fun reportMessage(id: String, body: ReportBody) { }
 }
 
 fun connection(status: String, requester: Boolean) = CurrentConnection(
@@ -188,6 +196,7 @@ class AccountTest {
             assertNotNull(vm.state.value.error)
             vm.signOut(); runCurrent()
             assertEquals(BootRoute.SignIn, vm.state.value.route)
+            vm.viewModelScope.cancel(); runCurrent()
         } finally { Dispatchers.resetMain() }
     }
 
@@ -203,6 +212,7 @@ class AccountTest {
             vm.refresh(); runCurrent()
             assertEquals(BootRoute.UnderAge, vm.state.value.route)
             assertFalse(preferences.savedGates.ageVerified)
+            vm.viewModelScope.cancel(); runCurrent()
         } finally { Dispatchers.resetMain() }
     }
 }

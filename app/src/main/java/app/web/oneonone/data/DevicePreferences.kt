@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +24,10 @@ interface DeviceStore {
     suspend fun onboardingSeen(): Boolean
     suspend fun markOnboardingSeen()
     suspend fun claimNotification(messageId: String): Boolean
+    val theme: Flow<String>
+    suspend fun setTheme(value: String)
+    suspend fun letterSignature(): String
+    suspend fun saveLetterSignature(value: String)
 }
 
 @Singleton
@@ -32,6 +38,15 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     private val pushToken = stringPreferencesKey("pushToken")
     private val onboarding = booleanPreferencesKey("notificationOnboardingSeen")
     private val handledPushes = stringPreferencesKey("handledMessagePushes")
+    private val themeKey = stringPreferencesKey("appearanceTheme")
+    private val signature = stringPreferencesKey("letterFrom")
+    override val theme = store.data.map { it[themeKey] ?: "dark" }
+    override suspend fun setTheme(value: String) {
+        require(value in setOf("light", "dark"))
+        store.edit { it[themeKey] = value }
+    }
+    override suspend fun letterSignature() = store.data.first()[signature].orEmpty()
+    override suspend fun saveLetterSignature(value: String) { store.edit { it[signature] = value.trim().take(40) } }
     override suspend fun gates() = store.data.first().let { Gates(it[age] == true, it[consent] != null) }
     override suspend fun verifyAge() { store.edit { it[age] = true } }
     override suspend fun acceptTerms() { store.edit { it[consent] = Instant.now().toString() } }

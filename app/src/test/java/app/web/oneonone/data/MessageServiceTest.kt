@@ -81,7 +81,7 @@ class FakeTransport : Transport {
     val historyCalls = mutableListOf<Pair<String?, String?>>()
     var loseAckOnce = false
     var echoFirst = false
-    var history: (String?, String?) -> List<ChatMessage> = { _, _ -> emptyList() }
+    var history: suspend (String?, String?) -> List<ChatMessage> = { _, _ -> emptyList() }
     override suspend fun start() { state.value = ConnectionState.Connected }
     override suspend fun stop() { state.value = ConnectionState.Offline }
     override suspend fun send(message: SendMessage): ChatMessage {

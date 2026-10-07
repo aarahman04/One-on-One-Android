@@ -33,13 +33,14 @@ import androidx.navigation.compose.rememberNavController
 import app.web.oneonone.R
 import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.ui.chat.ChatViewModel
+import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.push.PushRegistration
 import java.time.LocalDate
 
 private const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
 @Composable
-fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, pushRegistration: PushRegistration) {
+fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, featureViewModel: FeatureViewModel, pushRegistration: PushRegistration) {
     val state by viewModel.state.collectAsState()
     val nav = rememberNavController()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -69,12 +70,14 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, pushReg
         composable("home") {
             val connection = state.connection
             if (state.route == BootRoute.Chat && connection != null) {
-                ChatScreen(connection, chatViewModel, onSettings = { nav.navigate("settings") }, onRefresh = { viewModel.refresh() }, accountError = state.error)
+                key(connection.myUserId, connection.id) {
+                    ChatScreen(connection, chatViewModel, featureViewModel, onSettings = { nav.navigate("settings") }, onRefresh = { viewModel.refresh() }, accountError = state.error)
+                }
             } else ScreenFrame(state) {
                 when (state.route) {
                     BootRoute.Loading -> { Text("Opening your One on One…"); CircularProgressIndicator() }
                     BootRoute.SignIn -> {
-                        Image(painterResource(R.mipmap.ic_launcher), null, Modifier.size(96.dp))
+                        Image(painterResource(R.mipmap.ic_launcher_foreground), null, Modifier.size(96.dp))
                         Title("One on One")
                         Text(stringResource(R.string.tagline))
                         val context = LocalContext.current

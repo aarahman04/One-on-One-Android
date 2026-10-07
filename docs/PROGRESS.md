@@ -5,13 +5,13 @@
 | A0 | Complete; Xiaomi device gate pending | Native scaffold, theme/icons, stack, CI and setup |
 | A1 | Merged, PR #3; green CI; device QA pending | Auth and connection |
 | A2 | Merged, PR #4; green CI; device QA pending | Chat core and transport |
-| A3 | Complete locally; PR/CI pending | Killed-app notifications |
+| A3 | Merged, PR #5; green CI; device QA pending | Killed-app notifications |
 | A4 | Not started | Emergency alarm |
 | A5 | Not started | Earpiece-correct voice/video calls |
-| A6 | Not started | Feature parity |
+| A6 | Complete locally; PR/CI pending | Feature parity |
 | A7 | Not started | Release hardening and Play checklist |
 
-## A0 — 2026-10-07
+## A0 â€” 2026-10-07
 
 - Initial scaffold goes on main, per the explicit empty-repo exception; no A0 PR.
 - Single Activity native Compose welcome, Navigation and Hilt. Brand light/dark
@@ -79,7 +79,7 @@ the same existing credentials plus all four VITE_* configuration secrets.
 - [ ] Report results before authorizing A1. Auth/chat/push/alarm/call testing
   belongs to later milestones and is not expected to work in this build.
 
-## A1 — auth and connection (2026-10-07)
+## A1 â€” auth and connection (2026-10-07)
 
 - Credential Manager Google button flow, a fresh random raw nonce / SHA-256 Google
   nonce, and Supabase `signInWith(IDToken)` (the Kotlin SDK's ID-token sign-in API).
@@ -143,7 +143,7 @@ Register it for `app.web.oneonone` in Firebase/Google Cloud before device sign-i
 A1: none. Google OAuth certificate registration is an external device setup step,
 not an API gap. Alarm/call seams will be created in A2/A3 as instructed.
 
-## A2 — chat core and frozen seams (2026-10-07)
+## A2 â€” chat core and frozen seams (2026-10-07)
 
 - Native paged history, live messages, optimistic sends, ack/echo deduplication by
   tempId, same-ID retry, monotonic read/delivered receipts, six allowed reactions,
@@ -229,7 +229,7 @@ in-memory dedupe and exclusive timestamp cursors. Older uncertain attempts requi
 manual confirmation; search is explicitly of loaded messages, matching the available
 history API. Long-lived durable idempotency would require a backend extension.
 
-## A3 — message push, permissions and OEM onboarding (2026-10-07)
+## A3 â€” message push, permissions and OEM onboarding (2026-10-07)
 
 - FirebaseMessagingService parses the authoritative data schema through PushRouter.
   `alarm`, `call`, `call_end` are delegated exactly to the frozen handler interfaces
@@ -320,3 +320,99 @@ A3 contract gaps: none. Migration 035 is stated applied by the phase-2 prompt; i
 live constraint behavior is still device/backend-verified by the owner. APIs provide
 no direct message fetch/search; normal notification uses the contract preview, and
 membership/action safety uses current connection.
+
+## A6 â€” feature parity (2026-10-07)
+
+Branch: `a6/feature-parity`. A3 merged as [PR #5](https://github.com/aarahman04/One-on-One-Android/pull/5)
+with [green CI](https://github.com/aarahman04/One-on-One-Android/actions/runs/37599656301).
+The web repo was pulled read-only and its authoritative contract checked again.
+
+- Structured composers/cards: letter write/preview, Dawn/Botanical colors and serif
+  typography, per-device signature, HTML download; sealed ask and this-or-that
+  replies are new messages with the original server id as replyTo. Original cards
+  remain sealed. Revealed names resolve through the original message. Countdown
+  uses native date/time pickers and a live timer; check-in uses the five moods.
+- Location requires explicit confirmation before permission, accepts approximate
+  access, requests one snapshot with a ten-second timeout, rounds coordinates to
+  five decimals and never tracks in the background. Lazy cards use a bounded OSM
+  tile, attribution and external Google Maps view/directions links. OSM sees the
+  tile area/IP; its identifying User-Agent and cache headers are respected.
+- Native photo picker and SAF file picker, raw-byte upload, MIME/size validation,
+  shared signed-URL cache refreshed after 55 minutes. Static images re-encode
+  pixels to strip EXIF/GPS and handle orientation; bounded decode resizes large
+  photos to <=4 MP. Animated GIFs remain GIFs and use Coil's official decoder;
+  GIFs above 4 MP are rejected to bound decoded memory. Upload limits remain
+  10/16/25 MiB. No broad storage permission or API Bearer sent to storage/maps.
+- Voice notes record AAC/M4A off-main, stop at one hour or 16 MiB, and retain
+  completed clips in SavedStateHandle/private cache for retry and restoration.
+  In-progress recordings discard on background/navigation and never use a mic
+  foreground service. Native playback is asynchronous, one player at a time,
+  releases on background, requests transient media audio focus, and avoids active
+  communication audio mode. Call routing remains Claude's responsibility.
+- Media view/open/save uses private cache, narrowly scoped FileProvider read grants
+  and SAF destinations. Shared downloaded cache files older than one day are
+  removed on subsequent downloads. Completed clips are scoped to app user and
+  connection. Upload/location completions cannot enqueue into a changed session.
+- Appearance stores dark/light on-device (web default dark), uses the exact A0
+  bubble palettes and copied web love/samurai wallpaper assets, and PATCHes shared
+  wallpaper. The web renders legacy `line` as bubbles too; no invented style UI.
+- Slash menu includes all seven commands; alarm only invokes the frozen A2 raise
+  confirmation. Alarm/call cards, RealtimeSocket and push handler seams untouched.
+- Reply snippets and search include media labels/file names; quoted loaded messages
+  scroll to their source, unloaded targets explain paging/search; text links open
+  natively and long-press supports copy/report plus existing reactions/reply.
+- Person/message reports use closed categories and <=1000-character reasons.
+  Blocking warns that ending deletes history/media for both and offers export from
+  the chat menu beforehand. Nickname and server-gated five-step leave remain intact.
+- TXT/JSON/escaped HTML exports page all available server history, preserving types
+  and payloads; media exports contain metadata, so download media separately before
+  ending. Export currently holds the conversation in memory (documented ceiling).
+  Server membership remains authoritative. Durable outbox enqueue shares the
+  lifecycle mutex so connection teardown cannot race a late enqueue.
+
+Shared-file changes: MainActivity adds FeatureViewModel and observes stored theme;
+AppNavigation passes it and scopes chat composition by user/connection; manifest
+adds optional mic/location permissions/features and a non-exported, cache-only
+FileProvider; catalog adds pinned Coil GIF and HTTP cache-control extensions;
+Application configures a separate unauthenticated Coil client. No A4/A5 behavior.
+
+### Xiaomi / HyperOS A6 checklist (owner)
+
+- [ ] Two accounts/native + web: every slash feature, letter preview and download,
+      cached signature, both letter appearances. Rotate/recreate with a draft open.
+- [ ] Ask/this-or-that: original remains sealed; recipient reply reveals both,
+      names are correct on each side, reply target is the original server id.
+- [ ] Countdown past/future and local timezone; all five moods and length limits.
+- [ ] Confirm/cancel location before permission; coarse/fine denial, GPS disabled,
+      timeout, one snapshot, OSM attribution and View/Directions. No background updates.
+- [ ] Photo picker JPEG/PNG/WebP/GIF, EXIF orientation/privacy, oversized/unsupported
+      files, offline/upload failures, retry; signed URLs refresh after expiry.
+- [ ] Record >1s, stop/send/play/stop, mic denial, background/discard, rotate,
+      restored completed clip, interrupted playback and actual speaker loudness.
+- [ ] Allowed file types open in external apps with read-only grants; save photos,
+      voice and files through SAF. No installed viewer produces a safe notice.
+- [ ] Themes persist across relaunch; wallpaper is shared and refreshes on peer;
+      green/blue tinted bubbles, solid tails and timestamp/ticks match reference.
+- [ ] React/toggle, reply to text/media, quote jump, older-target explanation,
+      search/copy/links, large font and TalkBack. Alarm/calls still placeholders.
+- [ ] Export >50 messages in all formats; inspect escaped HTML and media metadata.
+      Download attachments before ending; nickname/leave cancellation/server timing.
+- [ ] Report person/message/category/details; block confirmation/cancel, immediate
+      end, both clients lose history/media, old cache/outbox purged, unblock does
+      not restore history. Use a disposable connection for destructive checks.
+
+A6 contract gaps: none. Physical phone/live authenticated backend tests remain
+pending. Emulator launch smoke and final local/CI results will be recorded below.
+
+Validation also fixed inherited launcher asset packaging: unused pre-26 launcher
+bitmaps are removed, while Compose loads the raster foreground (adaptive XML is not
+supported by painterResource). No branding or app identity changed. All 31 JVM
+tests pass; final lint/build and emulator smoke are being checked before PR.
+
+
+Final A6 local validation: `gradlew.bat clean assembleDebug lintDebug testDebugUnitTest`
+passed (32 tests, zero failures; lint reports no issues). `git diff --check` passed.
+Debug APK installed on the existing API 36 emulator, MainActivity rendered sign-in,
+its process remained alive and AndroidRuntime showed no crash. Host resource pressure
+caused a System UI ANR, so this is limited launch evidence, not functional feature QA.
+No real phone, live Google login, upload, location, or two-account workflow tested.

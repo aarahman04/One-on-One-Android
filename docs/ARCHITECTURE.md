@@ -211,3 +211,42 @@ Message notifications never invoke an alarm or call implementation. The existing
 notification-block missed-call fallback remains a generic no-action notice.
 Proprietary OEM activities are unverified best-effort entry points with native
 Settings/App info fallback; optional permission settings never gate account/chat use.
+
+## A6 — structured features, private media and export
+
+```mermaid
+flowchart TD
+    UI[Feature composers and cards] --> VM[FeatureViewModel / saved drafts and clip]
+    VM --> Messages[MessageService / validated durable outbox]
+    Messages --> Transport[Transport / existing single RealtimeSocket]
+    VM --> Media[MediaRepository / IO dispatcher]
+    Media --> Upload[Raw upload / authenticated REST]
+    Media --> Sign[Signed paths / membership REST]
+    Sign --> View[Coil / MediaPlayer / no API Bearer]
+    Media --> Native[Photo picker / SAF / recorder / one-shot location]
+    VM --> Safety[AccountApi / report and block]
+    VM --> Appearance[DeviceStore theme / server wallpaper]
+    VM --> Export[Page server history / escaped TXT JSON HTML]
+    Export --> SAF[User-selected document destination]
+```
+
+Structured features reuse ordinary immutable messages and replyTo rather than a
+second state protocol. Contract validators run before Room enqueue. Ask/pick reply
+attribution follows the original author. Alarm and call rendering/entry/push seams
+remain frozen for Claude. No second socket or transport is constructed.
+
+Media ownership is the current app user and connection; uploads and location
+re-check that scope after asynchronous work. Completed voice clips survive config
+changes/process restoration in private cache, while live recording and playback
+stop at background/navigation. FileProvider exposes only `cache/shared`, never the
+cache root or arbitrary paths. Unauthenticated media/map clients do not carry REST
+credentials. Signed paths are server-authorized; storage URLs require HTTPS and the
+configured Supabase host. Static photos strip EXIF by pixel re-encoding with a 4 MP
+memory ceiling. Voice uses media audio focus and leaves call routing/mode alone.
+
+Coil's official GIF/cache-control extensions share the pinned Coil version. The
+custom client identifies the app for OSM and honors HTTP caching. Map tiles are
+requested only when their cards are composed; no offline maps or tile prefetch.
+Themes are per-device, wallpapers shared, and legacy line style renders bubbles
+as the reference currently does. Export pages existing REST history and escapes
+all HTML content; it includes attachment metadata rather than permanent media URLs.
