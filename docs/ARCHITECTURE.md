@@ -168,3 +168,46 @@ cached reaction changes. Room/cache/receipt flags do not grant membership.
 Frozen public APIs and exact placeholder file ownership are listed in PROGRESS.
 Claude may replace the CallLauncher binding and both cards, and add A4/A5 lifecycle
 consumers without changing the message pipeline or opening another socket.
+
+## A3 — data-only push and background work
+
+```mermaid
+flowchart TD
+    App[Application.onCreate] --> Channels[messages / alarm / calls channels]
+    App --> Registration[PushRegistration / authenticated session lifecycle]
+    Registration --> TokenWork[Persisted token worker]
+    TokenWork --> Lock[Shared account mutation mutex]
+    SignOut[Sign-out / deletion] --> Lock
+    Lock --> REST[Register/unregister with android-native / existing auth]
+    FCM[FirebaseMessagingService] --> Router[PushRouter / type + normal payload validation]
+    Router --> Alarm[AlarmPushHandler / no-op; Claude A4]
+    Router --> Calls[CallPushHandler / no-op; Claude A5]
+    Router --> NotifyWork[Persisted notification worker / expedited API 31+]
+    NotifyWork --> Current[Server current connection + restored account]
+    Current --> Visible[Matching resumed chat / permission / replay suppression]
+    Visible --> Notification[MessagingStyle / per-conversation / private]
+    Notification --> Tap[MainActivity / existing server boot route]
+    Notification --> Receiver[Non-exported reply-read receiver]
+    Receiver --> Actions[Persisted action worker / owner and connection checks]
+    Actions --> Messages[MessageService / Transport]
+    Messages --> Queue[Room / worker UUID as stable tempId]
+```
+
+FCM callbacks do no slow network work; WorkManager keeps token/notification/action
+work alive across process loss. API 31+ notification jobs are expedited; older APIs
+use normal work without introducing an A3 foreground service. Server membership is
+checked before posting/action execution. A delayed push cannot target a different
+current conversation, and notification actions name a captured auth subject as well
+as the conversation. MainActivity consumes no untrusted push authorization extras.
+
+Reply work uses its immutable WorkRequest UUID as tempId. Enqueue first checks the
+scoped Room alias; REST history preserves that alias on a canonical row, so worker
+retries recognize already-acknowledged sends. The A2 five-minute uncertainty policy
+still applies. Registration stores a candidate before HTTP and shares a mutex with
+sign-out; in-flight registration finishes before token cleanup/session removal.
+
+The three handler methods and exact PushHandlersModule path are frozen for Claude.
+Message notifications never invoke an alarm or call implementation. The existing
+notification-block missed-call fallback remains a generic no-action notice.
+Proprietary OEM activities are unverified best-effort entry points with native
+Settings/App info fallback; optional permission settings never gate account/chat use.

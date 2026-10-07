@@ -33,12 +33,13 @@ import androidx.navigation.compose.rememberNavController
 import app.web.oneonone.R
 import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.ui.chat.ChatViewModel
+import app.web.oneonone.push.PushRegistration
 import java.time.LocalDate
 
 private const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
 @Composable
-fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel) {
+fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, pushRegistration: PushRegistration) {
     val state by viewModel.state.collectAsState()
     val nav = rememberNavController()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -57,6 +58,12 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel) {
     }
     LaunchedEffect(state.route, state.connection?.id) {
         if (state.route != BootRoute.Chat) chatViewModel.close(clear = state.route == BootRoute.Connect)
+    }
+    LaunchedEffect(state.route, state.needsNotificationOnboarding) {
+        if (state.needsNotificationOnboarding && state.route in setOf(BootRoute.Connect, BootRoute.Waiting, BootRoute.Request, BootRoute.Chat)) {
+            nav.navigate("notifications") { launchSingleTop = true }
+            viewModel.onboardingShown()
+        }
     }
     NavHost(nav, startDestination = "home", modifier = Modifier.safeDrawingPadding()) {
         composable("home") {
@@ -118,6 +125,7 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel) {
         composable("settings") {
             ScreenFrame(state) {
                 Title("Settings")
+                TextButton(onClick = { nav.navigate("notifications") }) { Text("Notifications and background settings") }
                 TextButton(onClick = { nav.navigate("blocks") }) { Text("Blocked accounts") }
                 LegalLinks()
                 OutlinedButton(onClick = { viewModel.signOut() }, enabled = !state.busy) { Text("Sign out") }
@@ -137,6 +145,9 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel) {
                 }
                 TextButton(onClick = { nav.popBackStack() }) { Text("Back") }
             }
+        }
+        composable("notifications") {
+            NotificationOnboarding(pushRegistration, onDone = { nav.popBackStack() })
         }
     }
 }

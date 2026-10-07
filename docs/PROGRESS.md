@@ -4,8 +4,8 @@
 | --- | --- | --- |
 | A0 | Complete; Xiaomi device gate pending | Native scaffold, theme/icons, stack, CI and setup |
 | A1 | Merged, PR #3; green CI; device QA pending | Auth and connection |
-| A2 | Complete locally; PR/CI pending | Chat core and transport |
-| A3 | Not started | Killed-app notifications |
+| A2 | Merged, PR #4; green CI; device QA pending | Chat core and transport |
+| A3 | Complete locally; PR/CI pending | Killed-app notifications |
 | A4 | Not started | Emergency alarm |
 | A5 | Not started | Earpiece-correct voice/video calls |
 | A6 | Not started | Feature parity |
@@ -228,3 +228,95 @@ A2 contract gaps: none requiring a new endpoint. Known contract bounds: five-min
 in-memory dedupe and exclusive timestamp cursors. Older uncertain attempts require
 manual confirmation; search is explicitly of loaded messages, matching the available
 history API. Long-lived durable idempotency would require a backend extension.
+
+## A3 — message push, permissions and OEM onboarding (2026-10-07)
+
+- FirebaseMessagingService parses the authoritative data schema through PushRouter.
+  `alarm`, `call`, `call_end` are delegated exactly to the frozen handler interfaces
+  in `push/handlers`, bound to no-ops in `di/PushHandlersModule.kt`. No alarm/call
+  service, ringing or incoming-call UI is implemented. Application.onCreate creates
+  `messages`, `alarm`, `calls` channels before any registration/display work.
+- WorkManager registers after authenticated login and token rotation with an explicit
+  `platform: android-native` field (not an omitted serialization default). Rotation
+  unregisters the previous token. Registration and sign-out/deletion share a mutex;
+  the candidate is stored before HTTP so a lost response remains unregisterable.
+  Registration completes before sign-out drops credentials. Constraint errors name
+  migration 035 plainly; network/rate-limit failures back off and retry.
+- Normal data-only messages schedule persisted notification work, expedited on API
+  31+. The worker restores auth and checks server current-connection membership before
+  displaying. It suppresses notifications when that chat is open and resumed, when
+  permission is denied, or after an account/connection change. Message IDs are
+  remembered for the newest 256 pushes to suppress common FCM replay across restarts.
+- MessagingStyle notifications accumulate messages per conversation, use a private
+  lock-screen presentation, and include tap, inline reply and mark-read actions.
+  Explicit non-exported action receiver validates IDs and input; workers verify the
+  current account and server connection before acting. Reply worker UUID is its
+  persistent tempId; retry/process restart cannot create a new send ID. History keeps
+  the acknowledged alias so completed reply work stays idempotent locally too.
+- Token API/onNewToken intentionally use the contract's FCM registration tokens,
+  rather than the newer Firebase Installation-ID registration protocol. Only these
+  precise SDK deprecation diagnostics are suppressed; lint remains strict.
+- The documented notification-block missed-call text fallback has no chat/action IDs;
+  it receives a generic notice without fabricated inline actions. A4/A5 handlers
+  remain no-ops. Deleted-message callbacks schedule conversation resync.
+- Notification/OEM onboarding appears once after gates/first login and remains in
+  Settings. It covers POST_NOTIFICATIONS, API 34+ full-screen access, and Xiaomi/
+  Redmi/POCO HyperOS/MIUI, Oppo/Realme, Vivo/iQOO, OnePlus and Samsung background
+  settings. Proprietary shortcuts are best-effort, with App info/battery-settings
+  fallback on unresolved or restricted intents. No battery exemption is requested
+  automatically. Permission state refreshes when returning from Settings.
+
+### Verification
+
+`gradlew.bat assembleDebug lintDebug testDebugUnitTest` passed with 26 JVM tests
+and zero lint issues; final-revision PR/CI results are recorded in the report.
+Checks cover exact handler delegation, payload/type/UUID
+validation, live-chat suppression, account/conversation action scoping, explicit
+platform serialization, rotation/sign-out serialization, lost-response candidate
+retention, persisted reply tempId/history alias, and first-login onboarding once.
+All A1/A2 tests remain included. Manifest, Hilt bindings, worker classes, permissions
+and channel construction compile/lint; actual FCM delivery, OS notification actions,
+OEM components, permission dialogs and killed-app behavior require physical-device
+verification. No physical device is connected; no FCM/device claim is made.
+
+Shared edits: AndroidManifest adds POST_NOTIFICATIONS/USE_FULL_SCREEN_INTENT,
+non-exported FCM service/action receiver and default message channel metadata;
+Application creates channels and starts registration; MainActivity injects the
+registration controller; navigation adds onboarding/settings entry. Catalog and
+frozen RealtimeSocket/AlarmCard/CallLogCard/CallLauncher files are unchanged.
+A2 merged PR: https://github.com/aarahman04/One-on-One-Android/pull/4;
+CI: https://github.com/aarahman04/One-on-One-Android/actions/runs/37596154289.
+
+### Xiaomi / HyperOS device checkpoint (owner; work continues to A6)
+
+- [ ] Install the configured local APK using the existing Firebase project. Sign
+      in: first-login onboarding shows once and remains reachable from Settings.
+- [ ] Grant/deny notifications, reopen system notification settings, grant later;
+      summary updates on resume and denial never crashes notification posting.
+- [ ] API 34+: full-screen-access link/summary works. This only configures access;
+      actual alarm/call full-screen behavior belongs to Claude A4/A5.
+- [ ] HyperOS: enable Background autostart and battery No restrictions. Proprietary
+      links open an appropriate screen or safely fall back to App info; also check
+      Oppo/Vivo/OnePlus/Samsung on an available device (unverified here).
+- [ ] Backend token row uses android-native. If rejected by a constraint, confirm
+      migration 035/backend logs. No live authenticated registration was exercised here.
+- [ ] Two accounts: normal text/image/letter/etc push when backgrounded and swiped
+      from recents, including reboot/relaunch. Do not use Force stop as the killed
+      test; Force stop blocks FCM until manual reopen on every OEM.
+- [ ] Open/resumed matching chat suppresses the notification; Settings/other screen
+      and background show it. Conversation grouping accumulates sender/preview text.
+- [ ] Tap notification restores auth and server boot route, without bypassing gates.
+- [ ] Inline reply sends once, adds your reply to the notification; offline reply
+      persists/retries with the same tempId. Old uncertain delivery needs chat review.
+- [ ] Mark read flips the peer's read receipt and dismisses that message notification.
+- [ ] Sign out/switch accounts or end connection: old notifications/actions cannot
+      send/read in a new conversation. Sign-out unregisters the stored token.
+- [ ] Token rotation/relaunch re-registers correctly; duplicate data pushes do not
+      repeatedly alert within the remembered message-ID window.
+- [ ] Alarm/call/call_end data delegates without normal-message notifications;
+      ringing and incoming-call UI are intentionally absent until A4/A5.
+
+A3 contract gaps: none. Migration 035 is stated applied by the phase-2 prompt; its
+live constraint behavior is still device/backend-verified by the owner. APIs provide
+no direct message fetch/search; normal notification uses the contract preview, and
+membership/action safety uses current connection.

@@ -54,7 +54,7 @@ class MessageService @Inject constructor(
     private val lifecycle = Mutex()
     private val synchronizing = Mutex()
     private val sending = Mutex()
-    private var chatResumed = false
+    @Volatile private var chatResumed = false
 
     init { scope.launch {
         auth.signedIn.collect { if (!it) deactivate() }
@@ -120,15 +120,18 @@ class MessageService @Inject constructor(
         chatResumed = resumed
         if (resumed) scope.launch { guarded { markRead() } }
     }
+    fun isChatResumed(connectionId: String): Boolean = chatResumed && active.value?.connectionId == connectionId
 
-    suspend fun send(content: String, type: String = "text", payload: JsonObject? = null, replyTo: String? = null): String {
+    suspend fun send(content: String, type: String = "text", payload: JsonObject? = null, replyTo: String? = null, clientTempId: String? = null): String {
         val session = checkNotNull(active.value) { "No active connection." }
         check(auth.accessToken() != null) { "Sign in to continue." }
         require(type !in setOf("call", "system")) { "This message type is server-authored." }
         require(content.trim().length <= 4_000 && (content.isNotBlank() || type in setOf("alarm", "voice", "image", "file"))) {
             "Messages must be 1–4000 characters."
         }
-        val tempId = UUID.randomUUID().toString()
+        val tempId = clientTempId ?: UUID.randomUUID().toString()
+        require(tempId.matches(Regex("[A-Za-z0-9-]{1,64}"))) { "Invalid send ID." }
+        if (store.byTempId(session.ownerId, session.connectionId, tempId) != null) return tempId
         store.enqueue(session.ownerId, session.connectionId, ChatMessage(senderId = session.ownerId,
             content = content.trim(), createdAt = Instant.now().toString(), type = type, payload = payload,
             replyTo = replyTo, tempId = tempId, deliveryState = "queued"))
@@ -203,6 +206,7 @@ class MessageService @Inject constructor(
         batch.size == 50
     }
     suspend fun react(messageId: String, emoji: String, remove: Boolean) = transport.react(messageId, emoji, remove)
+    suspend fun findSend(tempId: String): ChatMessage? = active.value?.let { store.byTempId(it.ownerId, it.connectionId, tempId) }
     suspend fun markRead() { active.value?.let { transport.markRead(it.connectionId) } }
 
     private suspend fun guarded(block: suspend () -> Unit) {

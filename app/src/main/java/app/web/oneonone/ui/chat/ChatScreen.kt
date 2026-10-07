@@ -151,7 +151,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, onSettings: () 
         }
     }
     if (alarm) AlertDialog(onDismissRequest = { alarm = false }, title = { Text("Send an emergency alarm?") },
-        text = { Text("Only use this for an emergency. Alarm ringing will be implemented in A4.") },
+        text = { Text("Only use this for an emergency. Alarm ringing is coming soon.") },
         confirmButton = { TextButton(onClick = { vm.sendCard("alarm", JsonObject(emptyMap()), replyTo); vm.draft(""); vm.reply(null); alarm = false }) { Text("Send alarm") } },
         dismissButton = { TextButton(onClick = { alarm = false }) { Text("Cancel") } })
     duplicate?.let { tempId -> AlertDialog(onDismissRequest = { duplicate = null }, title = { Text("Resend this message?") },

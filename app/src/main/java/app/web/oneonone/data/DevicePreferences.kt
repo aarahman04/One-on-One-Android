@@ -19,6 +19,9 @@ interface DeviceStore {
     suspend fun acceptTerms()
     suspend fun pushToken(): String?
     suspend fun savePushToken(token: String?)
+    suspend fun onboardingSeen(): Boolean
+    suspend fun markOnboardingSeen()
+    suspend fun claimNotification(messageId: String): Boolean
 }
 
 @Singleton
@@ -27,6 +30,8 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     private val age = booleanPreferencesKey("ageVerified")
     private val consent = stringPreferencesKey("termsAcceptedAt")
     private val pushToken = stringPreferencesKey("pushToken")
+    private val onboarding = booleanPreferencesKey("notificationOnboardingSeen")
+    private val handledPushes = stringPreferencesKey("handledMessagePushes")
     override suspend fun gates() = store.data.first().let { Gates(it[age] == true, it[consent] != null) }
     override suspend fun verifyAge() { store.edit { it[age] = true } }
     override suspend fun acceptTerms() { store.edit { it[consent] = Instant.now().toString() } }
@@ -34,6 +39,20 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     override suspend fun savePushToken(token: String?) { store.edit {
         if (token == null) it.remove(pushToken) else it[pushToken] = token
     } }
+    override suspend fun onboardingSeen() = store.data.first()[onboarding] == true
+    override suspend fun markOnboardingSeen() { store.edit { it[onboarding] = true } }
+    override suspend fun claimNotification(messageId: String): Boolean {
+        var claimed = false
+        store.edit { preferences ->
+            val ids = preferences[handledPushes].orEmpty().split('|').filter { it.isNotEmpty() }
+            if (messageId !in ids) {
+                // ponytail: remember the newest 256 IDs; use a Room notification ledger if older FCM replay matters.
+                preferences[handledPushes] = (ids + messageId).takeLast(256).joinToString("|")
+                claimed = true
+            }
+        }
+        return claimed
+    }
 }
 
 data class Gates(val ageVerified: Boolean = false, val termsAccepted: Boolean = false)

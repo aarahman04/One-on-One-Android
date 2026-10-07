@@ -37,6 +37,7 @@ data class AppState(
     val blocks: List<BlockedUser> = emptyList(),
     val busy: Boolean = false,
     val error: String? = null,
+    val needsNotificationOnboarding: Boolean = false,
 )
 
 internal fun bootRoute(signedIn: Boolean, gates: Gates, connection: CurrentConnection?): BootRoute = when {
@@ -101,7 +102,9 @@ class AppViewModel @Inject constructor(
         }
         val me = account.api.me()
         val current = account.api.current().connection
-        mutable.update { it.copy(route = bootRoute(true, gates, current), me = me, connection = current, error = null) }
+        val onboarding = !preferences.onboardingSeen()
+        mutable.update { it.copy(route = bootRoute(true, gates, current), me = me, connection = current, error = null,
+            needsNotificationOnboarding = onboarding) }
     }
 
     fun signIn(context: Context) = action { auth.signIn(context); load() }
@@ -132,6 +135,10 @@ class AppViewModel @Inject constructor(
     }
     fun signOut() = action { account.signOut() }
     fun deleteAccount() = action { account.deleteAccount() }
+    fun onboardingShown() = action {
+        preferences.markOnboardingSeen()
+        mutable.update { it.copy(needsNotificationOnboarding = false) }
+    }
 
     private fun action(showBusy: Boolean = true, block: suspend () -> Unit) = viewModelScope.launch {
         // Polls never pile up behind a user mutation or another poll.
