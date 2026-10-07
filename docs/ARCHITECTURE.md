@@ -51,7 +51,8 @@ in scope.
 flowchart LR
     Local[Gitignored local.properties / Gradle properties] --> Config[BuildConfig public client settings]
     Firebase[Gitignored existing google-services.json] --> Resources[Firebase resources]
-    PR[PR / main push] --> Checks[assembleDebug / lintDebug / testDebugUnitTest]
+    PR[PR / main push] --> SDK[Explicit platform-tools / platform 37.0 / build-tools 36.0.0]
+    SDK --> Checks[assembleDebug / lintDebug / testDebugUnitTest]
     Dispatch[Manual dispatch + existing secrets] --> Cert[Assert upload SHA-1 and SHA-256]
     Cert --> Signed[bundleRelease / assembleRelease]
     Signed --> Verify[Assert AAB and APK signers / APK package-version]
@@ -63,3 +64,10 @@ Signing is the unchanged upload identity; no key-generation path exists. Secret
 files are scrubbed in CI. The API snapshot in this repo is copied verbatim from
 the web repo; future changes must use the authoritative web contract, not infer
 behavior from client code. No backend deployment or schema change is part of A0.
+
+### A0 CI setup correction
+
+Both debug and release jobs explicitly install platform-tools, platform 37.0
+and build-tools 36.0.0. setup-android v3's default also asks for the removed
+legacy `tools` package, so using its default fails before Gradle starts. The
+explicit package list keeps the checks and release job on the same SDK/toolset.

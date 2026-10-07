@@ -35,6 +35,12 @@ without either local credential file or VITE_* environment values, validating
 the secret-free PR path. GitHub Actions runs these checks on the initial main
 push; the actual run link/result is included in the milestone delivery report.
 
+The initial main Actions run failed before Gradle because setup-android's
+default package list included Google's removed `tools` package. A0 follow-up
+branch `a0/fix-ci-sdk-setup` explicitly installs platform-tools, platform 37.0
+and build-tools 36.0.0 in both jobs. This is an A0 CI fix only; its PR remains
+unmerged for the owner to review. The initial scaffold commit stays on main.
+
 `aapt2 dump badging` and the merged manifest confirmed app.web.oneonone,
 versionCode 5 / 2.0.0-dev, minSdk 26 and target/compileSdk 37. `apksigner verify`
 confirmed the debug signer; keytool matched this machine's documented debug
