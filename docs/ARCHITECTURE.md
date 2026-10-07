@@ -51,7 +51,8 @@ in scope.
 flowchart LR
     Local[Gitignored local.properties / Gradle properties] --> Config[BuildConfig public client settings]
     Firebase[Gitignored existing google-services.json] --> Resources[Firebase resources]
-    PR[PR / main push] --> Checks[assembleDebug / lintDebug / testDebugUnitTest]
+    PR[PR / main push] --> SDK[Explicit platform-tools / platform 37.0 / build-tools 36.0.0]
+    SDK --> Checks[assembleDebug / lintDebug / testDebugUnitTest]
     Dispatch[Manual dispatch + existing secrets] --> Cert[Assert upload SHA-1 and SHA-256]
     Cert --> Signed[bundleRelease / assembleRelease]
     Signed --> Verify[Assert AAB and APK signers / APK package-version]
