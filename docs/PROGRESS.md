@@ -3,8 +3,8 @@
 | Milestone | Status | Scope |
 | --- | --- | --- |
 | A0 | Complete; Xiaomi device gate pending | Native scaffold, theme/icons, stack, CI and setup |
-| A1 | Complete locally; PR/CI pending | Auth and connection |
-| A2 | Not started | Chat core and transport |
+| A1 | Merged, PR #3; green CI; device QA pending | Auth and connection |
+| A2 | Complete locally; PR/CI pending | Chat core and transport |
 | A3 | Not started | Killed-app notifications |
 | A4 | Not started | Emergency alarm |
 | A5 | Not started | Earpiece-correct voice/video calls |
@@ -142,3 +142,89 @@ Register it for `app.web.oneonone` in Firebase/Google Cloud before device sign-i
 
 A1: none. Google OAuth certificate registration is an external device setup step,
 not an API gap. Alarm/call seams will be created in A2/A3 as instructed.
+
+## A2 — chat core and frozen seams (2026-10-07)
+
+- Native paged history, live messages, optimistic sends, ack/echo deduplication by
+  tempId, same-ID retry, monotonic read/delivered receipts, six allowed reactions,
+  reply and search of loaded messages. Brand BubbleTokens, wallpaper-tinted love/
+  samurai variants, solid tails, text time/ticks inline and card footer metadata.
+- Room v1 schema is checked in. Cache/outbox keys include app-user and connection.
+  Canonical reconciliation deletes the matching own pending row and upserts the
+  server row transactionally. Pending sends and REST sync checkpoints survive
+  process death; relaunch/reconnect replays them. Sends are never matched by text.
+- Resync snapshots REST's watermark before flushing pending sends, then pages
+  `after` until a short page. Incoming/ack timestamps cannot jump that checkpoint
+  over a missing interval. Older pages use the oldest cached server timestamp.
+- Because server tempId dedupe is only five minutes, an attempted but unconfirmed
+  older send becomes `delivery unknown`; automatic replay stops. Explicit resend
+  warns of duplicate risk. Never-attempted offline sends can still be replayed.
+  No guessed history tempId, persistent backend dedupe or endpoint was introduced.
+- Nickname and deliberate five-step leave (advance/cancel/mutual immediate end)
+  use the documented REST routes. Server gates determine allowed actions. A socket
+  `connection:ended` purges that connection's cache/outbox and refreshes boot routing;
+  polling covers termination missed while offline.
+- Google session refresh serialization now lives in AuthRepository too, so socket
+  and REST callers share it. RealtimeSocket awaits fresh auth before each manual
+  reconnect; a rejected token gets one refresh attempt before local invalidation.
+
+### Frozen seams for Claude
+
+- `data/realtime/RealtimeSocket.kt`: Hilt singleton, the only socket constructor;
+  `state`, `events(name)`, `emitWithAck(name,payload,timeoutMs=10000)`, `emit(name,payload)`.
+  `start/stop` belong to MessageService; call code shares subscribe/emit APIs.
+- `data/model/ChatMessage.kt`: nullable server `id` while optimistic, independent
+  `tempId`, server fields plus local `deliveryState`/`error`. Never use tempId as an
+  alarm raise ID. These model fields allow A4's disabled-until-confirmed card.
+- `ui/chat/cards/AlarmCard.kt` and `CallLogCard.kt`: requested composable signatures,
+  simple placeholders only; Claude owns both files from this merge onward.
+- `call/CallLauncher.kt`: `CallKind.Audio/Video`, `start(kind)`. Chat header calls
+  the interface; `di/CallLauncherModule.kt` currently binds a "Calls coming soon"
+  toast. Claude replaces the binding in A5.
+- `/alarm` confirms and sends a raise through the shared send path. No ringing,
+  ack/cancel behavior, WebRTC, audio routing or incoming-call handling implemented.
+
+### Verification
+
+`gradlew.bat assembleDebug lintDebug testDebugUnitTest` passed with 19 JVM tests
+and zero lint issues; PR/CI URL appears in the milestone report. JVM checks cover
+ack validation/error/duplicate, echo-before-ack, lost ack replay after service
+restart, own-tempId scoping, multipage resync with a newer pending-send ack,
+five-minute unknown-delivery safety, receipt monotonicity, reaction replacement,
+ChatViewModel draft/reply/call seam, and connection-ended teardown. Room schema
+queries/transactions are KSP-compiled; actual disk/process/OAuth/socket behavior
+needs the owner device checks. No physical device is connected.
+
+Shared files changed: MainActivity adds ChatViewModel; AppNavigation replaces the
+A1 placeholder and coordinates connection teardown; app/build.gradle.kts exports
+Room schemas. Manifest and libs.versions.toml unchanged. API snapshot still matches
+web main. A1 merged PR: https://github.com/aarahman04/One-on-One-Android/pull/3;
+CI: https://github.com/aarahman04/One-on-One-Android/actions/runs/37593099431.
+
+### Xiaomi / HyperOS device checkpoint (owner; work continues to A3)
+
+- [ ] Two accounts: live send/receive and multiline text; only one bubble per send.
+- [ ] Sent/single tick, delivered/double tick, read/blue ticks; background/resume
+      and return from Settings update read position correctly.
+- [ ] Airplane mode: queue text, rotate/relaunch, restore network. Same pending
+      send reconciles once. An attempted send unconfirmed past five minutes
+      shows delivery unknown and requires the duplicate-risk resend confirmation.
+- [ ] With more than 50 messages, load older pages. Search loaded text, reply to
+      a server message, cancel reply, add/replace/remove each allowed reaction.
+- [ ] Reconnect after 50+ missed messages: all missed pages load in time order;
+      no duplication of sends acked during resync; cached history stays visible.
+- [ ] Sign out/switch accounts: no previous account's conversation/draft shown.
+- [ ] Set/rename nickname. Advance leave once; cooldown disallows another step;
+      cancel your countdown. Both leaving enables immediate end; termination
+      routes both clients away and clears that conversation's local cache/queue.
+- [ ] Voice/video buttons show "Calls coming soon"; `/alarm` confirms a raise
+      and renders the placeholder without sound. A4/A5 functionality is pending.
+- [ ] Light/dark and existing love/samurai wallpapers: readable green/blue or
+      tinted bubbles, correct sender alignment, footer ticks/time and tails.
+- [ ] Large fonts/TalkBack, keyboard, scroll position after loading older messages,
+      background/resume and rotation. Report failures for an immediate fix branch.
+
+A2 contract gaps: none requiring a new endpoint. Known contract bounds: five-minute
+in-memory dedupe and exclusive timestamp cursors. Older uncertain attempts require
+manual confirmation; search is explicitly of loaded messages, matching the available
+history API. Long-lived durable idempotency would require a backend extension.

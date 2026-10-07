@@ -21,6 +21,8 @@ import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -46,6 +48,7 @@ interface AccountSession : TokenSession {
 
 @Singleton
 class AuthRepository @Inject constructor(@ApplicationContext context: Context) : AccountSession {
+    private val refreshLock = Mutex()
     private val credentials = CredentialManager.create(context)
     private val client = if (BuildConfig.SUPABASE_URL.startsWith("https://") &&
         BuildConfig.SUPABASE_ANON_KEY.isNotBlank()) {
@@ -100,21 +103,21 @@ class AuthRepository @Inject constructor(@ApplicationContext context: Context) :
         }
     }
 
-    override suspend fun refreshToken(rejectedToken: String): String? {
-        val auth = client?.auth ?: return null
-        val current = accessToken() ?: return null
+    override suspend fun refreshToken(rejectedToken: String): String? = refreshLock.withLock {
+        val auth = client?.auth ?: return@withLock null
+        val current = accessToken() ?: return@withLock null
         if (current != rejectedToken) {
             // A token refreshed for this user is reusable; an account switch is not.
-            return current.takeIf { tokenSubject(it) != null && tokenSubject(it) == tokenSubject(rejectedToken) }
+            return@withLock current.takeIf { tokenSubject(it) != null && tokenSubject(it) == tokenSubject(rejectedToken) }
         }
         try { auth.refreshCurrentSession() } catch (error: RestException) {
             if (error.statusCode in setOf(400, 401, 403)) {
                 invalidate(rejectedToken)
-                return null
+                return@withLock null
             }
             throw error
         }
-        return auth.currentAccessTokenOrNull()
+        auth.currentAccessTokenOrNull()
     }
 
     override suspend fun invalidate(rejectedToken: String) {

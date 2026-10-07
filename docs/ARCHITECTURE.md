@@ -108,3 +108,63 @@ This milestone consumes only the contract's me/current/request/accept/decline/
 cancel/blocks/unregister/deletion routes. A2 will replace the chat placeholder and
 introduce the frozen RealtimeSocket and rendering/call-launch seams, superseding
 the old A0 diagram's sole-socket-owner label with RealtimeSocket.
+
+## A2 — chat, durable queue and frozen realtime seam
+
+```mermaid
+flowchart LR
+    UI[ChatScreen / cards] --> VM[ChatViewModel / SavedStateHandle draft]
+    VM --> Messages[MessageService / account-connection lifecycle]
+    Messages --> Transport[Transport]
+    Transport --> Internet[InternetTransport]
+    Internet --> Socket[RealtimeSocket / sole Socket.IO owner]
+    Internet --> History[ChatApi / Retrofit history-read]
+    Socket --> Backend[Existing Socket.IO backend]
+    History --> Backend
+    Messages --> Room[Room messages + durable outbox + REST sync position]
+    Header[Voice-video header] --> Launcher[CallLauncher / no-op toast]
+    Claude[Claude A5 signaling] -. frozen API .-> Socket
+    Cards[AlarmCard / CallLogCard] -. frozen signature .-> UI
+```
+
+The A0 diagram's socket ownership label is superseded: only RealtimeSocket creates
+Socket.IO, InternetTransport consumes it, and every message path remains behind
+MessageService/Transport. A singleton application IO scope owns the active
+conversation; per-conversation supervised collectors are cancelled and joined on
+change/sign-out. The socket stays connected in background until teardown; the UI's
+resumed-chat flag controls mark-read (A3 will also use it for notification suppression).
+Call consumers share the same singleton rather than creating another socket.
+
+```mermaid
+sequenceDiagram
+    participant VM as ChatViewModel
+    participant MS as MessageService
+    participant DB as Room
+    participant T as InternetTransport
+    participant S as Backend
+    VM->>MS: send draft
+    MS->>DB: Persist pending tempId before clearing draft
+    MS->>DB: Record first attempt before emitting
+    MS->>T: send with same tempId
+    T->>S: message:send
+    S-->>T: ack saved message / duplicate original
+    S-->>T: message:new echo
+    T-->>MS: Canonical message
+    MS->>DB: Transaction: remove own pending tempId, upsert server id
+    Note over MS,DB: Lost ack/echo: replay within 5 min, else delivery unknown + explicit resend
+    MS->>DB: Read REST sync checkpoint before flush
+    MS->>T: Flush then page after checkpoint until short page
+    T->>S: GET history after cursor
+    MS->>DB: Reconcile each page, advance REST-only checkpoint
+```
+
+Room v1 has composite owner/connection/message keys and a separately persisted
+REST watermark. Incoming/ack timestamps never advance it; otherwise an ack during
+reconnect could skip missing older messages. Server timestamps are normalized to
+fixed-width UTC only for SQLite sort columns; message bodies preserve wire values.
+History replaces reactions authoritatively; a delayed tempId ack preserves newer
+cached reaction changes. Room/cache/receipt flags do not grant membership.
+
+Frozen public APIs and exact placeholder file ownership are listed in PROGRESS.
+Claude may replace the CallLauncher binding and both cards, and add A4/A5 lifecycle
+consumers without changing the message pipeline or opening another socket.

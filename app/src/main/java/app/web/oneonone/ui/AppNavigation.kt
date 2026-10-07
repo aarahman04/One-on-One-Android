@@ -31,12 +31,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import app.web.oneonone.R
+import app.web.oneonone.ui.chat.ChatScreen
+import app.web.oneonone.ui.chat.ChatViewModel
 import java.time.LocalDate
 
 private const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
 @Composable
-fun AppNavigation(viewModel: AppViewModel) {
+fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel) {
     val state by viewModel.state.collectAsState()
     val nav = rememberNavController()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -53,9 +55,15 @@ fun AppNavigation(viewModel: AppViewModel) {
             nav.navigate("home") { popUpTo("home") { inclusive = true }; launchSingleTop = true }
         }
     }
+    LaunchedEffect(state.route, state.connection?.id) {
+        if (state.route != BootRoute.Chat) chatViewModel.close(clear = state.route == BootRoute.Connect)
+    }
     NavHost(nav, startDestination = "home", modifier = Modifier.safeDrawingPadding()) {
         composable("home") {
-            ScreenFrame(state) {
+            val connection = state.connection
+            if (state.route == BootRoute.Chat && connection != null) {
+                ChatScreen(connection, chatViewModel, onSettings = { nav.navigate("settings") }, onRefresh = { viewModel.refresh() }, accountError = state.error)
+            } else ScreenFrame(state) {
                 when (state.route) {
                     BootRoute.Loading -> { Text("Opening your One on One…"); CircularProgressIndicator() }
                     BootRoute.SignIn -> {
@@ -103,11 +111,7 @@ fun AppNavigation(viewModel: AppViewModel) {
                         OutlinedButton(onClick = { viewModel.connectionAction("decline") }, enabled = !state.busy) { Text("Decline") }
                         TextButton(onClick = { nav.navigate("settings") }) { Text("Settings") }
                     }
-                    BootRoute.Chat -> {
-                        Title(state.connection?.otherNickname ?: "Your One on One")
-                        Text("Your connection is ready. Messaging arrives in A2.")
-                        TextButton(onClick = { nav.navigate("settings") }) { Text("Settings") }
-                    }
+                    BootRoute.Chat -> Unit
                 }
             }
         }
