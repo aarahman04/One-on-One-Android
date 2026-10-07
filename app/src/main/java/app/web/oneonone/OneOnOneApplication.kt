@@ -9,6 +9,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import okhttp3.OkHttpClient
 import dagger.hilt.android.HiltAndroidApp
 import app.web.oneonone.alarm.AlarmCoordinator
+import app.web.oneonone.call.CallManager
 import app.web.oneonone.push.NotificationChannels
 import app.web.oneonone.push.PushRegistration
 import javax.inject.Inject
@@ -17,11 +18,13 @@ import javax.inject.Inject
 class OneOnOneApplication : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var pushRegistration: PushRegistration
     @Inject lateinit var alarms: AlarmCoordinator
+    @Inject lateinit var calls: CallManager
     override fun onCreate() {
         super.onCreate()
         NotificationChannels.create(this)
         pushRegistration.start()
         alarms.start()
+        calls.listen()
     }
     @OptIn(coil3.annotation.ExperimentalCoilApi::class)
     override fun newImageLoader(context: Context) = ImageLoader.Builder(context).components {

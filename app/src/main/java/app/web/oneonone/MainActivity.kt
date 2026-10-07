@@ -19,6 +19,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import app.web.oneonone.alarm.AlarmCoordinator
 import app.web.oneonone.alarm.AlarmService
+import app.web.oneonone.call.CallManager
+import app.web.oneonone.call.CallNotifications
+import app.web.oneonone.call.CallUi
+import app.web.oneonone.ui.call.CallOverlay
+import androidx.compose.foundation.layout.Box
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import app.web.oneonone.ui.AppNavigation
 import app.web.oneonone.ui.AppViewModel
@@ -36,14 +42,17 @@ class MainActivity : ComponentActivity() {
     private val featureViewModel: FeatureViewModel by viewModels()
     @Inject lateinit var pushRegistration: PushRegistration
     @Inject lateinit var alarms: AlarmCoordinator
+    @Inject lateinit var calls: CallManager
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleAlarmIntent(intent)
+        handleCallIntent(intent)
         lifecycleScope.launch {
-            // Alarm over (acked, cancelled, silenced, auto-cleared): stop forcing the screen on/over the lock.
+            // Alarm over and no call: stop forcing the screen on/over the lock.
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                AlarmService.ringing.collect { if (it == null) showOverLock(false) }
+                combine(AlarmService.ringing, calls.state) { alarm, call -> alarm != null || call !is CallUi.Idle }
+                    .collect { if (!it) showOverLock(false) }
             }
         }
         setContent {
@@ -55,7 +64,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
             OneOnOneTheme(darkTheme = dark) {
-                Surface(modifier = Modifier.fillMaxSize()) { AppNavigation(viewModel, chatViewModel, featureViewModel, pushRegistration) }
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    Box {
+                        AppNavigation(viewModel, chatViewModel, featureViewModel, pushRegistration)
+                        CallOverlay(calls)
+                    }
+                }
             }
         }
     }
@@ -63,6 +77,22 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleAlarmIntent(intent)
+        handleCallIntent(intent)
+    }
+
+    // From the incoming-call notification: Answer, or the full-screen intent. Token-checked:
+    // this activity is exported and an unchecked "answer" intent would pick up a call silently.
+    private fun handleCallIntent(intent: Intent?) {
+        val action = intent?.action ?: return
+        if (action != CallNotifications.ACTION_ANSWER && action != CallNotifications.ACTION_SHOW) return
+        val callId = intent.getStringExtra(CallNotifications.EXTRA_CALL_ID)
+        val token = intent.getStringExtra(CallNotifications.EXTRA_TOKEN)
+        intent.removeExtra(CallNotifications.EXTRA_TOKEN)
+        intent.removeExtra(CallNotifications.EXTRA_CALL_ID)
+        if (callId != null && CallNotifications.tokenValid(token, callId)) {
+            showOverLock(true)
+            if (action == CallNotifications.ACTION_ANSWER) calls.answerFromNotification(callId)
+        }
     }
 
     // From the alarm notification. This activity is exported, so every extra is untrusted:

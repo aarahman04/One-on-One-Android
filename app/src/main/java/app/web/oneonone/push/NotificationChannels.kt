@@ -15,6 +15,8 @@ object NotificationChannels {
     /** Own alarm sound: used only when a foreground-service start is refused and nothing else rings. */
     const val ALARM_FALLBACK = "alarm_fallback"
     const val CALLS = "calls"
+    /** Silent, low importance: the "call in progress" notification of CallService. */
+    const val CALLS_ONGOING = "calls_ongoing"
     // Channel settings are fixed once created on a device, so the old sounding "alarm"
     // channel (from earlier builds) is removed rather than reused.
     private const val LEGACY_ALARM = "alarm"
@@ -46,6 +48,10 @@ object NotificationChannels {
                 description = "Incoming voice and video calls"
                 setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
                     AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build())
+            },
+            NotificationChannel(CALLS_ONGOING, "Ongoing call", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Shown while a call is in progress"
+                setSound(null, null)
             },
         ))
     }

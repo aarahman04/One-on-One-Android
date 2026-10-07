@@ -311,3 +311,23 @@ full-screen notification"]
 (state from AlarmPolicy)"] -- "ack/cancel with SERVER raise id" --> MessageService
 ```
 
+## Calls (A5)
+
+```mermaid
+flowchart LR
+  Header["Chat header buttons"] --> Launcher[CallLauncher seam] --> CM[CallManager]
+  FCM["FCM call / call_end"] --> PushRouter --> CM
+  Socket["RealtimeSocket
+call:incoming/accepted/signal/ended"] <--> Sig[CallSignaling] <--> CM
+  CM --> RTC["WebRtcSession
+(offer/answer, trickle ICE, ICE restart)"]
+  CM --> Audio["AudioRouter
+MODE_IN_COMMUNICATION, earpiece/speaker/headset, proximity"]
+  CM --> Svc["CallService FGS
+phoneCall|microphone|camera"]
+  CM --> Notif["CallNotifications
+full-screen CallStyle (token-checked Answer)"]
+  CM --> UI["CallOverlay (over AppNavigation)"]
+  RTC <-. "SRTP media (STUN/TURN from /api/turn-credentials)" .-> Peer["Other phone / web"]
+```
+

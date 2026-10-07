@@ -496,3 +496,36 @@ Verified: `assembleDebug lintDebug testDebugUnitTest` pass locally; 10 AlarmPoli
 - [ ] No ack: B's ring stops by itself after 2 minutes; the card shows "expired".
 - [ ] Do Not Disturb on: note whether it rings (depends on the phone's alarm-stream DND settings).
 
+## A5 — voice + video calls (2026-10-07, Claude)
+
+Branch `a5/calls`. Owner: Claude.
+
+- `call/CallManager`: the single call state machine (Idle → NeedsPermission → Outgoing/Incoming → Active → Ended). Binds the frozen `CallLauncher` and `CallPushHandler` seams. Signaling over the shared `RealtimeSocket` (`call/CallSignaling`, events per docs/API-CONTRACT.md). The server owns busy, ring timeout and missed rows. Signals that arrive before our accept ack (the caller offers on `call:accepted`) are queued.
+- `call/WebRtcSession` (stream-webrtc-android): same protocol as the web `CallSession`. Caller offers after accept, callee answers, trickle ICE as `{candidate}`, offerer restarts ICE on a drop, 20 s reconnect grace. Local tracks are attached before any offer can arrive, so the answer always carries our audio. Candidates are held until the remote SDP is set.
+- `call/AudioRouter` (fixes the WebView problems):
+  - MODE_IN_COMMUNICATION for the whole call (full voice-call volume, hardware AEC/NS).
+  - Voice → earpiece, video → speaker; a headset (Bluetooth or wired) always wins; Speaker toggle. Uses `setCommunicationDevice` on API 31+, legacy speakerphone/SCO below.
+  - Proximity wake lock while on the earpiece; everything restored at the end.
+  - Routing choice is pure `RoutePolicy` (tested).
+- `call/CallService`: foreground service `phoneCall|microphone|camera`, with a silent "ongoing call" notification and Hang up.
+- `call/CallNotifications`: incoming full-screen CallStyle notification (insistent ringtone, Answer/Decline), dismissed by `call_end`, `call:ended`, or `call:accepted` from another device. Answer/full-screen intents carry a per-ring token checked in MainActivity (exported). Decline goes through a non-exported receiver that connects just long enough to send `call:decline`.
+- `ui/call/CallOverlay`: full-screen call UI over the whole app. Remote + local video, mute, speaker, camera on/off, flip, end. Requests mic/camera at call time.
+- `CallLogCard`: server-authored call rows (`{kind, outcome, durationSec}`) render like the web card.
+- Manifest: CAMERA, MANAGE_OWN_CALLS, FOREGROUND_SERVICE_PHONE_CALL/MICROPHONE/CAMERA, MODIFY_AUDIO_SETTINGS; new channel `calls_ongoing` (silent).
+- Test dep: `org.json` for unit tests only (android.jar ships stubs).
+
+Verified: `assembleDebug lintDebug testDebugUnitTest` and minified `assembleRelease` pass locally. 11 new unit tests (wire format against web shapes, ICE server parsing, error acks, log text, routing). NOT device-verified, and NOT yet tested against a web caller.
+
+Known limits:
+- If the app is opened from Answer, the chat screen's MessageService restarts the socket on activate. Answering waits for the replayed `call:incoming`, with an 8 s fallback that connects the socket itself.
+- `call:signal` is fire-and-forget, so signals sent while the socket is reconnecting are dropped. ICE restart covers that.
+
+### Device checklist (Xiaomi + a second phone or the web app)
+- [ ] Voice call native → native: audio is in the EARPIECE; screen turns off at the ear; Speaker toggles loud/quiet; volume keys change call volume.
+- [ ] Plug in / connect earphones mid-call: audio moves to them; unplug: back to the earpiece.
+- [ ] Video call: speaker by default, remote volume comparable to WhatsApp, both videos show, flip and camera off work.
+- [ ] Native ↔ web (both directions): connects, two-way audio.
+- [ ] Callee app killed (swiped, Autostart on): full-screen ring over the lock screen; Answer connects; Decline stops the caller's ringing within a few seconds.
+- [ ] Caller cancels while ringing: the callee's ring stops; the chat shows the call log row.
+- [ ] Lock the screen mid-call: the call continues (ongoing notification present).
+
