@@ -79,6 +79,7 @@ ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 dependencies {
     implementation(libs.androidx.core)
+    implementation(libs.androidx.exif)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel)
@@ -109,6 +110,8 @@ dependencies {
     implementation(libs.webrtc)
     implementation(libs.coil.compose)
     implementation(libs.coil.network)
+    implementation(libs.coil.gif)
+    implementation(libs.coil.cache.control)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
 }

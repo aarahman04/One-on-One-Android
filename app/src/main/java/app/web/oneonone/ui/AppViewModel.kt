@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
@@ -61,6 +64,8 @@ class AppViewModel @Inject constructor(
 ) : ViewModel() {
     private val mutable = MutableStateFlow(AppState())
     val state = mutable.asStateFlow()
+    val darkTheme = preferences.theme.map { it == "dark" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
     private val operation = Mutex()
     private var poll: Job? = null
 

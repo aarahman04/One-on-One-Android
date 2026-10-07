@@ -1,0 +1,158 @@
+package app.web.oneonone.ui.chat
+
+import android.net.Uri
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import app.web.oneonone.data.DeviceStore
+import app.web.oneonone.data.api.*
+import app.web.oneonone.data.chat.*
+import app.web.oneonone.data.media.MediaGateway
+import app.web.oneonone.data.model.*
+import app.web.oneonone.ui.userError
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.serialization.json.*
+import javax.inject.Inject
+
+@HiltViewModel
+class FeatureViewModel @Inject constructor(
+    private val service: MessageService, private val account: AccountApi, val media: MediaGateway,
+    private val preferences: DeviceStore, private val saved: SavedStateHandle,
+) : ViewModel() {
+    private val mutableBusy = MutableStateFlow(false)
+    val busy = mutableBusy.asStateFlow()
+    private val mutableError = MutableStateFlow<String?>(null)
+    val error = mutableError.asStateFlow()
+    val recording = MutableStateFlow(false)
+    val playing = MutableStateFlow<String?>(null)
+    val voicePath = saved.getStateFlow<String?>("voicePath", null)
+    val signature = MutableStateFlow("")
+    private var player: MediaPlayer? = null
+    private var playbackJob: Job? = null
+    private var recordingJob: Job? = null
+
+    init { viewModelScope.launch {
+        signature.value = preferences.letterSignature()
+        var hadSession = false
+        service.active.collect { session ->
+            if (session == null && !hadSession) return@collect // Await restored boot routing before clearing a saved clip.
+            if (session != null) hadSession = true
+            val owner = session?.let { "${it.ownerId}/${it.connectionId}" }
+            if (saved.get<String>("mediaOwner") != owner) {
+                background(); discardVoice(); saved["mediaOwner"] = owner
+            }
+        }
+    } }
+    fun clearError() { mutableError.value = null }
+    fun showError(value: String) { mutableError.value = value }
+    private fun action(block: suspend () -> Unit) = viewModelScope.launch {
+        if (mutableBusy.value) return@launch
+        mutableBusy.value = true; mutableError.value = null
+        try { block() } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { mutableError.value = userError(error) }
+        finally { mutableBusy.value = false }
+    }
+    fun send(type: String, content: String, payload: JsonObject, reply: String?, onDone: () -> Unit) = action {
+        service.send(content.ifBlank { featureContent(type, payload) }, type, payload, reply)
+        if (type == "letter") { signature.value = payload.text("from"); preferences.saveLetterSignature(signature.value) }
+        onDone()
+    }
+    fun upload(connection: CurrentConnection, kind: String, uri: Uri, reply: String?, onDone: () -> Unit) = action {
+        val session = ChatSession(connection.myUserId, connection.id)
+        check(service.active.value == session) { "Conversation changed." }
+        val duration = if (kind == "voice") saved.get<Double>("voiceDuration") else null
+        val payload = media.upload(connection.id, kind, uri, duration)
+        check(service.active.value == session) { "Conversation changed during upload." }
+        service.send("", kind, payload, reply)
+        if (kind == "voice") discardVoice()
+        onDone()
+    }
+    fun location(connection: CurrentConnection, reply: String?, onDone: () -> Unit) = action {
+        val session = ChatSession(connection.myUserId, connection.id)
+        check(service.active.value == session) { "Conversation changed." }
+        val payload = media.location()
+        check(service.active.value == session) { "Conversation changed while locating." }
+        service.send(featureContent("location", payload), "location", payload, reply); onDone()
+    }
+    fun record() {
+        if (recordingJob?.isActive == true || recording.value || mutableBusy.value) return
+        mutableError.value = null
+        recordingJob = viewModelScope.launch {
+            try {
+                media.startRecording { viewModelScope.launch { stopRecording() } }
+                recording.value = true
+            } catch (cancelled: CancellationException) { media.releaseRecording(); throw cancelled }
+            catch (error: Exception) { mutableError.value = userError(error) }
+        }
+    }
+    fun stopRecording() = action {
+        recordingJob?.join()
+        val clip = try { media.stopRecording() } finally { recording.value = false }
+        check(clip != null) { "Record for at least one second." }
+        discardVoice(); saved["voicePath"] = clip.file.absolutePath; saved["voiceDuration"] = clip.duration
+    }
+    fun discardVoice() {
+        val path = saved.get<String>("voicePath")
+        saved["voicePath"] = null; saved["voiceDuration"] = null
+        viewModelScope.launch { media.discardVoice(path) }
+    }
+    fun background() {
+        recordingJob?.cancel(); recording.value = false
+        viewModelScope.launch(Dispatchers.IO) { media.releaseRecording() }
+        stopPlayback()
+    }
+    fun play(connection: String, path: String) {
+        if (recording.value) { showError("Stop recording before playing a voice note."); return }
+        if (playing.value == path) { stopPlayback(); return }
+        stopPlayback(); playing.value = path
+        playbackJob = viewModelScope.launch {
+            try {
+                val url = media.signedUrl(connection, path)
+                if (playing.value != path) return@launch
+                check(media.playbackFocus { stopPlayback() }) { "Audio is busy. Try again after other audio finishes." }
+                val next = MediaPlayer()
+                player = next // Assign before configuring so every failure releases the native player.
+                next.apply {
+                    setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                    setDataSource(url)
+                    setOnPreparedListener { if (player === it) it.start() }
+                    setOnCompletionListener { stopPlayback() }
+                    setOnErrorListener { _, _, _ -> mutableError.value = "Couldn't play this voice note. Try again."; stopPlayback(); true }
+                    prepareAsync()
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { stopPlayback(); mutableError.value = userError(error) }
+        }
+    }
+    private fun stopPlayback() { playbackJob?.cancel(); player?.release(); player = null; playing.value = null; media.abandonPlaybackFocus() }
+    fun openFile(connection: String, payload: JsonObject, onReady: (Uri) -> Unit) = action { onReady(media.download(connection, payload)) }
+    fun saveAttachment(connection: String, payload: JsonObject, destination: Uri) = action { media.saveAttachment(connection, payload, destination) }
+    fun theme(value: String) = action { preferences.setTheme(value) }
+    fun wallpaper(connection: String, value: String, done: () -> Unit) = action {
+        require(value in setOf("off", "love", "samurai")); account.wallpaper(connection, WallpaperBody(value)); done()
+    }
+    fun report(connection: String, message: String?, category: String, reason: String, done: () -> Unit) = action {
+        require(category in ReportCategories && reason.trim().length <= 1_000)
+        val body = ReportBody(category, reason.trim())
+        if (message == null) account.reportConnection(connection, body) else account.reportMessage(message, body)
+        done()
+    }
+    fun block(connection: String, done: () -> Unit) = action {
+        account.block(connection); service.deactivate(clear = true); done()
+    }
+    fun export(uri: Uri, connection: CurrentConnection, format: String) = action {
+        val messages = service.exportHistory()
+        val text = withContext(Dispatchers.Default) { exportChat(messages, connection.myUserId, connection.otherNickname ?: "Them", format) }
+        media.save(uri, text)
+    }
+    fun saveLetter(uri: Uri, message: ChatMessage) = action { media.save(uri, letterHtml(message)) }
+    override fun onCleared() {
+        recordingJob?.cancel(); player?.release(); media.abandonPlaybackFocus()
+        // The application-scoped recorder must release even after this ViewModel's scope is cancelled.
+        CoroutineScope(Dispatchers.IO).launch { media.releaseRecording() }
+    }
+}

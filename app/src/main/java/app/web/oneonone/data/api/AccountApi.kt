@@ -20,6 +20,8 @@ import retrofit2.http.Path
 @Serializable data class NicknameBody(val nickname: String)
 @Serializable data class LeaveResult(val status: String, val myLeaveStep: Int, val daysRemaining: Int?, val bothLeaving: Boolean, val terminated: Boolean)
 @Serializable data class LeaveResponse(val leave: LeaveResult)
+@Serializable data class WallpaperBody(val wallpaper: String)
+@Serializable data class ReportBody(val category: String, val reason: String)
 @Serializable data class CurrentConnection(
     val id: String,
     val status: String,
@@ -55,4 +57,8 @@ interface AccountApi {
     @POST("api/connections/{id}/leave") suspend fun leave(@Path("id") id: String): LeaveResponse
     @POST("api/connections/{id}/leave/cancel") suspend fun cancelLeave(@Path("id") id: String): LeaveResponse
     @POST("api/connections/{id}/leave/confirm-end") suspend fun confirmEnd(@Path("id") id: String): LeaveResponse
+    @PATCH("api/connections/{id}/wallpaper") suspend fun wallpaper(@Path("id") id: String, @Body body: WallpaperBody)
+    @POST("api/connections/{id}/block") suspend fun block(@Path("id") id: String)
+    @POST("api/connections/{id}/report") suspend fun reportConnection(@Path("id") id: String, @Body body: ReportBody)
+    @POST("api/messages/{id}/report") suspend fun reportMessage(@Path("id") id: String, @Body body: ReportBody)
 }

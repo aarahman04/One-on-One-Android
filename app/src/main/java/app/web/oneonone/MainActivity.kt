@@ -8,9 +8,12 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import app.web.oneonone.ui.AppNavigation
 import app.web.oneonone.ui.AppViewModel
 import app.web.oneonone.ui.chat.ChatViewModel
+import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.ui.theme.OneOnOneTheme
 import dagger.hilt.android.AndroidEntryPoint
 import app.web.oneonone.push.PushRegistration
@@ -20,13 +23,15 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
     private val viewModel: AppViewModel by viewModels()
     private val chatViewModel: ChatViewModel by viewModels()
+    private val featureViewModel: FeatureViewModel by viewModels()
     @Inject lateinit var pushRegistration: PushRegistration
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            OneOnOneTheme {
-                Surface(modifier = Modifier.fillMaxSize()) { AppNavigation(viewModel, chatViewModel, pushRegistration) }
+            val dark by viewModel.darkTheme.collectAsState()
+            OneOnOneTheme(darkTheme = dark) {
+                Surface(modifier = Modifier.fillMaxSize()) { AppNavigation(viewModel, chatViewModel, featureViewModel, pushRegistration) }
             }
         }
     }

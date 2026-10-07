@@ -122,21 +122,22 @@ class MessageService @Inject constructor(
     }
     fun isChatResumed(connectionId: String): Boolean = chatResumed && active.value?.connectionId == connectionId
 
-    suspend fun send(content: String, type: String = "text", payload: JsonObject? = null, replyTo: String? = null, clientTempId: String? = null): String {
+    suspend fun send(content: String, type: String = "text", payload: JsonObject? = null, replyTo: String? = null, clientTempId: String? = null): String = lifecycle.withLock {
         val session = checkNotNull(active.value) { "No active connection." }
         check(auth.accessToken() != null) { "Sign in to continue." }
         require(type !in setOf("call", "system")) { "This message type is server-authored." }
         require(content.trim().length <= 4_000 && (content.isNotBlank() || type in setOf("alarm", "voice", "image", "file"))) {
             "Messages must be 1–4000 characters."
         }
+        validateFeaturePayload(session.connectionId, type, payload)
         val tempId = clientTempId ?: UUID.randomUUID().toString()
         require(tempId.matches(Regex("[A-Za-z0-9-]{1,64}"))) { "Invalid send ID." }
-        if (store.byTempId(session.ownerId, session.connectionId, tempId) != null) return tempId
+        if (store.byTempId(session.ownerId, session.connectionId, tempId) != null) return@withLock tempId
         store.enqueue(session.ownerId, session.connectionId, ChatMessage(senderId = session.ownerId,
             content = content.trim(), createdAt = Instant.now().toString(), type = type, payload = payload,
             replyTo = replyTo, tempId = tempId, deliveryState = "queued"))
         scope.launch { guarded { flush() } }
-        return tempId
+        tempId
     }
 
     suspend fun retry(tempId: String, confirmedDuplicateRisk: Boolean = false) {
@@ -206,6 +207,22 @@ class MessageService @Inject constructor(
         batch.size == 50
     }
     suspend fun react(messageId: String, emoji: String, remove: Boolean) = transport.react(messageId, emoji, remove)
+    suspend fun exportHistory(): List<ChatMessage> = synchronizing.withLock {
+        // ponytail: export holds the conversation in memory; stream pages for conversations that exceed device memory.
+        val session = checkNotNull(active.value)
+        val all = linkedMapOf<String, ChatMessage>()
+        var before: String? = null
+        while (session == active.value) {
+            val page = transport.history(session.connectionId, before = before)
+            page.forEach { all[checkNotNull(it.id)] = it }
+            if (page.size < 50) break
+            val next = page.minBy { Instant.parse(it.createdAt) }.createdAt
+            check(next != before) { "History cursor did not advance." }
+            before = next
+        }
+        check(session == active.value) { "Conversation changed during export." }
+        all.values.sortedBy { Instant.parse(it.createdAt) }
+    }
     suspend fun findSend(tempId: String): ChatMessage? = active.value?.let { store.byTempId(it.ownerId, it.connectionId, tempId) }
     suspend fun markRead() { active.value?.let { transport.markRead(it.connectionId) } }
 
