@@ -1,0 +1,136 @@
+name: android-build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      versionCode:
+        description: 'Play versionCode (at least 5; increase for every upload)'
+        required: true
+        default: '5'
+      versionName:
+        description: 'Human-readable release version'
+        required: true
+        default: '2.0.0-dev'
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_UPLOAD_KEY_SHA1: '36:A9:69:D6:10:20:E0:7E:33:79:9F:0C:04:CE:F5:1A:63:BB:90:C6'
+  EXPECTED_UPLOAD_KEY_SHA256: '4B:0E:07:42:D4:9B:3A:30:4F:43:C1:3F:44:1E:62:06:91:CE:98:A8:A9:D6:09:5F:E0:71:0F:30:74:C6:74:57'
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build, lint and unit-test without secrets
+        run: ./gradlew --no-daemon assembleDebug lintDebug testDebugUnitTest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANDROID_KEYSTORE_PATH: android.keystore
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      VITE_API_URL: ${{ secrets.VITE_API_URL }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.VITE_GOOGLE_WEB_CLIENT_ID }}
+      APP_VERSION_CODE: ${{ inputs.versionCode }}
+      APP_VERSION_NAME: ${{ inputs.versionName }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require release configuration and restore existing credentials
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD GOOGLE_SERVICES_JSON_BASE64 VITE_API_URL VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY VITE_GOOGLE_WEB_CLIENT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repo secret: $name"
+              exit 1
+            fi
+          done
+          [[ "$APP_VERSION_CODE" =~ ^[1-9][0-9]*$ ]] && (( 10#$APP_VERSION_CODE >= 5 )) || { echo '::error::versionCode must be an integer >= 5 without leading zeros'; exit 1; }
+          test -n "$APP_VERSION_NAME"
+          [[ "$VITE_API_URL" == https://* && "$VITE_SUPABASE_URL" == https://* ]] || { echo '::error::Release URLs must use HTTPS'; exit 1; }
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android.keystore
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
+          python3 - <<'PY'
+          import json
+          with open('app/google-services.json') as source:
+              config = json.load(source)
+          assert config['project_info']['project_id'] == 'one-on-one-508202', 'Wrong Firebase project'
+          assert any(c['client_info']['android_client_info']['package_name'] == 'app.web.oneonone' for c in config['client']), 'Wrong Firebase Android package'
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Assert restored upload certificate (SHA-1 and SHA-256)
+        run: |
+          set -euo pipefail
+          keytool -J-Duser.language=en -list -v -keystore android.keystore -alias oneonone-upload -storepass:env ANDROID_KEYSTORE_PASSWORD > keystore-cert.txt
+          grep -E 'SHA1:|SHA256:' keystore-cert.txt
+          grep -Fq "SHA1: $EXPECTED_UPLOAD_KEY_SHA1" keystore-cert.txt || { echo '::error::Wrong upload-key SHA-1'; exit 1; }
+          grep -Fq "SHA256: $EXPECTED_UPLOAD_KEY_SHA256" keystore-cert.txt || { echo '::error::Wrong upload-key SHA-256'; exit 1; }
+      - name: Build signed AAB and APK
+        run: ./gradlew --no-daemon bundleRelease assembleRelease -PappVersionCode="$APP_VERSION_CODE" -PappVersionName="$APP_VERSION_NAME"
+      - name: Verify both output signers and APK identity/version
+        run: |
+          set -euo pipefail
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -f "$AAB" && test -f "$APK"
+          keytool -J-Duser.language=en -printcert -jarfile "$AAB" > aab-cert.txt
+          grep -E 'SHA1:|SHA256:' aab-cert.txt
+          grep -Fq "SHA1: $EXPECTED_UPLOAD_KEY_SHA1" aab-cert.txt || { echo '::error::Wrong AAB signer SHA-1'; exit 1; }
+          grep -Fq "SHA256: $EXPECTED_UPLOAD_KEY_SHA256" aab-cert.txt || { echo '::error::Wrong AAB signer SHA-256'; exit 1; }
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          "$TOOLS/apksigner" verify --print-certs "$APK" > apk-cert.txt
+          grep -E 'SHA-1 digest|SHA-256 digest' apk-cert.txt
+          WANT_SHA1="$(printf '%s' "$EXPECTED_UPLOAD_KEY_SHA1" | tr -d ':' | tr 'A-F' 'a-f')"
+          WANT_SHA256="$(printf '%s' "$EXPECTED_UPLOAD_KEY_SHA256" | tr -d ':' | tr 'A-F' 'a-f')"
+          grep -Fq "SHA-1 digest: $WANT_SHA1" apk-cert.txt || { echo '::error::Wrong APK signer SHA-1'; exit 1; }
+          grep -Fq "SHA-256 digest: $WANT_SHA256" apk-cert.txt || { echo '::error::Wrong APK signer SHA-256'; exit 1; }
+          "$TOOLS/aapt2" dump badging "$APK" > apk-badging.txt
+          grep "^package:" apk-badging.txt
+          grep -Fq "name='app.web.oneonone'" apk-badging.txt
+          grep -Fq "versionCode='$APP_VERSION_CODE'" apk-badging.txt
+          grep -Fq "versionName='$APP_VERSION_NAME'" apk-badging.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: |
+            app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+      - name: Scrub credentials
+        if: always()
+        run: rm -f android.keystore app/google-services.json keystore-cert.txt aab-cert.txt apk-cert.txt apk-badging.txt

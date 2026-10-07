@@ -1,0 +1,11 @@
+# Copy to local.properties; use forward slashes for the SDK path on Windows.
+sdk.dir=C\:/Users/YOUR_USER/AppData/Local/Android/Sdk
+# Values from the web repo's client/.env. Never put server/service-role keys here.
+VITE_API_URL=
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+VITE_GOOGLE_WEB_CLIENT_ID=
+# Optional release signing (the existing upload key, alias oneonone-upload).
+# ANDROID_KEYSTORE_PATH=C\:/path/to/android.keystore
+# ANDROID_KEYSTORE_PASSWORD=
+# ANDROID_KEY_PASSWORD=
