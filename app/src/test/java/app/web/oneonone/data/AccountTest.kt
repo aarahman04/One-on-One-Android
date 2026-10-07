@@ -4,6 +4,7 @@ import android.content.Context
 import app.web.oneonone.data.api.*
 import app.web.oneonone.data.auth.AccountSession
 import app.web.oneonone.data.auth.sha256Hex
+import app.web.oneonone.data.auth.tokenSubject
 import app.web.oneonone.ui.AppViewModel
 import app.web.oneonone.ui.BootRoute
 import app.web.oneonone.ui.isAdult
@@ -86,6 +87,8 @@ fun connection(status: String, requester: Boolean) = CurrentConnection(
 class AccountTest {
     @Test fun nonceAndInputValidation() {
         assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", sha256Hex("abc"))
+        assertEquals("user", tokenSubject("header.eyJzdWIiOiJ1c2VyIn0.signature"))
+        assertNull(tokenSubject("invalid"))
         assertEquals("ABCDEFGH", normalizeCode(" abcdefgh "))
         listOf("", "ABCDEFGI", "ABCDEFG0", "ABCDEFGH/").forEach {
             assertTrue(runCatching { normalizeCode(it) }.isFailure)
