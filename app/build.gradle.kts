@@ -56,8 +56,9 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("upload")
-            // R8 rules and device verification belong to A7.
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     buildFeatures {

@@ -35,15 +35,18 @@ $env:JAVA_HOME = 'C:/Program Files/Android/Android Studio/jbr'
 
 Linux/macOS: `./gradlew assembleDebug lintDebug testDebugUnitTest`.
 Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Lint/test reports are in
-`app/build/reports/`. No auth token registration or backend changes occur in A0.
-Firebase token auto-init is off until the A3 registration lifecycle exists.
+`app/build/reports/`. Firebase token auto-init is enabled by the authenticated A3
+registration lifecycle; API-contract changes remain Claude-owned.
 
 ## CI and releases
 
 `android-build` runs debug assembly, strict lint and JVM tests on PRs and main
 pushes, then uploads the debug APK/reports. Manual dispatch runs those checks
 first, then produces **signed AAB + APK** using `versionCode` and `versionName`
-inputs. A0 is for device evaluation; do not upload it to the existing Play track.
+inputs. PRs also smoke-build unsigned minified APK/AAB, run release lint and native
+16 KB static checks, and upload `android-release-smoke-unsigned` with R8 mapping.
+Unsigned smoke outputs are for inspection only. See [release checklist](docs/RELEASE-CHECKLIST.md)
+for the Data Safety draft and required integration/device/signing gates.
 
 Set these Actions secrets **in this Android repo** (web repo secrets do not carry
 over). Use the existing values; never create another upload keystore:
@@ -77,7 +80,8 @@ to find this machine's debug SHA-1/SHA-256; register both in the existing Fireba
 Android app, and register the debug SHA-1 in Google Cloud Android OAuth.
 Register the upload fingerprints above and the Play App Signing SHA-1/SHA-256
 from Play Console → App integrity. Never replace the existing Firebase app.
-Auth is not implemented in A0, so these registrations are not yet device-verified.
+Auth is implemented; live sign-in and production signing registrations still need
+owner verification on the final signed build.
 
 This machine's debug certificate (checked with keytool during A0):
 
@@ -93,7 +97,8 @@ The full requested stack is pinned in `gradle/libs.versions.toml`: Compose /
 Material 3, Navigation, Hilt + KSP, Retrofit/OkHttp/serialization, Socket.IO 2.x
 (v4-server compatible), supabase-kt Auth + Credential Manager, Room, DataStore,
 WorkManager, Firebase Messaging, Stream WebRTC and Coil. Dependencies are wired;
-business services and runtime permissions arrive only with their milestones.
+the owned auth/chat/normal-push/feature milestones are merged. Claude owns alarm
+and calls; their seams remain placeholders until A4/A5 integration.
 
 The backend remains in the read-only sibling web repo. Its
 `docs/API-CONTRACT.md` is the only API authority. The copy here is a reference
@@ -101,8 +106,10 @@ snapshot, not a second independently editable specification.
 
 See [architecture](docs/ARCHITECTURE.md), [progress and Xiaomi checklist](docs/PROGRESS.md)
 and [full instructions](docs/prompts/gpt-sol-6.1-android.md). A0 is the initial
-commit on main; A1–A7 each get a branch + PR. Never merge automatically. Stop
-after each milestone for Xiaomi/HyperOS device verification.
+commit on main; A1–A7 each get a branch + PR. Follow the current task prompt for
+merge authority. The [phase-2 prompt](docs/prompts/gpt-sol-6.1-phase2.md) authorizes
+agent merges only after green CI and continues through owned milestones while
+the owner performs Xiaomi checkpoints. Play uploads remain manual.
 
 Platform references checked for A0: [Android 17](https://developer.android.com/about/versions/17),
 [AGP 9.1.1 compatibility](https://developer.android.com/build/releases/agp-9-1-0-release-notes),

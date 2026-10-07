@@ -10,6 +10,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.SideEffect
+import androidx.core.view.WindowInsetsControllerCompat
 import app.web.oneonone.ui.AppNavigation
 import app.web.oneonone.ui.AppViewModel
 import app.web.oneonone.ui.chat.ChatViewModel
@@ -30,6 +32,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val dark by viewModel.darkTheme.collectAsState()
+            SideEffect {
+                WindowInsetsControllerCompat(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
             OneOnOneTheme(darkTheme = dark) {
                 Surface(modifier = Modifier.fillMaxSize()) { AppNavigation(viewModel, chatViewModel, featureViewModel, pushRegistration) }
             }
