@@ -49,8 +49,11 @@ class MemoryMessageStore : MessageStore {
     override suspend fun reconcile(owner: String, connection: String, message: ChatMessage) {
         val pendingKey = resolvedPendingKey(owner, message)
         rows.value = rows.value.filterNot { it.ownerId == owner && it.connectionId == connection && it.key == pendingKey }
-        put(MessageEntity(owner, connection, checkNotNull(message.id), message.tempId, message.createdAt,
-            testJson.encodeToString(message), "sent"))
+        val existing = rows.value.find { it.ownerId == owner && it.connectionId == connection && it.key == message.id }
+            ?.let { testJson.decodeFromString<ChatMessage>(it.body) }
+        val canonical = reconcileStored(existing, message)
+        put(MessageEntity(owner, connection, checkNotNull(message.id), canonical.tempId, message.createdAt,
+            testJson.encodeToString(canonical), "sent"))
     }
     override suspend fun reaction(owner: String, connection: String, update: ReactionUpdate) { }
     override suspend fun watermark(owner: String, connection: String) = positions[owner to connection]
@@ -62,6 +65,9 @@ class MemoryMessageStore : MessageStore {
         rows.value = rows.value.filterNot { it.ownerId == owner && it.connectionId == connection }
         positions.remove(owner to connection)
     }
+    override suspend fun byTempId(owner: String, connection: String, tempId: String) = rows.value.find {
+        it.ownerId == owner && it.connectionId == connection && it.tempId == tempId
+    }?.let { testJson.decodeFromString<ChatMessage>(it.body).copy(deliveryState = it.status, error = it.error) }
 }
 
 class FakeTransport : Transport {

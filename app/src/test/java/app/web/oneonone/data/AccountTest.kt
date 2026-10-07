@@ -1,6 +1,7 @@
 package app.web.oneonone.data
 
 import android.content.Context
+import androidx.lifecycle.viewModelScope
 import app.web.oneonone.data.api.*
 import app.web.oneonone.data.auth.AccountSession
 import app.web.oneonone.data.auth.sha256Hex
@@ -9,6 +10,7 @@ import app.web.oneonone.ui.AppViewModel
 import app.web.oneonone.ui.BootRoute
 import app.web.oneonone.ui.isAdult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.JsonObject
@@ -39,14 +41,18 @@ class FakeSession : AccountSession {
 class FakeDeviceStore : DeviceStore {
     var savedGates = Gates(true, true)
     var token: String? = "device-token"
+    var seenOnboarding = true
     override suspend fun gates() = savedGates
     override suspend fun verifyAge() { savedGates = savedGates.copy(ageVerified = true) }
     override suspend fun acceptTerms() { savedGates = savedGates.copy(termsAccepted = true) }
     override suspend fun pushToken() = token
     override suspend fun savePushToken(token: String?) { this.token = token }
+    override suspend fun onboardingSeen() = seenOnboarding
+    override suspend fun markOnboardingSeen() { seenOnboarding = true }
+    override suspend fun claimNotification(messageId: String) = true
 }
 
-class FakeAccountApi(val session: FakeSession) : AccountApi {
+open class FakeAccountApi(val session: FakeSession) : AccountApi {
     var current: CurrentConnection? = null
     var unregisterFails = false
     var requestedCode: String? = null
@@ -77,6 +83,7 @@ class FakeAccountApi(val session: FakeSession) : AccountApi {
         session.operations.add("unregister")
     }
     override suspend fun nickname(id: String, body: NicknameBody) { }
+    override suspend fun register(body: PushTokenBody) { session.operations.add("register:${body.platform}") }
     override suspend fun leave(id: String) = LeaveResponse(LeaveResult("leave_pending", 1, 4, false, false))
     override suspend fun cancelLeave(id: String) = LeaveResponse(LeaveResult("active", 0, null, false, false))
     override suspend fun confirmEnd(id: String) = LeaveResponse(LeaveResult("terminated", 5, 0, true, true))
@@ -89,6 +96,26 @@ fun connection(status: String, requester: Boolean) = CurrentConnection(
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class AccountTest {
+    @Test fun onboardingAppearsAfterConsentAndOnlyOnce() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val session = FakeSession()
+            val preferences = FakeDeviceStore().apply { savedGates = Gates(); seenOnboarding = false }
+            val vm = AppViewModel(session, AccountRepository(FakeAccountApi(session), session, preferences), preferences)
+            runCurrent()
+            assertEquals(BootRoute.Age, vm.state.value.route)
+            assertFalse(vm.state.value.needsNotificationOnboarding)
+            vm.verifyAge(LocalDate.now().minusYears(18)); runCurrent()
+            vm.acceptTerms(); runCurrent()
+            assertTrue(vm.state.value.needsNotificationOnboarding)
+            vm.onboardingShown(); runCurrent()
+            vm.refresh(); runCurrent()
+            assertTrue(preferences.seenOnboarding)
+            assertFalse(vm.state.value.needsNotificationOnboarding)
+            vm.viewModelScope.cancel(); runCurrent()
+        } finally { Dispatchers.resetMain() }
+    }
+
     @Test fun nonceAndInputValidation() {
         assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", sha256Hex("abc"))
         assertEquals("user", tokenSubject("header.eyJzdWIiOiJ1c2VyIn0.signature"))

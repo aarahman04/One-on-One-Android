@@ -33,6 +33,8 @@ interface ChatDao {
     fun observe(owner: String, connection: String): Flow<List<MessageEntity>>
     @Query("SELECT * FROM messages WHERE ownerId = :owner AND connectionId = :connection AND `key` = :key")
     suspend fun get(owner: String, connection: String, key: String): MessageEntity?
+    @Query("SELECT * FROM messages WHERE ownerId = :owner AND connectionId = :connection AND tempId = :tempId LIMIT 1")
+    suspend fun byTempId(owner: String, connection: String, tempId: String): MessageEntity?
     @Query("SELECT * FROM messages WHERE ownerId = :owner AND connectionId = :connection AND status != 'sent' ORDER BY createdAt, `key`")
     suspend fun pending(owner: String, connection: String): List<MessageEntity>
     @Upsert suspend fun put(message: MessageEntity)
@@ -64,10 +66,15 @@ interface MessageStore {
     suspend fun position(owner: String, connection: String, at: String)
     suspend fun oldest(owner: String, connection: String): String?
     suspend fun clear(owner: String, connection: String)
+    suspend fun byTempId(owner: String, connection: String, tempId: String): ChatMessage?
 }
 
 internal fun resolvedPendingKey(owner: String, message: ChatMessage): String? =
     message.tempId?.takeIf { message.senderId == owner }?.let { "pending:$it" }
+
+internal fun reconcileStored(existing: ChatMessage?, message: ChatMessage): ChatMessage =
+    (if (message.tempId != null && existing != null) message.copy(reactions = existing.reactions) else message)
+        .copy(tempId = message.tempId ?: existing?.tempId, deliveryState = "sent", error = null)
 
 private fun sortableTime(value: String): String = DateTimeFormatterBuilder().appendInstant(9)
     .toFormatter().format(Instant.parse(value))
@@ -108,8 +115,8 @@ class RoomMessageStore @Inject constructor(private val db: ChatDatabase, private
         val id = checkNotNull(message.id) { "Missing server message ID." }
         resolvedPendingKey(owner, message)?.let { dao.delete(owner, connection, it) }
         val existing = dao.get(owner, connection, id)?.let { json.decodeFromString<ChatMessage>(it.body) }
-        val canonical = if (message.tempId != null && existing != null) message.copy(reactions = existing.reactions) else message
-        dao.put(MessageEntity(owner, connection, id, message.tempId, sortableTime(message.createdAt),
+        val canonical = reconcileStored(existing, message)
+        dao.put(MessageEntity(owner, connection, id, canonical.tempId, sortableTime(message.createdAt),
             json.encodeToString(canonical.copy(deliveryState = "sent", error = null)), "sent"))
     }
     override suspend fun reaction(owner: String, connection: String, update: ReactionUpdate) = db.withTransaction {
@@ -125,4 +132,8 @@ class RoomMessageStore @Inject constructor(private val db: ChatDatabase, private
     override suspend fun clear(owner: String, connection: String) = db.withTransaction {
         dao.clearMessages(owner, connection); dao.clearPosition(owner, connection)
     }
+    override suspend fun byTempId(owner: String, connection: String, tempId: String): ChatMessage? =
+        dao.byTempId(owner, connection, tempId)?.let {
+            json.decodeFromString<ChatMessage>(it.body).copy(deliveryState = it.status, error = it.error)
+        }
 }

@@ -13,6 +13,7 @@ import retrofit2.http.Path
 @Serializable data class CodeResult(val connectionCode: String)
 @Serializable data class ConnectionRequest(val connectionCode: String)
 @Serializable data class TokenBody(val token: String)
+@Serializable data class PushTokenBody(val token: String, val platform: String)
 @Serializable data class BlockedUser(val blockedUserId: String, val createdAt: String)
 @Serializable data class BlocksResult(val blocks: List<BlockedUser>)
 @Serializable data class CurrentResult(val connection: CurrentConnection?)
@@ -49,6 +50,7 @@ interface AccountApi {
     @POST("api/connections/{id}/decline") suspend fun decline(@Path("id") id: String): JsonObject
     @POST("api/connections/{id}/cancel") suspend fun cancel(@Path("id") id: String): JsonObject
     @POST("api/push/token/unregister") suspend fun unregister(@Body body: TokenBody)
+    @POST("api/push/token") suspend fun register(@Body body: PushTokenBody)
     @PATCH("api/connections/{id}/nickname") suspend fun nickname(@Path("id") id: String, @Body body: NicknameBody)
     @POST("api/connections/{id}/leave") suspend fun leave(@Path("id") id: String): LeaveResponse
     @POST("api/connections/{id}/leave/cancel") suspend fun cancelLeave(@Path("id") id: String): LeaveResponse
