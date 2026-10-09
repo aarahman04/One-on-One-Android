@@ -628,3 +628,19 @@ Device checklist (Xiaomi/HyperOS + second phone/web, owner):
 - [ ] Incoming/outgoing, connected/reconnecting and video calls in dark/light, portrait/landscape: Answer/Decline/Cancel/End, Mute/Speaker/Camera/Flip remain reachable; verify remote video, mirrored local preview, audio routes, mic/camera permissions and lock-screen continuation on hardware.
 - [ ] Disable animator scale and confirm static ringing/reconnecting rings; re-enable while open and verify the 2s/1.1s pulse. Entry, rotation, narrow widths and large fonts must not obscure controls.
 - [ ] Revisit the image metadata, voice-progress, call-back and shared-modal TODOs when their owning interfaces are extended.
+
+## S5 — restyle polish (2026-10-10)
+
+Status: done (Opus 5.5). Final consistency pass after S1–S4.
+
+- Chat dialogs still on stock Material (alarm confirm, resend, nickname, leave) now use `FeatureModal`/`OneModal` with web buttons: Send alarm / Advance / End = DangerButton, Resend / Save = PrimaryButton, Cancel / Keep = SecondaryButton, nickname = `OneTextField`. Callbacks unchanged.
+- Alarm: the 4dp danger bar moved from the card onto the bubble's left edge (web `.chat__message[data-type='alarm'] .chat__message-body { border-left }`), for every alarm-type bubble; `AlarmContent` lost its now-unused `live` param.
+- Sign-in legal links match web `.screen__legal`: Privacy Policy, Terms, Child Safety, 12sp text-dim.
+- Removed `res/raw/keep.xml` and the three never-used icons (`ic_arrow_left`, `ic_search`, `ic_volume_off`); every remaining `ic_*` is referenced.
+- Audit: no `Color(0x…)` literals outside `ui/theme` except the documented `LetterThemes`; no stock `AlertDialog` / `OutlinedTextField` / `TextButton` / `FilterChip` left in UI.
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` green. Pixel 9a emulator (API 36): sign-in screen renders with Fraunces title, Figtree body, accent-you primary button, web legal row — `docs/design/screens/android-signin-dark.png`.
+
+Known content differences vs web (not styling, left as-is pending owner call): Android sign-in shows the app logo, title "One on One" and tagline; web shows only eyebrow + title "one connection. nothing else.".
+
+Device checklist: open each chat dialog above (dark + light); alarm bubble shows red left bar for raise and ack; legal links open the right pages.

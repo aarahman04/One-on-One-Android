@@ -101,7 +101,7 @@ private fun FeaturePreview(palette: BubblePalette, message: ChatMessage) {
 
 @Preview(name = "Alarm card", widthDp = 390)
 @Composable private fun AlarmCardPreview(@PreviewParameter(CardPalettePreviews::class) palette: BubblePalette) {
-    CardPreview(palette, sample("alarm")) { mine -> AlarmContent(if (mine) "tap to cancel" else "tap to acknowledge", true, true, {}) }
+    CardPreview(palette, sample("alarm")) { mine -> AlarmContent(if (mine) "tap to cancel" else "tap to acknowledge", true, {}) }
 }
 
 @Preview(name = "Alarm acknowledgment", widthDp = 390)
