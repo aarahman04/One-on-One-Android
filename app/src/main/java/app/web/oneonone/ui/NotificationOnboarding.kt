@@ -11,18 +11,27 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.net.toUri
 import app.web.oneonone.push.PushRegistration
+import app.web.oneonone.ui.components.PrimaryButton
+import app.web.oneonone.ui.components.SecondaryButton
+import app.web.oneonone.ui.theme.OneOnOneTheme
+import app.web.oneonone.ui.theme.OneTextStyles
+import app.web.oneonone.ui.theme.OneTheme
 import java.util.Locale
 
 @Composable
@@ -45,26 +54,61 @@ fun NotificationOnboarding(registration: PushRegistration, onDone: () -> Unit) {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Stay connected", style = MaterialTheme.typography.headlineMedium)
-        Text("Let messages reach you when One on One is closed. These settings are optional and can be changed here later.")
-        Text(if (allowed) "Notifications allowed" else "Notifications are turned off")
-        if (Build.VERSION.SDK_INT >= 33 && !allowed) Button(onClick = { permission.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("Allow notifications") }
-        OutlinedButton(onClick = { openSetting(context, listOf(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))) }) { Text("Notification settings") }
-        if (Build.VERSION.SDK_INT >= 34) {
-            Text(if (fullScreen) "Full-screen alerts allowed" else "Full-screen alerts are off")
-            Text("Full-screen permission lets emergency alarms and calls appear over the lock screen when those features are available.")
-            OutlinedButton(onClick = { openSetting(context, listOf(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).setData("package:${context.packageName}".toUri()))) }) { Text("Full-screen alerts") }
+    NotificationContent(allowed, fullScreen, Build.VERSION.SDK_INT, problem,
+        onAllow = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) },
+        onNotificationSettings = { openSetting(context, listOf(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))) },
+        onFullScreenSettings = { if (Build.VERSION.SDK_INT >= 34) openSetting(context, listOf(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).setData("package:${context.packageName}".toUri()))) },
+        onAutostart = { openSetting(context, autostartIntents(Build.MANUFACTURER)) },
+        onBattery = { openSetting(context, batteryIntents(context, Build.MANUFACTURER)) },
+        onRetry = { registration.schedule() }, onDone = onDone)
+}
+
+@Composable
+private fun NotificationContent(allowed: Boolean, fullScreen: Boolean, sdk: Int, problem: String?,
+    onAllow: () -> Unit, onNotificationSettings: () -> Unit, onFullScreenSettings: () -> Unit,
+    onAutostart: () -> Unit, onBattery: () -> Unit, onRetry: () -> Unit, onDone: () -> Unit) {
+    ScreenFrame(AppState(), screenKey = "notifications") {
+        Surface(Modifier.widthIn(max = 364.dp).fillMaxWidth(), color = OneTheme.colors.bgRaised,
+            shape = RoundedCornerShape(OneTheme.radii.md10), border = BorderStroke(1.dp, OneTheme.colors.border)) {
+            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Stay connected", style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.Bold), color = OneTheme.colors.text)
+                NotificationBody("Let messages reach you when One on One is closed. These settings are optional and can be changed here later.")
+                NotificationBody(if (allowed) "Notifications allowed" else "Notifications are turned off")
+                if (sdk >= 33 && !allowed) PrimaryButton("Allow notifications", onAllow)
+                SecondaryButton("Notification settings", onNotificationSettings)
+                if (sdk >= 34) {
+                    NotificationBody(if (fullScreen) "Full-screen alerts allowed" else "Full-screen alerts are off")
+                    NotificationBody("Full-screen permission lets emergency alarms and calls appear over the lock screen when those features are available.")
+                    SecondaryButton("Full-screen alerts", onFullScreenSettings)
+                }
+                Text("Phone background settings", style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.Bold), color = OneTheme.colors.text)
+                NotificationBody("On Xiaomi, Redmi and POCO (MIUI/HyperOS), enable Background autostart and set battery saver to No restrictions. Oppo, Vivo, OnePlus and Samsung may also restrict background activity; allow autostart/background use and remove this app from sleeping apps.")
+                SecondaryButton("Autostart / background activity", onAutostart)
+                SecondaryButton("Battery restrictions", onBattery)
+                NotificationBody("If a shortcut opens App info instead, look for battery/background settings there. Removing the app from recents is different from Force stop: Force stop blocks pushes until you reopen it.")
+                problem?.let { Text(it, style = OneTextStyles.cardHint, color = OneTheme.colors.danger) }
+                SecondaryButton("Retry notification registration", onRetry)
+                PrimaryButton("Continue", onDone)
+            }
         }
-        Text("Phone background settings", style = MaterialTheme.typography.titleMedium)
-        Text("On Xiaomi, Redmi and POCO (MIUI/HyperOS), enable Background autostart and set battery saver to No restrictions. Oppo, Vivo, OnePlus and Samsung may also restrict background activity; allow autostart/background use and remove this app from sleeping apps.")
-        OutlinedButton(onClick = { openSetting(context, autostartIntents(Build.MANUFACTURER)) }) { Text("Autostart / background activity") }
-        OutlinedButton(onClick = { openSetting(context, batteryIntents(context, Build.MANUFACTURER)) }) { Text("Battery restrictions") }
-        Text("If a shortcut opens App info instead, look for battery/background settings there. Removing the app from recents is different from Force stop: Force stop blocks pushes until you reopen it.")
-        problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        TextButton(onClick = { registration.schedule() }) { Text("Retry notification registration") }
-        Button(onClick = onDone) { Text("Continue") }
     }
+}
+
+@Composable
+private fun NotificationBody(text: String) {
+    Text(text, Modifier.widthIn(max = 320.dp), style = OneTextStyles.subtitle.copy(fontSize = 14.sp, lineHeight = 21.sp), color = OneTheme.colors.textDim)
+}
+
+@Preview(name = "Notifications", widthDp = 390, heightDp = 1200)
+@Composable
+private fun NotificationPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
+    OneOnOneTheme(darkTheme = dark) { NotificationContent(false, false, 34, null, {}, {}, {}, {}, {}, {}, {}) }
+}
+
+@Preview(name = "Notifications allowed", widthDp = 390, heightDp = 1200)
+@Composable
+private fun NotificationAllowedPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
+    OneOnOneTheme(darkTheme = dark) { NotificationContent(true, true, 34, null, {}, {}, {}, {}, {}, {}, {}) }
 }
 
 private fun component(packageName: String, className: String) = Intent().setComponent(ComponentName(packageName, className))
