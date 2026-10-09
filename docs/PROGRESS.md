@@ -6,10 +6,11 @@
 | A1 | Merged, PR #3; green CI; device QA pending | Auth and connection |
 | A2 | Merged, PR #4; green CI; device QA pending | Chat core and transport |
 | A3 | Merged, PR #5; green CI; device QA pending | Killed-app notifications |
-| A4 | Not started | Emergency alarm |
-| A5 | Not started | Earpiece-correct voice/video calls |
+| A4 | Merged, PR #8; green CI; device QA pending | Emergency alarm |
+| A5 | Merged, PR #9; green CI; device QA pending | Earpiece-correct voice/video calls |
 | A6 | Merged, PR #6; green CI; device QA pending | Feature parity |
-| A7 | Implemented; merge gated by CI; device QA pending | Release hardening and Play checklist |
+| A7 | Merged, PR #7; green CI; device QA pending | Release hardening and Play checklist |
+| S1–S5 | Merged, PRs #10–#14; green CI; device QA pending | Restyle to match the web client (tokens, fonts, icons, chat, screens, cards, call overlay) |
 
 ## A0 â€” 2026-10-07
 
@@ -644,3 +645,19 @@ Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` green. Pixel
 Known content differences vs web (not styling, left as-is pending owner call): Android sign-in shows the app logo, title "One on One" and tagline; web shows only eyebrow + title "one connection. nothing else.".
 
 Device checklist: open each chat dialog above (dark + light); alarm bubble shows red left bar for raise and ack; legal links open the right pages.
+
+## Releases
+
+| versionName | versionCode | Date | Workflow run | Contents |
+| --- | --- | --- | --- | --- |
+| 1.0.4 | 5 | 2026-10-09 | [37893939464](https://github.com/aarahman04/One-on-One-Android/actions/runs/37893939464) | A0–A7 native app |
+| 1.0.5 | 6 | 2026-10-10 | [37998420889](https://github.com/aarahman04/One-on-One-Android/actions/runs/37998420889) | A0–A7 + S1–S5 web-styling restyle |
+
+- Both built by the `android-build` workflow (manual dispatch on `main`); version
+  name/code are workflow inputs, not stored in the repo. Signed with the existing
+  Play upload key (SHA-1 check in the release job passed). Use the
+  `android-release` artifact (AAB + APK); `android-debug` and
+  `android-release-smoke-unsigned` are test-only.
+- Not yet uploaded to Play. **Next upload needs versionCode 7 or higher.**
+- Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
+  S2–S5 device checklists above, then upload the AAB to internal testing.
