@@ -578,3 +578,27 @@ Device checklist:
 - [ ] Paperclip toggles attach controls; mic opens them with Voice note; send circle appears only with text.
 - [ ] More menu: every entry opens what it did before; "Connection & account" expands; header video/phone start calls (disabled while recording).
 - [ ] New incoming/outgoing message animates in; opening the chat does not animate history.
+
+## S3 — pre-chat screens restyle (2026-10-10)
+
+Branch `style/s3-screens`. Presentation only; reuses the merged S1 foundation.
+
+- Restyled loading, sign-in, age, under-age, consent, connection ID/connect, waiting, request, Settings and Blocks with the web screen vocabulary: centered scrolling content, responsive 16/24dp padding, 20dp gaps, Fraunces titles, Figtree subtitles and shared button/field/link primitives.
+- Connection ID uses the raised bordered panel, JetBrains Mono tracking, 24sp below 480dp and 32sp otherwise. Screen entry fades and rises 8dp over 280ms with the standard easing, keyed to the route rather than recomposition.
+- Delete-account confirmation uses `OneModal`, `OneTextField` and `DangerButton`; confirmation, busy guards and dismissal behavior are preserved. Notification onboarding uses the rationale panel's raised surface, bold title and 14sp body while retaining every Android permission/settings action.
+- Dark/light `@Preview` variants cover every restyled screen and the delete dialog, plus empty Blocks, notification permission states, busy/error and tablet Connect. Preview data and callbacks do not involve ViewModels or network calls.
+- All 54 original AppNavigation and 46 original notification string literals remain. ViewModel calls, navigation, clipboard, date selection, consent, delete confirmation and notification/OEM callbacks were traced before/after; the full inventory is in the PR description. No theme/component, dependency, chat, call, alarm or web files changed. No architecture change.
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` passed locally (56 tests, no failures/errors; lint warnings treated as errors). Source preservation self-check passed, including identical notification lifecycle and OEM settings helpers. Physical Xiaomi behavior has not been tested.
+
+Foundation TODOs (outside S3 ownership): `TextLink` fixes font size at 13sp, so 12sp legal links need a style parameter; `OneTextField` has no visual transformation, so uppercase-only presentation of the entered connection ID needs that parameter without changing the raw value submitted to `request`.
+
+Device checklist (Xiaomi/HyperOS, owner):
+- [ ] In-app Appearance: choose dark and light, then visit every pre-chat screen and Settings/Blocks; confirm backgrounds, fonts and borders match the web reference, independently of system theme. Repeat with love/samurai selected (pre-chat screens keep the normal theme).
+- [ ] At phone and tablet/split-screen widths, verify the 480dp breakpoint, centered layout, connection ID sizing, safe-area spacing and wrapping; increase font size and use TalkBack. Scroll short screens/notification onboarding to every action; open the keyboard without losing fields or controls.
+- [ ] Route changes animate once; polling, busy/error changes and typing do not restart entry. Disable system animations and check reduced motion.
+- [ ] Sign in with Google; open both legal links. Pick/change a birth date, Continue, verify the under-age Sign out path and the consent checkbox/Agree and continue path.
+- [ ] Copy and regenerate the connection ID; enter up to eight characters and Connect. From a second account, exercise waiting/cancel and request/accept/decline; verify Settings and Back throughout.
+- [ ] Settings: notifications/background settings, Blocks, Sign out and Back remain reachable. Verify populated/empty Blocks and Unblock.
+- [ ] Delete account: open/cancel, close/back, invalid and case/whitespace confirmation; ensure deletion and dismissal remain blocked while busy. Use a disposable test account only for actual deletion.
+- [ ] Notifications: allow/deny permission, return from notification/full-screen settings, Autostart/background and Battery shortcuts/fallback, Retry registration and Continue. Confirm status text refreshes on resume.
