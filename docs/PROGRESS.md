@@ -529,3 +529,23 @@ Known limits:
 - [ ] Caller cancels while ringing: the callee's ring stops; the chat shows the call log row.
 - [ ] Lock the screen mid-call: the call continues (ongoing notification present).
 
+
+## S1 — style foundation (2026-10-10)
+
+Branch `style/s1-foundation`. Presentation only; no behaviour, ViewModel, route or network changes.
+
+Shipped:
+- `docs/design/WEB-STYLE-SPEC.md`: token + component spec extracted from the web `global.css` (with line refs) for S2-S4.
+- Fonts (`res/font`, generated from the web woff2s by `scripts/make_fonts.py`, OFL, license in `docs/design/fonts-LICENSE.txt`): Fraunces (web variable font pinned wght 600 / opsz 28), Figtree 400/500/600/700, JetBrains Mono 400/500/700 (static TTFs). Fraunces 500 not bundled (no static upstream, unused by the web CSS).
+- `ui/theme`: `Tokens.kt` (`OneColors` Dark/Light, spacing, radii, sizes, motion, elevation, `OneTheme` accessor), `Type.kt` (`FontFamilies`, `OneTypography`, `OneTextStyles`), `Theme.kt` rebuilt from the tokens (same `OneOnOneTheme(darkTheme)` signature, shapes 4/6/10/16). `BubbleTokens` re-diffed against web L1416-1600: no drift.
+- Icons: 20 vector drawables `ic_*` (calls, composer, menus, receipt ticks); `res/raw/keep.xml` keeps them from UnusedResources until S2-S4 reference them (delete the entries as they get used).
+- `ui/components`: `PrimaryButton`, `SecondaryButton`, `DangerButton`, `TextLink`, `OneTextField`, `OneIconButton`, `Eyebrow`, `ScreenTitle`, `Subtitle`, `OneModal`, `OneMenu`/`OneMenuItem`, `Modifier.pressScale`, with dark and light `@Preview`s.
+- `MainActivity`: window background follows the resolved theme (no dark flash in light mode). New string `close`.
+- Tests: `TokensTest` (web hex values), `BubbleTokensTest` unchanged and green.
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` green. Not device-verified; no screenshots (previews only).
+
+Device checklist:
+- [ ] Every existing screen still works; text is now Figtree/Fraunces, colours match the web (dark: #0d1117 ground, #e6edf3 text).
+- [ ] Appearance toggle to Light: no dark flash at the window edges (overscroll, keyboard open/close, rotation).
+- [ ] Fonts render (not the system sans) on the Xiaomi.

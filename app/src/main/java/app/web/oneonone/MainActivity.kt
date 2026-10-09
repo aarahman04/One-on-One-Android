@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -30,6 +32,7 @@ import app.web.oneonone.ui.AppNavigation
 import app.web.oneonone.ui.AppViewModel
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
+import app.web.oneonone.ui.theme.OneColors
 import app.web.oneonone.ui.theme.OneOnOneTheme
 import dagger.hilt.android.AndroidEntryPoint
 import app.web.oneonone.push.PushRegistration
@@ -62,6 +65,8 @@ class MainActivity : ComponentActivity() {
                     isAppearanceLightStatusBars = !dark
                     isAppearanceLightNavigationBars = !dark
                 }
+                // Keep the window behind Compose in the resolved theme so light mode never flashes dark.
+                window.setBackgroundDrawable((if (dark) OneColors.Dark else OneColors.Light).bg.toArgb().toDrawable())
             }
             OneOnOneTheme(darkTheme = dark) {
                 Surface(modifier = Modifier.fillMaxSize()) {

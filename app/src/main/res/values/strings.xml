@@ -4,4 +4,5 @@
     <string name="alarm_title">🚨 Emergency alarm</string>
     <string name="alarm_text">Tap to open the chat and silence</string>
     <string name="alarm_silence">Silence</string>
+    <string name="close">Close</string>
 </resources>
