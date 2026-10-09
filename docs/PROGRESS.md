@@ -549,3 +549,32 @@ Device checklist:
 - [ ] Every existing screen still works; text is now Figtree/Fraunces, colours match the web (dark: #0d1117 ground, #e6edf3 text).
 - [ ] Appearance toggle to Light: no dark flash at the window edges (overscroll, keyboard open/close, rotation).
 - [ ] Fonts render (not the system sans) on the Xiaomi.
+
+
+## S2 — chat restyle (2026-10-10)
+
+Branch `style/s2-chat`. Presentation only: every existing action, callback, dialog trigger and ViewModel call in `ChatScreen` is preserved (see the PR for the before/after call list).
+
+Shipped (all under `ui/chat/`):
+- `ChatScreen.kt`: now only wiring/state; layout moved to the files below. Chat column capped at 720dp and centred, log padding 6/8, date-separator pill, "Messages are encrypted" note, outlined "Load older", wallpaper overlay (love .22 / samurai .30, `BubbleTokens.*WallpaperOverlay`).
+- `ChatHeader.kt`: 56dp header (bg-raised, 40dp avatar, title + "● status"), video / phone / more `OneIconButton`s; More menu regrouped like the web (Search, Appearance, Settings, Nickname, Export, divider, collapsible "Connection & account" with Report / Block / Leave in danger); search bar and leave banner styled per the web.
+- `MessageBubble.kt`: 8dp-radius gradient bubble with 1dp edge, 6dp tail on group start, quote block, meta (time + tick vector) at the end of the last line via a custom `Layout` (`TextWithMetaPolicy`, uses `onTextLayout`; falls to its own row when it does not fit), "· not sent", reaction emoji under the bubble, long-press `OneMenu` with the reaction row + Reply / Copy / Report, swipe-right-to-reply (60dp trigger, 80 max), live-arrival fade + 8dp rise.
+- `BubbleGrouping.kt`: pure `isGroupStart` (same sender, 0..60s, same local day) with unit tests.
+- `Composer.kt`: reply bar, pill composer (paperclip, growing field up to 120dp, focus outline), 48dp send circle when there is text / mic when empty, `/` drop-up `SlashMenu` (replaces the old "Commands" dropdown; same command list and handlers; `slashMatches` unit-tested).
+- `ChatPreviews.kt`: `@Preview`s for bubbles (dark, light, love, samurai: grouped run, quote, reactions, pending, failed), header, composer (empty, text + reply bar), slash menu.
+- Cards S4 will restyle read the bubble colours from `LocalBubbleColors` (and `LocalContentColor` = bubble text colour).
+
+Deviations: the old "Attach" / "Commands" text buttons are gone (paperclip, "/" menu); the mic opens the attachment panel where "Voice note" lives (no standalone recorder action exists in ChatScreen); no "About" menu group (no matching actions on Android); closing the search bar also clears the filter (web `search-close`); menu pop animation is the stock `DropdownMenu` one (`OneMenu` is S1's); header/composer apply status/navigation-bar insets but `AppNavigation`'s `safeDrawingPadding()` (S3) currently consumes them, so the header background does not extend under the status bar until that is removed.
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` green. Not device-verified; previews stand in for screenshots.
+
+Device checklist:
+- [ ] Dark, light, love and samurai: bubbles/tails/meta colours match the web; wallpaper overlay readable.
+- [ ] Grouped run: only the first bubble has a tail and an 8dp gap, followers 2dp; a message after 61s, another sender, or a new day starts a group.
+- [ ] Meta sits on the last line of short and long messages (and wraps to its own row when the last line is full); ticks: clock-ish single at 70% while pending, single sent, double delivered, blue-ish double when read; failed shows "· not sent" with Retry.
+- [ ] Reply: long-press -> Reply, swipe right on a bubble, reply bar above the composer, close X; tapping a quote scrolls to the original.
+- [ ] Long-press reaction row (heart, thumbs-up, laugh, wow, sad, pray) adds/removes; tapping an emoji under a bubble toggles it; Copy / Report still work.
+- [ ] Typing "/" shows the command menu above the composer; picking each command opens its dialog (alarm asks to confirm); text with a normal message still sends.
+- [ ] Paperclip toggles attach controls; mic opens them with Voice note; send circle appears only with text.
+- [ ] More menu: every entry opens what it did before; "Connection & account" expands; header video/phone start calls (disabled while recording).
+- [ ] New incoming/outgoing message animates in; opening the chat does not animate history.

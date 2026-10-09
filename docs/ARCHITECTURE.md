@@ -344,3 +344,19 @@ flowchart LR
   Components --> Screens["Screens (restyled in S2-S4)"]
   Theme --> Screens
 ```
+
+
+## Chat screen composition (S2)
+
+```mermaid
+flowchart TB
+  CS["ChatScreen (state + ViewModel wiring, unchanged behaviour)"] --> H["ChatHeader / ChatMenu / ChatSearchBar / LeaveBanner"]
+  CS --> Log["LazyColumn (max 720dp)"]
+  Log --> MB["MessageBubble"]
+  MB --> G["isGroupStart (BubbleGrouping)"]
+  MB --> TM["TextWithMeta (custom Layout, meta on last line)"]
+  MB -. "card slot + LocalBubbleColors" .-> Cards["FeatureCard / AlarmCard / CallLogCard (S4)"]
+  CS --> SM["SlashMenu (slashMatches)"]
+  CS --> RB["ReplyBar"]
+  CS --> CC["ChatComposer (pill, send / mic)"]
+```

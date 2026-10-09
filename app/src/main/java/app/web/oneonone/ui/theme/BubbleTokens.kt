@@ -15,6 +15,10 @@ data class BubbleColors(
 data class BubblePalette(val mine: BubbleColors, val other: BubbleColors, val ticks: Color, val read: Color)
 
 object BubbleTokens {
+    /** .chat__log wallpaper overlays (global.css L1542 love, L1573 samurai). */
+    val LoveWallpaperOverlay = Color(0xFF0A0E14).copy(alpha = .22f)
+    val SamuraiWallpaperOverlay = Color(0xFF0A0808).copy(alpha = .30f)
+
     val Dark = BubblePalette(
         mine = BubbleColors(Color(0xFF1B6841), Color(0xFF15523A), Color(0xFF185D3D),
             Color(0xFFF2FFF6), Color(0xFFCDEED8), BrandGreen.copy(alpha = .38f)),
