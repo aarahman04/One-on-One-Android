@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import app.web.oneonone.R
 
-// --font-display / --font-body / --font-mono. Static TTFs; web also ships Fraunces 500, no static 500 exists upstream.
+// --font-display / --font-body / --font-mono. Static TTFs generated from the web variable woff2s by scripts/make_fonts.py (latin + latin-ext; Fraunces pinned wght 600 / opsz 28).
 object FontFamilies {
     val Display = FontFamily(Font(R.font.fraunces_semibold, FontWeight.SemiBold))
     val Body = FontFamily(

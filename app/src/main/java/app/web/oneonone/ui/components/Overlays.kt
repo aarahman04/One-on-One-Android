@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
@@ -21,14 +21,17 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import app.web.oneonone.R
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
@@ -37,21 +40,25 @@ import app.web.oneonone.ui.theme.OneTheme
 @Composable
 fun OneModal(onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val c = OneTheme.colors
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        // The platform dims behind dialogs; the web scrim (rgba 0,0,0,.6) is the only dim we want.
+        val view = LocalView.current
+        SideEffect { (view.parent as? DialogWindowProvider)?.window?.setDimAmount(0f) }
         Box(
             Modifier
                 .fillMaxSize()
                 .background(c.scrim)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
                 .safeDrawingPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
-            contentAlignment = Alignment.Center,
+            contentAlignment = Alignment.TopCenter,
         ) {
             Surface(
                 modifier = modifier
                     .widthIn(max = 620.dp)
                     .fillMaxWidth()
-                    .heightIn(max = 640.dp)
                     // Swallow taps so they never reach the scrim and dismiss the dialog.
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {}),
                 shape = RoundedCornerShape(OneTheme.radii.md10),
@@ -61,7 +68,6 @@ fun OneModal(onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @Com
                 Box {
                     Column(
                         Modifier
-                            .verticalScroll(rememberScrollState())
                             .padding(PaddingValues(start = 22.dp, top = 46.dp, end = 22.dp, bottom = 22.dp)),
                     ) { content() }
                     OneIconButton(

@@ -59,8 +59,7 @@ Scale (sp): meta 11, xs 12, sm 13, base 15, md 16, lg 20, xl 28, display 40. Bod
 | nav status | 13sp text-dim, prefixed by a green dot | `.chat__nav-status` L601 |
 | composer text | 16sp, line-height 1.4 | `.chat__input-bar textarea` L1055 |
 
-Static TTFs only; Fraunces 500 is declared on the web but is never used by the stylesheet and has no static upstream instance,
-so it is not bundled. Fraunces uses the 72pt optical-size static cut.
+Static TTFs generated from the web's own variable woff2 files by `scripts/make_fonts.py` (latin + latin-ext merged), so glyphs match the browser. Fraunces is pinned to wght 600 / opsz 28 (the 28px title with `font-optical-sizing:auto`). Fraunces 500 is declared on the web but never used by the stylesheet, so it is not bundled.
 
 ## 4. Spacing, radii, sizes (L27-L52)
 

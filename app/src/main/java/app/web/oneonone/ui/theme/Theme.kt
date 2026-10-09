@@ -19,7 +19,7 @@ val BrandBackground = Color(0xFF0D1117)
 private fun OneColors.toScheme(dark: Boolean): ColorScheme = if (dark) {
     darkColorScheme(
         primary = accentYou, onPrimary = onPrimary,
-        secondary = accentOther, onSecondary = onPrimary,
+        secondary = accentOther, onSecondary = onPrimary, // dark text reads on pale #79c0ff
         background = bg, onBackground = text,
         surface = bg, onSurface = text,
         surfaceVariant = bgRaised, onSurfaceVariant = textDim,
@@ -32,7 +32,7 @@ private fun OneColors.toScheme(dark: Boolean): ColorScheme = if (dark) {
 } else {
     lightColorScheme(
         primary = accentYou, onPrimary = onPrimary,
-        secondary = accentOther, onSecondary = Color.White,
+        secondary = accentOther, onSecondary = Color.White, // white reads on deep #0969da
         background = bg, onBackground = text,
         surface = bg, onSurface = text,
         surfaceVariant = bgRaised, onSurfaceVariant = textDim,

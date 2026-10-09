@@ -536,7 +536,7 @@ Branch `style/s1-foundation`. Presentation only; no behaviour, ViewModel, route 
 
 Shipped:
 - `docs/design/WEB-STYLE-SPEC.md`: token + component spec extracted from the web `global.css` (with line refs) for S2-S4.
-- Fonts (`res/font`, OFL, license in `docs/design/fonts-LICENSE.txt`): Fraunces 72pt SemiBold, Figtree 400/500/600/700, JetBrains Mono 400/500/700 (static TTFs). Fraunces 500 not bundled (no static upstream, unused by the web CSS).
+- Fonts (`res/font`, generated from the web woff2s by `scripts/make_fonts.py`, OFL, license in `docs/design/fonts-LICENSE.txt`): Fraunces (web variable font pinned wght 600 / opsz 28), Figtree 400/500/600/700, JetBrains Mono 400/500/700 (static TTFs). Fraunces 500 not bundled (no static upstream, unused by the web CSS).
 - `ui/theme`: `Tokens.kt` (`OneColors` Dark/Light, spacing, radii, sizes, motion, elevation, `OneTheme` accessor), `Type.kt` (`FontFamilies`, `OneTypography`, `OneTextStyles`), `Theme.kt` rebuilt from the tokens (same `OneOnOneTheme(darkTheme)` signature, shapes 4/6/10/16). `BubbleTokens` re-diffed against web L1416-1600: no drift.
 - Icons: 20 vector drawables `ic_*` (calls, composer, menus, receipt ticks); `res/raw/keep.xml` keeps them from UnusedResources until S2-S4 reference them (delete the entries as they get used).
 - `ui/components`: `PrimaryButton`, `SecondaryButton`, `DangerButton`, `TextLink`, `OneTextField`, `OneIconButton`, `Eyebrow`, `ScreenTitle`, `Subtitle`, `OneModal`, `OneMenu`/`OneMenuItem`, `Modifier.pressScale`, with dark and light `@Preview`s.

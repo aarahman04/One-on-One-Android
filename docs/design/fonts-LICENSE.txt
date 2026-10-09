@@ -1,5 +1,5 @@
 Fonts bundled in app/src/main/res/font are licensed under the SIL Open Font License 1.1.
-Sources: Fraunces (undercasetype/Fraunces, 72pt SemiBold static), Figtree (erikdkennedy/figtree), JetBrains Mono v2.304 (JetBrains/JetBrainsMono).
+Sources: Fraunces (undercasetype/Fraunces, web variable woff2 pinned to wght 600 / opsz 28), Figtree (erikdkennedy/figtree), JetBrains Mono v2.304 (JetBrains/JetBrainsMono).
 
 =================== fraunces OFL.txt ===================
 Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces)
