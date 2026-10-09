@@ -603,3 +603,28 @@ Device checklist (Xiaomi/HyperOS, owner):
 - [ ] Settings: notifications/background settings, Blocks, Sign out and Back remain reachable. Verify populated/empty Blocks and Unblock.
 - [ ] Delete account: open/cancel, close/back, invalid and case/whitespace confirmation; ensure deletion and dismissal remain blocked while busy. Use a disposable test account only for actual deletion.
 - [ ] Notifications: allow/deny permission, return from notification/full-screen settings, Autostart/background and Battery shortcuts/fallback, Retry registration and Continue. Confirm status text refreshes on resume.
+
+## S4 — cards, dialogs, call overlay restyle (2026-10-10)
+
+Branch `style/s4-cards-call`. Presentation only; cards reuse S2's `LocalBubbleColors`, and dialogs/buttons/fields reuse the S1 foundation. No ViewModel, service, navigation, dependency or web changes.
+
+- Restyled letter, countdown, check-in, ask, this-or-that, location, image, voice, file, alarm and call-log cards: 13/600 headings, 16dp glyphs, 15sp body, 13sp hints, bubble-aware text/actions. Alarm uses a live 4dp danger stripe; call logs use 36dp discs and four composite phone/video + arrow vectors ported from the web.
+- Dawn and Botanical letter sheets use the web gradient, colors, serif type, 40/36dp padding, radius and botanical inset. Letter colors are isolated in `LetterThemes`.
+- Replaced feature AlertDialogs and FilterChips with `OneModal`, shared fields/buttons, counters and radius-4 choices. Extracted presentation-only helpers so previews render without ViewModels, network, permissions, recordings or calls.
+- Call overlay uses resolved theme tokens, vector controls, responsive avatar/local preview sizing, a raised controls panel and safe-area scrolling. Entry fades/rises over 320ms; ringing/reconnecting pulses last 2s/1.1s. System animator scale is observed: disabling animations shows a static ring, and re-enabling restores the pulse.
+- Previews cover every card in Dark/Light/Love/Samurai with both sender directions, every dialog in dark/light, and ringing/connected/reconnecting/video calls (including landscape video). Image/map/video previews use inert media placeholders.
+- Existing payload construction, limits, busy guards, date/time pickers, signed-URL refresh/error paths, URI permissions, document launchers, recorder lifecycle, alarm policy/ack/cancel, call permission requests and all call controls were traced before/after. The PR contains the full callback inventory. No architecture or public interface change.
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` passed locally in 42s (69 tests, zero failures/errors; lint warnings treated as errors). Source preservation and drawable XML checks passed. Preview UI was rendered on a headless API 36 emulator (60 card variants and 42 dialog/call variants); with animator scale 0, two ringing captures were pixel-identical, and changing scale to 1 while the preview remained open resumed animation. These are presentation checks with inert callbacks, not live call/alarm or physical Xiaomi verification.
+
+Ownership TODOs: S2's bubble padding/meta slot prevents full-bleed image + overlaid white metadata; voice state lacks playback-position progress; call logs have no existing call-back handler despite the unused `onSend` parameter; shared `OneModal` controls panel centering/height. These need work outside S4's owned files and are described in the PR.
+
+Device checklist (Xiaomi/HyperOS + second phone/web, owner):
+- [ ] Dark, light, love and samurai: inspect every card in both sender directions, pending/failed rows, sealed/revealed ask and this-or-that, countdown ticks, check-in moods, location tile/actions, image, voice, file, alarm and call logs. Compare text, hints, borders and glyph colors to the web.
+- [ ] Open both letter themes; preview, edit, send, view and download a long letter. Verify serif type, gradient/inset, wrapping and scroll reachability.
+- [ ] Exercise every dialog in dark/light: all choices, counters/limits, busy/error and close guards, date/time picking, keyboard, rotation and large font/TalkBack. Verify upload, location, appearance, both report variants, block, export and image viewer.
+- [ ] Pick a photo/file, record/stop/discard/send a voice note, play/stop, retry an unavailable photo, open/save attachments and export both formats. Check permission denial/grant and the recorder's background/disposal cleanup.
+- [ ] With two clients, raise/ack/cancel/expire alarms and verify pending-to-server-ID guards and ringing behavior are unchanged.
+- [ ] Incoming/outgoing, connected/reconnecting and video calls in dark/light, portrait/landscape: Answer/Decline/Cancel/End, Mute/Speaker/Camera/Flip remain reachable; verify remote video, mirrored local preview, audio routes, mic/camera permissions and lock-screen continuation on hardware.
+- [ ] Disable animator scale and confirm static ringing/reconnecting rings; re-enable while open and verify the 2s/1.1s pulse. Entry, rotation, narrow widths and large fonts must not obscure controls.
+- [ ] Revisit the image metadata, voice-progress, call-back and shared-modal TODOs when their owning interfaces are extended.
