@@ -13,10 +13,26 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import app.web.oneonone.ui.components.*
+import app.web.oneonone.ui.theme.OneTextStyles
+import app.web.oneonone.ui.theme.OneTheme
+import app.web.oneonone.ui.chat.cards.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,6 +41,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -43,18 +61,25 @@ import kotlin.math.*
 
 @Composable
 fun FeatureComposer(type: String, connection: CurrentConnection, vm: FeatureViewModel, reply: String?, close: () -> Unit) {
+    val signature by vm.signature.collectAsState()
+    val busy by vm.busy.collectAsState()
+    val error by vm.error.collectAsState()
+    FeatureComposerContent(type, connection, signature, busy, error, reply,
+        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close)
+}
+
+@Composable
+internal fun FeatureComposerContent(type: String, connection: CurrentConnection, signature: String, busy: Boolean, error: String?, reply: String?,
+    onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, close: () -> Unit) {
     var first by rememberSaveable(type) { mutableStateOf("") }
     var second by rememberSaveable(type) { mutableStateOf("") }
     var third by rememberSaveable(type) { mutableStateOf("") }
-    var from by rememberSaveable(type) { mutableStateOf(vm.signature.value.ifBlank { "me" }) }
+    var from by rememberSaveable(type) { mutableStateOf(signature.ifBlank { "me" }) }
     var to by rememberSaveable(type) { mutableStateOf(connection.otherNickname?.take(40) ?: "you") }
     var choice by rememberSaveable(type) { mutableStateOf(if (type == "letter") "dawn" else if (type == "checkin") "good" else "a") }
     var target by rememberSaveable(type) { mutableStateOf("") }
     var preview by rememberSaveable(type) { mutableStateOf(false) }
-    val signature by vm.signature.collectAsState()
     LaunchedEffect(signature) { if (from == "me" && third.isEmpty() && signature.isNotBlank()) from = signature }
-    val busy by vm.busy.collectAsState()
-    val error by vm.error.collectAsState()
     val context = LocalContext.current
     val payload = buildJsonObject {
         when (type) {
@@ -66,8 +91,8 @@ fun FeatureComposer(type: String, connection: CurrentConnection, vm: FeatureView
         }
     }
     val valid = runCatching { validateFeaturePayload(connection.id, type, payload); require(type != "letter" || third.isNotBlank()) }.isSuccess
-    AlertDialog(onDismissRequest = { if (!busy) close() }, title = { Text(if (preview) "Preview letter" else "/$type") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    FeatureModal(onDismissRequest = { if (!busy) close() }, title = { Text(if (preview) "Preview letter" else "/$type") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (preview) LetterBody(ChatMessage(senderId = connection.myUserId, content = third, createdAt = Instant.now().toString(), type = "letter", payload = payload))
             else when (type) {
                 "letter" -> {
@@ -82,46 +107,100 @@ fun FeatureComposer(type: String, connection: CurrentConnection, vm: FeatureView
                 }
                 "countdown" -> {
                     Field("Countdown label", first, 100) { first = it }
-                    OutlinedButton(onClick = {
+                    SecondaryButton(if (target.isBlank()) "Choose date and time" else Instant.parse(target).atZone(ZoneId.systemDefault()).toLocalDateTime().toString(), onClick = {
                         val initial = target.takeIf { it.isNotBlank() }?.let { Instant.parse(it).atZone(ZoneId.systemDefault()).toLocalDateTime() } ?: LocalDateTime.now().plusHours(1)
                         DatePickerDialog(context, { _, y, m, d ->
                             TimePickerDialog(context, { _, hour, minute ->
                                 target = LocalDateTime.of(y, m + 1, d, hour, minute).atZone(ZoneId.systemDefault()).toInstant().toString()
                             }, initial.hour, initial.minute, true).show()
                         }, initial.year, initial.monthValue - 1, initial.dayOfMonth).apply { datePicker.minDate = System.currentTimeMillis(); show() }
-                    }) { Text(if (target.isBlank()) "Choose date and time" else Instant.parse(target).atZone(ZoneId.systemDefault()).toLocalDateTime().toString()) }
+                    })
                 }
                 "checkin" -> { Choices(Moods, choice) { choice = it }; Field("A note about your day", first, 300) { first = it } }
             }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            error?.let { Text(it, style = OneTextStyles.cardHint, color = OneTheme.colors.danger) }
         } },
-        confirmButton = { TextButton(enabled = valid && !busy, onClick = {
+        confirmButton = { PrimaryButton(if (type == "letter" && !preview) "Preview" else "Send", enabled = valid && !busy, onClick = {
             if (type == "letter" && !preview) preview = true
-            else vm.send(type, if (type == "letter") third.trim() else "", payload, reply, close)
-        }) { Text(if (type == "letter" && !preview) "Preview" else "Send") } },
-        dismissButton = { TextButton(enabled = !busy, onClick = { if (preview) preview = false else close() }) { Text(if (preview) "Edit" else "Cancel") } })
+            else onSend(type, if (type == "letter") third.trim() else "", payload, reply, close)
+        }) },
+        dismissButton = { SecondaryButton(if (preview) "Edit" else "Cancel", enabled = !busy, onClick = { if (preview) preview = false else close() }) })
 }
 
-@Composable private fun Field(label: String, value: String, maximum: Int, change: (String) -> Unit) {
-    OutlinedTextField(value, { change(it.take(maximum)) }, Modifier.fillMaxWidth(), label = { Text(label) }, maxLines = if (maximum > 100) 8 else 2,
-        supportingText = { Text("${value.length}/$maximum") })
-}
-@Composable private fun Choices(options: List<String>, selected: String, choose: (String) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        options.forEach { option -> FilterChip(selected == option, onClick = { choose(option) }, label = { Text(if (option in Moods) "${moodEmoji(option)} $option" else option.replace('_', ' ')) }) }
+@Composable private fun Field(label: String, value: String, maximum: Int, bubble: Boolean = false, change: (String) -> Unit) {
+    val hint = if (bubble) LocalBubbleColors.current.text.copy(alpha = .8f) else OneTheme.colors.textDim
+    val counter = if (bubble) LocalBubbleColors.current.text.copy(alpha = .8f) else OneTheme.colors.muted
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = OneTextStyles.cardHint, color = hint)
+        OneTextField(value, { change(it.take(maximum)) }, Modifier.fillMaxWidth().heightIn(max = if (maximum > 100) 212.dp else 68.dp).semantics { contentDescription = label },
+            singleLine = false, textStyle = MaterialTheme.typography.bodyLarge)
+        Text("${value.length}/$maximum", style = MaterialTheme.typography.labelMedium, color = counter)
     }
 }
+@Composable private fun Choices(options: List<String>, selected: String, choose: (String) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { option -> ChoiceButton(option, selected == option, onClick = { choose(option) }) }
+    }
+}
+
+@Composable
+private fun ChoiceButton(option: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Surface(onClick = onClick, modifier = Modifier.pressScale(source).semantics { this.selected = selected }, enabled = enabled, interactionSource = source,
+        shape = RoundedCornerShape(OneTheme.radii.xs4), color = OneTheme.colors.bg,
+        border = BorderStroke(1.dp, if (selected) OneTheme.colors.accentOther else OneTheme.colors.border)) {
+        Box(Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).padding(horizontal = 14.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
+            Text(if (option in Moods) "${moodEmoji(option)} $option" else option.replace('_', ' '),
+                style = MaterialTheme.typography.labelMedium, color = (if (selected) OneTheme.colors.text else OneTheme.colors.textDim).copy(alpha = if (enabled) 1f else .5f))
+        }
+    }
+}
+
+@Composable
+internal fun FeatureModal(onDismissRequest: () -> Unit, title: @Composable () -> Unit = {}, text: @Composable () -> Unit,
+    confirmButton: @Composable () -> Unit, dismissButton: @Composable () -> Unit = {}) {
+    OneModal(onDismiss = onDismissRequest) {
+        CompositionLocalProvider(LocalContentColor provides OneTheme.colors.text) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                CompositionLocalProvider(LocalTextStyle provides OneTextStyles.subtitle.copy(fontWeight = FontWeight.Bold)) { title() }
+                CompositionLocalProvider(LocalTextStyle provides OneTextStyles.cardHint, LocalContentColor provides OneTheme.colors.textDim) { text() }
+                FlowRow(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) { dismissButton(); confirmButton() }
+            }
+        }
+    }
+}
+
 private fun moodEmoji(mood: String) = listOf("😄", "🙂", "😐", "😔", "😞").getOrElse(Moods.indexOf(mood)) { "" }
 
-@Composable private fun LetterBody(message: ChatMessage) {
+object LetterThemes {
+    val DawnStart = Color(0xFFFFE7D0)
+    val DawnMiddle = Color(0xFFFFD1DC)
+    val DawnEnd = Color(0xFFCFE6FF)
+    val DawnText = Color(0xFF3A2E3A)
+    val BotanicalBackground = Color(0xFFF7F3E8)
+    val BotanicalText = Color(0xFF34432F)
+    val BotanicalBorder = Color(0xFFB9C9A6)
+    val BotanicalInset = Color(0xFF78965A).copy(alpha = .12f)
+}
+
+@Composable internal fun LetterBody(message: ChatMessage) {
     val botanical = message.payload.text("appearance") == "botanical"
-    val colors = if (botanical) listOf(Color(0xFFF7F3E8), Color(0xFFF7F3E8)) else listOf(Color(0xFFFFE7D0), Color(0xFFFFD1DC), Color(0xFFCFE6FF))
-    Column(Modifier.fillMaxWidth().background(Brush.linearGradient(0f to colors.first(), .38f to colors[colors.size / 2], 1f to colors.last()))
-        .then(if (botanical) Modifier.border(1.dp, Color(0xFFB9C9A6)) else Modifier).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        val style = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Serif, color = if (botanical) Color(0xFF34432F) else Color(0xFF3A2E3A))
+    val shape = RoundedCornerShape(OneTheme.radii.md10)
+    Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().clip(shape).drawWithCache {
+        val vector = Offset(sin(Math.toRadians(160.0)).toFloat(), -cos(Math.toRadians(160.0)).toFloat())
+        val half = (kotlin.math.abs(size.width * vector.x) + kotlin.math.abs(size.height * vector.y)) / 2f
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val brush = Brush.linearGradient(0f to LetterThemes.DawnStart, .38f to LetterThemes.DawnMiddle, 1f to LetterThemes.DawnEnd,
+            start = center - vector * half, end = center + vector * half)
+        onDrawBehind { if (botanical) drawRect(LetterThemes.BotanicalBackground) else drawRect(brush) }
+    }.then(if (botanical) Modifier.border(6.dp, LetterThemes.BotanicalInset, shape).border(1.dp, LetterThemes.BotanicalBorder, shape) else Modifier)
+        .padding(horizontal = 36.dp, vertical = 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        val style = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Serif, lineHeight = 28.sp,
+            color = if (botanical) LetterThemes.BotanicalText else LetterThemes.DawnText)
         Text("Dear ${message.payload.text("to")},", style = style)
         Text(message.content, style = style)
-        Text("With love,\n${message.payload.text("from")}", style = style)
+        Text("With love,\n${message.payload.text("from")}", Modifier.align(Alignment.End), style = style, textAlign = TextAlign.End)
     }
 }
 
@@ -141,13 +220,10 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     val busy by vm.busy.collectAsState()
     val path = payload.text("path")
     val playing by vm.playing.collectAsState()
-    var reveal by rememberSaveable(message.id, message.tempId) { mutableStateOf(false) }
-    var answer by rememberSaveable(message.id, message.tempId) { mutableStateOf("") }
     var url by remember(path) { mutableStateOf<String?>(null) }
     var urlError by remember(path) { mutableStateOf<String?>(null) }
     var retryUrl by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
-    val uriHandler = LocalUriHandler.current
     val letterDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/html")) { uri -> uri?.let { vm.saveLetter(it, message) } }
     val attachmentDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         if (uri != null && payload != null) vm.saveAttachment(connection.id, payload, uri)
@@ -160,98 +236,140 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
             delay(55 * 60_000L)
         }
     }
-    when (message.type) {
-        "letter" -> {
-            Text("A letter for ${payload.text("to")}")
-            TextButton(onClick = { reveal = true }) { Text("Open letter") }
-            if (reveal) AlertDialog(onDismissRequest = { reveal = false }, title = { Text("Letter") },
-                text = { Column(Modifier.verticalScroll(rememberScrollState())) { LetterBody(message) } },
-                confirmButton = { TextButton(onClick = { letterDownload.launch("one-on-one-letter.html") }) { Text("Download HTML") } },
-                dismissButton = { TextButton(onClick = { reveal = false }) { Text("Close") } })
-        }
-        "ask" -> {
-            Text(payload.text("question"), style = MaterialTheme.typography.titleMedium)
-            if (payload.text("answerB").isNotBlank()) {
-                val author = original?.senderId ?: if (mine) "other" else connection.myUserId
-                Text("${if (author == connection.myUserId) "You" else connection.otherNickname ?: "Them"}: ${payload.text("answerA")}")
-                Text("${if (message.senderId == connection.myUserId) "You" else connection.otherNickname ?: "Them"}: ${payload.text("answerB")}")
-            } else {
-                Text("Answers sealed until both reply.")
-                if (mine) Text("Waiting for their answer.")
-                if (!mine && message.id != null) {
-                    Field("Your answer", answer, 500) { answer = it }
-                    TextButton(enabled = answer.isNotBlank() && !busy, onClick = {
-                        val response = buildJsonObject { payload?.forEach { (k, v) -> put(k, v) }; put("answerB", answer.trim()) }
-                        vm.send("ask", "", response, message.id) { answer = "" }
-                    }) { Text("Reveal both answers") }
+    FeatureCardContent(message, mine, original, connection, busy, playing, url, urlError,
+        onSend = { t, body, response, r, done -> vm.send(t, body, response, r, done) },
+        onPlay = { vm.play(connection.id, it) },
+        onLetterDownload = { letterDownload.launch("one-on-one-letter.html") },
+        onOpenFile = { payload?.let { p -> vm.openFile(connection.id, p) { openAttachment(context, it, p.text("mime")) } } },
+        onImageError = { urlError = "Photo unavailable. Tap retry." },
+        onRetryPhoto = { url = null; urlError = null; retryUrl++ },
+        onSaveCopy = { attachmentDownload.launch(payload.text("name").ifBlank { path.substringAfterLast('/') }) })
+}
+
+@Composable
+internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: ChatMessage?, connection: CurrentConnection,
+    busy: Boolean, playing: String?, url: String?, urlError: String?,
+    onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, onPlay: (String) -> Unit,
+    onLetterDownload: () -> Unit, onOpenFile: () -> Unit, onImageError: () -> Unit, onRetryPhoto: () -> Unit, onSaveCopy: () -> Unit) {
+    val payload = message.payload
+    val path = payload.text("path")
+    val uriHandler = LocalUriHandler.current
+    var reveal by rememberSaveable(message.id, message.tempId) { mutableStateOf(false) }
+    var answer by rememberSaveable(message.id, message.tempId) { mutableStateOf("") }
+    CompositionLocalProvider(LocalContentColor provides LocalBubbleColors.current.text, LocalTextStyle provides OneTextStyles.subtitle) {
+    Column(Modifier.widthIn(min = if (message.type == "image") 0.dp else 224.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            when (message.type) {
+                "letter" -> {
+                    CardHeading("✉", "A letter for ${payload.text("to")}")
+                    CardAction("Open letter", onClick = { reveal = true })
+                    if (reveal) LetterViewer(message, onLetterDownload, close = { reveal = false })
                 }
-            }
-        }
-        "thisorthat" -> {
-            val a = payload.text("optionA"); val b = payload.text("optionB")
-            Text("$a or $b?", style = MaterialTheme.typography.titleMedium)
-            if (payload.text("pickRecipient").isNotBlank()) {
-                val author = original?.senderId ?: if (mine) "other" else connection.myUserId
-                Text("${if (author == connection.myUserId) "You" else connection.otherNickname ?: "Them"}: ${if (payload.text("pickSender") == "a") a else b}")
-                Text("${if (mine) "You" else connection.otherNickname ?: "Them"}: ${if (payload.text("pickRecipient") == "a") a else b}")
-            } else if (mine) Text("Sealed — waiting for their choice.")
-            else {
-                Text("Their choice is sealed.")
-                if (message.id != null) FlowRow { listOf("a" to a, "b" to b).forEach { (pick, label) ->
-                    TextButton(enabled = !busy, onClick = {
-                        val response = buildJsonObject { payload?.forEach { (k, v) -> put(k, v) }; put("pickRecipient", pick) }
-                        vm.send("thisorthat", "", response, message.id) { }
-                    }) { Text(label) }
-                } }
-            }
-        }
-        "checkin" -> { Text("${moodEmoji(payload.text("mood"))} ${payload.text("mood")}"); Text(payload.text("note")) }
-        "countdown" -> {
-            var remaining by remember(payload.text("targetIso")) { mutableStateOf("") }
-            LaunchedEffect(payload.text("targetIso")) { while (true) {
-                remaining = runCatching { countdownText(payload.text("targetIso")) }.getOrDefault("Unavailable")
-                delay(1_000)
-            } }
-            Text(payload.text("label"), style = MaterialTheme.typography.titleMedium); Text(remaining)
-            Text(runCatching { Instant.parse(payload.text("targetIso")).atZone(ZoneId.systemDefault()).toLocalDateTime().toString() }.getOrDefault(""))
-        }
-        "location" -> {
-            val lat = payload.number("lat"); val lng = payload.number("lng")
-            if (lat != null && lng != null && lat.isFinite() && lng.isFinite() && lat in -90.0..90.0 && lng in -180.0..180.0) {
-                AsyncImage(locationTile(lat, lng), "Map preview of shared location", Modifier.fillMaxWidth().height(150.dp), contentScale = ContentScale.Crop)
-                Text("© OpenStreetMap contributors", style = MaterialTheme.typography.labelSmall)
-                Text("$lat, $lng${payload.number("accuracy")?.let { " · ±${it.toInt()} m" } ?: ""}")
-                Text("Snapshot, not live tracking", style = MaterialTheme.typography.labelSmall)
-                FlowRow {
-                    TextButton(onClick = { uriHandler.openUri("https://www.google.com/maps/search/?api=1&query=$lat,$lng") }) { Text("View map") }
-                    TextButton(onClick = { uriHandler.openUri("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng") }) { Text("Directions") }
+                "ask" -> {
+                    CardHeading(if (payload.text("answerB").isNotBlank()) "💌" else "🔒", payload.text("question"))
+                    if (payload.text("answerB").isNotBlank()) {
+                        val author = original?.senderId ?: if (mine) "other" else connection.myUserId
+                        Text("${if (author == connection.myUserId) "You" else connection.otherNickname ?: "Them"}: ${payload.text("answerA")}")
+                        Text("${if (message.senderId == connection.myUserId) "You" else connection.otherNickname ?: "Them"}: ${payload.text("answerB")}")
+                    } else {
+                        CardHint("Answers sealed until both reply.")
+                        if (mine) CardHint("Waiting for their answer.")
+                        if (!mine && message.id != null) {
+                            Field("Your answer", answer, 500, bubble = true) { answer = it }
+                            CardAction("Reveal both answers", enabled = answer.isNotBlank() && !busy, onClick = {
+                                val response = buildJsonObject { payload?.forEach { (k, v) -> put(k, v) }; put("answerB", answer.trim()) }
+                                onSend("ask", "", response, message.id) { answer = "" }
+                            })
+                        }
+                    }
                 }
-            } else Text("Location unavailable")
-        }
-        "image" -> {
-            if (url == null && urlError == null) Text("Loading photo…")
-            url?.let { AsyncImage(it, "Shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp), contentScale = ContentScale.Fit,
-                onError = { urlError = "Photo unavailable. Tap retry." }) }
-            urlError?.let { Text(it); TextButton(onClick = { url = null; urlError = null; retryUrl++ }) { Text("Retry photo") } }
-            TextButton(enabled = !busy, onClick = { reveal = true }) { Text("View photo") }
-            if (reveal) AlertDialog(onDismissRequest = { reveal = false }, text = {
-                AsyncImage(url, "Shared photo", Modifier.fillMaxWidth().heightIn(max = 480.dp), contentScale = ContentScale.Fit)
-            }, confirmButton = { TextButton(onClick = { reveal = false }) { Text("Close") } },
-                dismissButton = { TextButton(enabled = !busy, onClick = { payload?.let { p -> vm.openFile(connection.id, p) { openAttachment(context, it, p.text("mime")) } } }) { Text("Open in app") } })
-        }
-        "voice" -> {
-            Text("Voice note · ${payload.number("duration")?.toInt() ?: 0}s")
-            TextButton(enabled = path.isNotBlank(), onClick = { vm.play(connection.id, path) }) { Text(if (playing == path) "Stop" else "Play") }
-        }
-        "file" -> {
-            Text(payload.text("name")); Text("${((payload.number("size") ?: 0.0) / 1024).toInt()} KiB · ${payload.text("mime")}", style = MaterialTheme.typography.labelSmall)
-            TextButton(enabled = !busy, onClick = { payload?.let { p -> vm.openFile(connection.id, p) { openAttachment(context, it, p.text("mime")) } } }) { Text("Download and open") }
-        }
-        else -> Text(message.content.ifBlank { message.type })
+                "thisorthat" -> {
+                    val a = payload.text("optionA"); val b = payload.text("optionB")
+                    CardHeading("🎲", "$a or $b?")
+                    if (payload.text("pickRecipient").isNotBlank()) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+                        Text(a, Modifier.weight(1f), style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.SemiBold))
+                        CardHint("vs")
+                        Text(b, Modifier.weight(1f), style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.SemiBold))
+                    }
+                        val author = original?.senderId ?: if (mine) "other" else connection.myUserId
+                        Text("${if (author == connection.myUserId) "You" else connection.otherNickname ?: "Them"}: ${if (payload.text("pickSender") == "a") a else b}")
+                        Text("${if (mine) "You" else connection.otherNickname ?: "Them"}: ${if (payload.text("pickRecipient") == "a") a else b}")
+                    } else if (mine) CardHint("Sealed — waiting for their choice.")
+                    else {
+                        CardHint("Their choice is sealed.")
+                        if (message.id != null) FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { listOf("a" to a, "b" to b).forEach { (pick, label) ->
+                            CardAction(label, enabled = !busy, onClick = {
+                                val response = buildJsonObject { payload?.forEach { (k, v) -> put(k, v) }; put("pickRecipient", pick) }
+                                onSend("thisorthat", "", response, message.id) { }
+                            })
+                        } }
+                    }
+                }
+                "checkin" -> { CardHeading(moodEmoji(payload.text("mood")), payload.text("mood")); Text(payload.text("note")) }
+                "countdown" -> {
+                    var remaining by remember(payload.text("targetIso")) { mutableStateOf("") }
+                    LaunchedEffect(payload.text("targetIso")) { while (true) {
+                        remaining = runCatching { countdownText(payload.text("targetIso")) }.getOrDefault("Unavailable")
+                        delay(1_000)
+                    } }
+                    CardHeading("⏳", payload.text("label")); CardHint(remaining)
+                    CardHint(runCatching { Instant.parse(payload.text("targetIso")).atZone(ZoneId.systemDefault()).toLocalDateTime().toString() }.getOrDefault(""))
+                }
+                "location" -> {
+                    val lat = payload.number("lat"); val lng = payload.number("lng")
+                    if (lat != null && lng != null && lat.isFinite() && lng.isFinite() && lat in -90.0..90.0 && lng in -180.0..180.0) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(64.dp).clip(RoundedCornerShape(OneTheme.radii.sm6)).background(OneTheme.colors.bg)) {
+                                AsyncImage(if (LocalInspectionMode.current) null else locationTile(lat, lng), "Map preview of shared location", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                                    placeholder = ColorPainter(OneTheme.colors.bgRaised))
+                                Text("📍", Modifier.align(Alignment.Center), fontSize = 20.sp)
+                            }
+                            CardHeading("📍", "Snapshot, not live tracking")
+                        }
+                        Text("© OpenStreetMap contributors", style = MaterialTheme.typography.labelSmall)
+                        CardHint("$lat, $lng${payload.number("accuracy")?.let { " · ±${it.toInt()} m" } ?: ""}")
+
+                        FlowRow {
+                            CardAction("View map", onClick = { uriHandler.openUri("https://www.google.com/maps/search/?api=1&query=$lat,$lng") }, location = true)
+                            CardAction("Directions", onClick = { uriHandler.openUri("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng") }, location = true)
+                        }
+                    } else Text("Location unavailable")
+                }
+                "image" -> {
+                    if (url == null && urlError == null) Text("Loading photo…")
+                    url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "Shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp), contentScale = ContentScale.Crop,
+                placeholder = ColorPainter(OneTheme.colors.bgRaised), error = if (LocalInspectionMode.current) ColorPainter(OneTheme.colors.bgRaised) else null,
+                        onError = { onImageError() }) }
+                    urlError?.let { Text(it); CardAction("Retry photo", onClick = { onRetryPhoto() }) }
+                    CardAction("View photo", enabled = !busy, onClick = { reveal = true })
+                    if (reveal) PhotoViewer(url, busy, onOpenFile, close = { reveal = false })
+                }
+                "voice" -> {
+                    CardHint("Voice note · ${payload.number("duration")?.toInt() ?: 0}s")
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(onClick = { onPlay(path) }, enabled = path.isNotBlank(), modifier = Modifier.size(40.dp)
+                            .semantics { contentDescription = if (playing == path) "Stop" else "Play" },
+                            shape = CircleShape, color = Color.Transparent, border = BorderStroke(1.dp, LocalBubbleColors.current.edge)) {
+                            Box(contentAlignment = Alignment.Center) { Text(if (playing == path) "■" else "▶", color = LocalBubbleColors.current.text) }
+                        }
+                        Box(Modifier.weight(1f).height(40.dp), contentAlignment = Alignment.Center) {
+                            // shortcut: playback has no position flow, add a progress fill when the ViewModel exposes one.
+                            Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(LocalBubbleColors.current.text.copy(alpha = .3f)))
+                        }
+                        CardHint(if (playing == path) "Stop" else "Play")
+                    }
+                }
+                "file" -> {
+                    CardHeading("📄", payload.text("name")); CardHint("${((payload.number("size") ?: 0.0) / 1024).toInt()} KiB · ${payload.text("mime")}")
+                    CardAction("Download and open", enabled = !busy, onClick = { onOpenFile() })
+                }
+                else -> Text(message.content.ifBlank { message.type })
+            }
+            if (message.type in setOf("image", "voice", "file") && path.isNotBlank()) CardAction("Save a copy", enabled = !busy, onClick = {
+                onSaveCopy()
+            })
     }
-    if (message.type in setOf("image", "voice", "file") && path.isNotBlank()) TextButton(enabled = !busy, onClick = {
-        attachmentDownload.launch(payload.text("name").ifBlank { path.substringAfterLast('/') })
-    }) { Text("Save a copy") }
+    }
 }
 
 private fun openAttachment(context: Context, uri: Uri, mime: String) {
@@ -278,30 +396,36 @@ fun AttachmentControls(connection: CurrentConnection, vm: FeatureViewModel, repl
         if (allowed) vm.record() else vm.showError("Microphone access was denied. Allow it in App info → Permissions to record voice notes.")
     }
     DisposableEffect(vm) { onDispose { vm.background() } }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        TextButton(enabled = !busy && !recording, onClick = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Photo") }
-        TextButton(enabled = !busy && !recording, onClick = { filePicker.launch(FileMimes.toTypedArray()) }) { Text("File") }
-        TextButton(enabled = !busy && voice == null, onClick = {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SecondaryButton("Photo", enabled = !busy && !recording, onClick = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+        SecondaryButton("File", enabled = !busy && !recording, onClick = { filePicker.launch(FileMimes.toTypedArray()) })
+        SecondaryButton(if (recording) "Stop recording" else "Voice note", enabled = !busy && voice == null, onClick = {
             if (recording) vm.stopRecording()
             else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) vm.record()
             else microphone.launch(Manifest.permission.RECORD_AUDIO)
-        }) { Text(if (recording) "Stop recording" else "Voice note") }
+        })
     }
     if (recording) Text("Recording… Keep this chat open. Leaving discards the recording.", style = MaterialTheme.typography.labelMedium)
-    voice?.let { path -> Row {
-        TextButton(enabled = !busy, onClick = { vm.upload(connection, "voice", Uri.fromFile(java.io.File(path)), reply, done) }) { Text("Send voice note") }
-        TextButton(enabled = !busy, onClick = vm::discardVoice) { Text("Discard") }
+    voice?.let { path -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PrimaryButton("Send voice note", enabled = !busy, onClick = { vm.upload(connection, "voice", Uri.fromFile(java.io.File(path)), reply, done) })
+        SecondaryButton("Discard", enabled = !busy, onClick = vm::discardVoice)
     } }
-    selected?.let { source -> AlertDialog(onDismissRequest = { if (!busy) selected = null }, title = { Text("Send $kind?") },
-        text = { Column {
-            if (kind == "image") AsyncImage(source, "Selected photo", Modifier.fillMaxWidth().height(220.dp), contentScale = ContentScale.Fit)
-            Text(if (kind == "image") "Up to 10 MiB. Static photos have location metadata removed; very large photos are resized." else "Up to 25 MiB. PDF, text, CSV, Word, Excel and PowerPoint.")
-            FeatureError(vm)
-        } },
-        confirmButton = { TextButton(enabled = !busy, onClick = { vm.upload(connection, kind, source.toUri(), reply) { selected = null; done() } }) { Text(if (busy) "Uploading…" else "Send") } },
-        dismissButton = { TextButton(enabled = !busy, onClick = { selected = null }) { Text("Cancel") } }) }
+    val error by vm.error.collectAsState()
+    selected?.let { source -> UploadContent(kind, source, busy, error,
+        send = { vm.upload(connection, kind, source.toUri(), reply) { selected = null; done() } }, cancel = { selected = null }) }
 }
 
+@Composable
+internal fun UploadContent(kind: String, source: String?, busy: Boolean, error: String?, send: () -> Unit, cancel: () -> Unit) {
+    FeatureModal(onDismissRequest = { if (!busy) cancel() }, title = { Text("Send $kind?") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (kind == "image") AsyncImage(source, "Selected photo", Modifier.fillMaxWidth().height(220.dp), contentScale = ContentScale.Fit)
+            Text(if (kind == "image") "Up to 10 MiB. Static photos have location metadata removed; very large photos are resized." else "Up to 25 MiB. PDF, text, CSV, Word, Excel and PowerPoint.")
+            ErrorLine(error)
+        } },
+        confirmButton = { PrimaryButton(if (busy) "Uploading…" else "Send", enabled = !busy, onClick = send) },
+        dismissButton = { SecondaryButton("Cancel", enabled = !busy, onClick = cancel) })
+}
 @Composable
 fun LocationConfirmation(connection: CurrentConnection, vm: FeatureViewModel, reply: String?, close: () -> Unit) {
     val context = LocalContext.current
@@ -310,52 +434,81 @@ fun LocationConfirmation(connection: CurrentConnection, vm: FeatureViewModel, re
         if (allowed.values.any { it }) vm.location(connection, reply, close)
         else vm.showError("Location access was denied. Allow approximate or precise location in App info → Permissions to share a snapshot.")
     }
-    AlertDialog(onDismissRequest = { if (!busy) close() }, title = { Text("Share your location?") },
-        text = { Column { Text("Send one location snapshot to this person. It stays in your conversation until the connection ends. Approximate access works too. Map previews use OpenStreetMap, which sees the map area and your IP address."); FeatureError(vm) } },
-        confirmButton = { TextButton(enabled = !busy, onClick = {
+    val error by vm.error.collectAsState()
+    LocationContent(busy, error, onShare = {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
                 vm.location(connection, reply, close)
             else permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-        }) { Text(if (busy) "Locating…" else "Share snapshot") } },
-        dismissButton = { TextButton(enabled = !busy, onClick = close) { Text("Cancel") } })
+        }, close)
+}
+
+@Composable
+internal fun LocationContent(busy: Boolean, error: String?, onShare: () -> Unit, close: () -> Unit) {
+    FeatureModal(onDismissRequest = { if (!busy) close() }, title = { Text("Share your location?") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("Send one location snapshot to this person. It stays in your conversation until the connection ends. Approximate access works too. Map previews use OpenStreetMap, which sees the map area and your IP address."); ErrorLine(error) } },
+        confirmButton = { PrimaryButton(if (busy) "Locating…" else "Share snapshot", enabled = !busy, onClick = onShare) },
+        dismissButton = { SecondaryButton("Cancel", enabled = !busy, onClick = close) })
 }
 
 @Composable
 fun AppearanceDialog(connection: CurrentConnection, vm: FeatureViewModel, refresh: () -> Unit, close: () -> Unit) {
     val busy by vm.busy.collectAsState()
-    AlertDialog(onDismissRequest = close, title = { Text("Appearance") }, text = { Column {
+    val error by vm.error.collectAsState()
+    AppearanceContent(connection.wallpaper, busy, error, onTheme = { vm.theme(it) },
+        onWallpaper = { vm.wallpaper(connection.id, it, refresh) }, close)
+}
+
+@Composable
+internal fun AppearanceContent(wallpaper: String, busy: Boolean, error: String?, onTheme: (String) -> Unit, onWallpaper: (String) -> Unit, close: () -> Unit) {
+    FeatureModal(onDismissRequest = close, title = { Text("Appearance") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Theme on this device")
-        FlowRow { listOf("dark", "light").forEach { TextButton(enabled = !busy, onClick = { vm.theme(it) }) { Text(it) } } }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("dark", "light").forEach { option -> ChoiceButton(option,
+                selected = (OneTheme.colors.bg == app.web.oneonone.ui.theme.OneColors.Dark.bg) == (option == "dark"),
+                enabled = !busy, onClick = { onTheme(option) }) }
+        }
         Text("Wallpaper shared by both of you")
-        Choices(listOf("off", "love", "samurai"), connection.wallpaper) { if (!busy) vm.wallpaper(connection.id, it, refresh) }
-        FeatureError(vm)
-    } }, confirmButton = { TextButton(onClick = close) { Text("Done") } })
+        Choices(listOf("off", "love", "samurai"), wallpaper) { if (!busy) onWallpaper(it) }
+        ErrorLine(error)
+    } }, confirmButton = { SecondaryButton("Done", onClick = close) })
 }
 
 @Composable
 fun ReportDialog(connection: CurrentConnection, message: String?, vm: FeatureViewModel, close: () -> Unit) {
+    val busy by vm.busy.collectAsState()
+    val error by vm.error.collectAsState()
+    ReportContent(message, busy, error, onReport = { category, reason, done -> vm.report(connection.id, message, category, reason, done) }, close)
+}
+
+@Composable
+internal fun ReportContent(message: String?, busy: Boolean, error: String?, onReport: (String, String, () -> Unit) -> Unit, close: () -> Unit) {
     val context = LocalContext.current
     var category by rememberSaveable { mutableStateOf("other") }
     var reason by rememberSaveable { mutableStateOf("") }
-    val busy by vm.busy.collectAsState()
-    AlertDialog(onDismissRequest = { if (!busy) close() }, title = { Text(if (message == null) "Report this person" else "Report this message") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+    FeatureModal(onDismissRequest = { if (!busy) close() }, title = { Text(if (message == null) "Report this person" else "Report this message") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Reports go to the safety team. Reporting does not block or end your connection.")
             Choices(ReportCategories, category) { category = it }; Field("Details (optional)", reason, 1_000) { reason = it }
-            FeatureError(vm)
-        } }, confirmButton = { TextButton(enabled = !busy, onClick = { vm.report(connection.id, message, category, reason) {
+            ErrorLine(error)
+        } }, confirmButton = { PrimaryButton("Submit report", enabled = !busy, onClick = { onReport(category, reason) {
             android.widget.Toast.makeText(context, "Report submitted.", android.widget.Toast.LENGTH_SHORT).show()
             close()
-        } }) { Text("Submit report") } }, dismissButton = { TextButton(enabled = !busy, onClick = close) { Text("Cancel") } })
+        } }) }, dismissButton = { SecondaryButton("Cancel", enabled = !busy, onClick = close) })
 }
 
 @Composable
 fun BlockDialog(connection: CurrentConnection, vm: FeatureViewModel, close: () -> Unit, refresh: () -> Unit) {
     val busy by vm.busy.collectAsState()
-    AlertDialog(onDismissRequest = { if (!busy) close() }, title = { Text("Block this person?") },
-        text = { Column { Text("Blocking immediately ends this connection and deletes its conversation and attachments for both of you. Export first if you want to keep a copy. You can unblock in Settings, but the conversation cannot be restored."); FeatureError(vm) } },
-        confirmButton = { TextButton(enabled = !busy, onClick = { vm.block(connection.id) { close(); refresh() } }) { Text("Block and end") } },
-        dismissButton = { TextButton(enabled = !busy, onClick = close) { Text("Cancel") } })
+    val error by vm.error.collectAsState()
+    BlockContent(busy, error, onBlock = { vm.block(connection.id) { close(); refresh() } }, close)
+}
+
+@Composable
+internal fun BlockContent(busy: Boolean, error: String?, onBlock: () -> Unit, close: () -> Unit) {
+    FeatureModal(onDismissRequest = { if (!busy) close() }, title = { Text("Block this person?") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("Blocking immediately ends this connection and deletes its conversation and attachments for both of you. Export first if you want to keep a copy. You can unblock in Settings, but the conversation cannot be restored."); ErrorLine(error) } },
+        confirmButton = { DangerButton("Block and end", enabled = !busy, onClick = onBlock) },
+        dismissButton = { SecondaryButton("Cancel", enabled = !busy, onClick = close) })
 }
 
 @Composable
@@ -364,18 +517,36 @@ fun ExportDialog(connection: CurrentConnection, vm: FeatureViewModel, close: () 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         uri?.let { vm.export(it, connection, format) }; close()
     }
-    AlertDialog(onDismissRequest = close, title = { Text("Export conversation") }, text = { Column {
+    ExportContent(format, choose = { format = it }, onSave = { launcher.launch("one-on-one-conversation.$format") }, close)
+}
+
+@Composable
+internal fun ExportContent(format: String, choose: (String) -> Unit, onSave: () -> Unit, close: () -> Unit) {
+    FeatureModal(onDismissRequest = close, title = { Text("Export conversation") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Save messages from server history as text, JSON or HTML. Attachments are represented by metadata; their signed links expire. Download attachments separately before ending the connection. Keep exports somewhere private.")
-        Choices(listOf("txt", "json", "html"), format) { format = it }
-    } }, confirmButton = { TextButton(onClick = { launcher.launch("one-on-one-conversation.$format") }) { Text("Choose where to save") } },
-        dismissButton = { TextButton(onClick = close) { Text("Cancel") } })
+        Choices(listOf("txt", "json", "html"), format, choose)
+    } }, confirmButton = { PrimaryButton("Choose where to save", onClick = onSave) },
+        dismissButton = { SecondaryButton("Cancel", onClick = close) })
 }
 
 fun copyMessage(context: Context, message: ChatMessage) {
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", message.content.ifBlank { messageSummary(message) }))
 }
 
-@Composable private fun FeatureError(vm: FeatureViewModel) {
-    val error by vm.error.collectAsState()
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+@Composable
+private fun ErrorLine(error: String?) {
+    error?.let { Text(it, style = OneTextStyles.cardHint, color = OneTheme.colors.danger) }
+}
+
+@Composable
+internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () -> Unit) {
+    FeatureModal(onDismissRequest = close, title = { Text("Letter") }, text = { LetterBody(message) },
+        confirmButton = { PrimaryButton("Download HTML", download) }, dismissButton = { SecondaryButton("Close", close) })
+}
+
+@Composable
+internal fun PhotoViewer(url: String?, busy: Boolean, open: () -> Unit, close: () -> Unit) {
+    FeatureModal(onDismissRequest = close, text = {
+        AsyncImage(url, "Shared photo", Modifier.fillMaxWidth().heightIn(max = 480.dp), contentScale = ContentScale.Fit)
+    }, confirmButton = { SecondaryButton("Close", close) }, dismissButton = { SecondaryButton("Open in app", open, enabled = !busy) })
 }
