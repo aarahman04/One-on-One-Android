@@ -218,7 +218,9 @@ internal fun MessageBubble(
         Column(
             Modifier
                 .align(if (mine) Alignment.CenterEnd else Alignment.CenterStart)
-                .graphicsLayer { translationX = dragPx }
+                // Web swipes every row to the right. A right-aligned (mine) bubble has no room, so it only nudges into the 6dp row padding;
+                // the reply icon and the 60dp trigger still give the feedback.
+                .graphicsLayer { translationX = if (mine) minOf(dragPx, 6.dp.toPx()) else dragPx }
                 .maxWidthFraction(.8f),
             horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
         ) {

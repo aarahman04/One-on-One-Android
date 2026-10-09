@@ -158,7 +158,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                             EncryptionNote()
                         }
                     }
-                    itemsIndexed(filtered, key = { _, it -> it.id ?: "pending:${it.tempId}" }) { index, message ->
+                    itemsIndexed(filtered, key = { _, it -> messageKey(it) }) { index, message ->
                         val day = dayLabel(message.createdAt)
                         if (index == 0 || dayLabel(filtered[index - 1].createdAt) != day) DateSeparator(day)
                         val mine = message.senderId == connection.myUserId
@@ -169,7 +169,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                         val label = receiptLabel(message, newerTime(connection.otherLastReadAt, receipts?.lastReadAt),
                             newerTime(connection.otherLastDeliveredAt, receipts?.lastDeliveredAt))
                         val original = messages.find { it.id == message.replyTo }
-                        val key = message.id ?: "pending:${message.tempId}"
+                        val key = messageKey(message)
                         val animateIn = remember(key) { (message.id == null || Instant.parse(message.createdAt).isAfter(openedAt)) && animated.add(key) }
                         MessageBubble(message, mine, palette, label,
                             groupStart = isGroupStart(filtered.getOrNull(index - 1), message),
@@ -242,6 +242,14 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         vm.leave(connection.id, it) { leave = false; onRefresh() }
     }
 }
+
+/**
+ * Stable list key. tempId survives the server ack (ChatDatabase keeps it), whereas id appears only after it, so keying
+ * on id would re-create the row (losing menu/expanded state, replaying the enter animation) when a sent message is
+ * acked. Prefixed by sender so an incoming message that carries the sender's tempId cannot collide with ours.
+ */
+private fun messageKey(message: ChatMessage): String =
+    message.tempId?.let { "t:${message.senderId}:$it" } ?: message.id ?: "m:${message.createdAt}:${message.senderId}"
 
 /** Who wrote [message], as shown in a quote / reply bar. Empty when the original isn't loaded. */
 private fun authorOf(message: ChatMessage?, connection: CurrentConnection): String = when {
