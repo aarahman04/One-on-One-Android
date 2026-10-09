@@ -88,7 +88,7 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
             viewModel.onboardingShown()
         }
     }
-    NavHost(nav, startDestination = "home", modifier = Modifier.safeDrawingPadding()) {
+    NavHost(nav, startDestination = "home") {
         composable("home") {
             val connection = state.connection
             if (state.route == BootRoute.Chat && connection != null) {
@@ -145,13 +145,13 @@ private fun HomeScreen(
             }
             BootRoute.Age -> AgeScreen(state.busy, onVerify)
             BootRoute.UnderAge -> {
-                Eyebrow("SORRY")
                 Title("You need to be 18 to use One on One.")
                 ScreenSubtitle("Thanks for checking it out.")
                 SecondaryButton("Sign out", onSignOut, enabled = !state.busy)
             }
             BootRoute.Consent -> ConsentScreen(state.busy, onAcceptTerms)
             BootRoute.Connect -> {
+                Eyebrow("YOUR CONNECTION ID")
                 Title("Your connection ID")
                 ConnectionId(state.me?.connectionCode.orEmpty(), narrow)
                 ScreenSubtitle("Give this ID to the person you want to connect with.")
@@ -176,12 +176,14 @@ private fun HomeScreen(
                 TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
             }
             BootRoute.Waiting -> {
+                Eyebrow("CONNECTION REQUEST SENT")
                 Title("Connection request sent")
                 ScreenSubtitle("Waiting for ${state.connection?.otherConnectionCode.orEmpty()} to accept.")
                 SecondaryButton("Cancel request", onClick = { onConnectionAction("cancel") }, enabled = !state.busy)
                 TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
             }
             BootRoute.Request -> {
+                Eyebrow("CONNECTION REQUEST")
                 Title("Connection request")
                 ScreenSubtitle("${state.connection?.otherConnectionCode.orEmpty()} wants to connect with you.")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
@@ -202,13 +204,13 @@ internal fun ScreenFrame(state: AppState, screenKey: Any = state.route, content:
     val enter = remember(screenKey) { Animatable(if (preview) 1f else 0f) }
     val easing = OneTheme.motion.standard
     LaunchedEffect(screenKey) { enter.animateTo(1f, tween(280, easing = easing)) }
-    BoxWithConstraints(Modifier.fillMaxSize().background(OneTheme.colors.bg)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(OneTheme.colors.bg).safeDrawingPadding()) {
         val narrow = maxWidth < 480.dp
         val padding = if (narrow) OneTheme.spacing.lg16 else OneTheme.spacing.xl24
-        Column(Modifier.fillMaxSize().graphicsLayer {
+        Column(Modifier.fillMaxWidth().graphicsLayer {
             alpha = enter.value
             translationY = 8.dp.toPx() * (1f - enter.value)
-        }.verticalScroll(rememberScrollState()).padding(padding),
+        }.verticalScroll(rememberScrollState()).heightIn(min = this@BoxWithConstraints.maxHeight).padding(padding),
             verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
             content(narrow)
             if (state.busy) LinearProgressIndicator(Modifier.widthIn(max = 320.dp).fillMaxWidth().height(2.dp),
@@ -281,7 +283,6 @@ private fun LegalLinks() {
 
 @Composable
 private fun AgeScreen(busy: Boolean, onVerify: (LocalDate) -> Unit) {
-    Eyebrow("ONE MORE THING")
     Title("What's your date of birth?")
     ScreenSubtitle("One on One is for adults only. Your date of birth stays on this device.")
     val context = LocalContext.current
