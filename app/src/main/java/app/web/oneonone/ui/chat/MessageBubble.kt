@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -177,6 +178,7 @@ internal fun MessageBubble(
     var dragPx by remember { mutableFloatStateOf(0f) }
     val triggerPx = with(LocalDensity.current) { SwipeTriggerDp.dp.toPx() }
     val shape = RoundedCornerShape(OneTheme.radii.bubble8)
+    val alarm = message.type == "alarm"
 
     // message-enter: live rows fade + rise 8dp over 160ms (history never animates).
     val enter = remember { Animatable(if (animateIn) 0f else 1f) }
@@ -249,11 +251,13 @@ internal fun MessageBubble(
                             onDrawBehind { drawRect(brush) }
                         }
                         .border(1.dp, colors.edge, shape)
+                        // .chat__message[data-type='alarm'] .chat__message-body { border-left: 4px solid var(--danger) }
+                        .then(if (alarm) Modifier.drawBehind { drawRect(c.danger, size = Size(4.dp.toPx(), size.height)) } else Modifier)
                         .combinedClickable(onClick = { expanded = !expanded }, onLongClick = { menu = true })
                         // Text bubbles shrink-wrap to their widest child so the quote can stretch to the same width.
                         // Cards (S4) keep their own sizing: they may contain subcomposition that has no intrinsics.
                         .then(if (message.type == "text") Modifier.width(IntrinsicSize.Max) else Modifier)
-                        .padding(horizontal = 8.5.dp, vertical = 6.dp),
+                        .padding(start = if (alarm) 12.5.dp else 8.5.dp, end = 8.5.dp, top = 6.dp, bottom = 6.dp),
                 ) {
                     CompositionLocalProvider(LocalContentColor provides colors.text, LocalBubbleColors provides colors) {
                         if (quote != null) QuoteBlock(quote, colors, onQuote)

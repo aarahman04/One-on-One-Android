@@ -2,7 +2,6 @@ package app.web.oneonone.ui.chat.cards
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.Role
 import app.web.oneonone.ui.chat.LocalBubbleColors
 import app.web.oneonone.ui.theme.OneTextStyles
@@ -71,8 +70,7 @@ fun AlarmCard(message: ChatMessage, isMine: Boolean, onSend: (type: String, payl
         AlarmCardState.Cancelled -> "cancelled"
         AlarmCardState.Expired -> "expired"
     }
-    val live = state == AlarmCardState.Live || state == AlarmCardState.Pending || state == AlarmCardState.Failed
-    AlarmContent(hint, live, tappable, onClick = click@{
+    AlarmContent(hint, tappable, onClick = click@{
             val raiseId = message.id ?: return@click
             val payload = buildMap {
                 put("ack", JsonPrimitive(raiseId))
@@ -83,11 +81,10 @@ fun AlarmCard(message: ChatMessage, isMine: Boolean, onSend: (type: String, payl
 }
 
 @Composable
-internal fun AlarmContent(hint: String, live: Boolean, tappable: Boolean, onClick: () -> Unit) {
+internal fun AlarmContent(hint: String, tappable: Boolean, onClick: () -> Unit) {
     val danger = OneTheme.colors.danger
-    Row(Modifier.widthIn(min = 224.dp).drawBehind {
-        if (live) drawRect(danger, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height))
-    }.clickable(enabled = tappable, role = Role.Button, onClick = onClick).padding(start = if (live) 12.dp else 0.dp),
+    // The 4dp danger bar is drawn by MessageBubble on the bubble edge, like the web.
+    Row(Modifier.widthIn(min = 224.dp).clickable(enabled = tappable, role = Role.Button, onClick = onClick),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("🚨", fontSize = 16.sp, color = danger)
             Column {

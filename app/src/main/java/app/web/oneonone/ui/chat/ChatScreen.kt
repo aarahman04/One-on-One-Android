@@ -9,6 +9,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import app.web.oneonone.ui.components.DangerButton
+import app.web.oneonone.ui.components.OneTextField
+import app.web.oneonone.ui.components.PrimaryButton
+import app.web.oneonone.ui.components.SecondaryButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -226,15 +230,15 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     if (export) ExportDialog(connection, features) { export = false }
     if (report || reportMessage != null) ReportDialog(connection, reportMessage, features) { report = false; reportMessage = null }
     if (block) BlockDialog(connection, features, close = { block = false }, refresh = onRefresh)
-    if (alarm) AlertDialog(onDismissRequest = { alarm = false }, title = { Text("Send an emergency alarm?") },
+    if (alarm) FeatureModal(onDismissRequest = { alarm = false }, title = { Text("Send an emergency alarm?") },
         text = { Text("This sounds an alarm on their phone, even when it's locked. Use it only for a genuine emergency.") },
         // A raise is never a reply (web sends replyTo null).
-        confirmButton = { TextButton(onClick = { vm.sendCard("alarm", JsonObject(emptyMap()), null); vm.draft(""); vm.reply(null); alarm = false }) { Text("Send alarm") } },
-        dismissButton = { TextButton(onClick = { alarm = false }) { Text("Cancel") } })
-    duplicate?.let { tempId -> AlertDialog(onDismissRequest = { duplicate = null }, title = { Text("Resend this message?") },
+        confirmButton = { DangerButton("Send alarm", onClick = { vm.sendCard("alarm", JsonObject(emptyMap()), null); vm.draft(""); vm.reply(null); alarm = false }) },
+        dismissButton = { SecondaryButton("Cancel", onClick = { alarm = false }) })
+    duplicate?.let { tempId -> FeatureModal(onDismissRequest = { duplicate = null }, title = { Text("Resend this message?") },
         text = { Text("Its delivery is unknown. Check the conversation first; resending can create a duplicate.") },
-        confirmButton = { TextButton(onClick = { vm.retry(tempId, true); duplicate = null }) { Text("Resend") } },
-        dismissButton = { TextButton(onClick = { duplicate = null }) { Text("Cancel") } }) }
+        confirmButton = { PrimaryButton("Resend", onClick = { vm.retry(tempId, true); duplicate = null }) },
+        dismissButton = { SecondaryButton("Cancel", onClick = { duplicate = null }) }) }
     if (nickname) NicknameDialog(connection, busy, onDismiss = { nickname = false }) {
         vm.nickname(connection.id, it) { nickname = false; onRefresh() }
     }
@@ -292,21 +296,19 @@ private fun EncryptionNote() {
 @Composable
 private fun NicknameDialog(connection: CurrentConnection, busy: Boolean, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var name by rememberSaveable(connection.id) { mutableStateOf(connection.otherNickname.orEmpty()) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("What would you like to call this person?") },
-        text = { OutlinedTextField(name, { name = it.take(40) }, label = { Text("Nickname") }, singleLine = true) },
-        confirmButton = { TextButton(onClick = { onSave(name) }, enabled = !busy && name.isNotBlank()) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    FeatureModal(onDismissRequest = onDismiss, title = { Text("What would you like to call this person?") },
+        text = { OneTextField(name, { name = it.take(40) }, Modifier.fillMaxWidth(), placeholder = "Nickname") },
+        confirmButton = { PrimaryButton("Save", onClick = { onSave(name) }, enabled = !busy && name.isNotBlank()) },
+        dismissButton = { SecondaryButton("Cancel", onClick = onDismiss) })
 }
 
 @Composable
 private fun LeaveDialog(connection: CurrentConnection, busy: Boolean, onDismiss: () -> Unit, onAction: (String) -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Leave connection") },
+    FeatureModal(onDismissRequest = onDismiss, title = { Text("Leave connection") },
         text = { Text("Leaving takes five daily steps, one every 24 hours. Ending deletes the conversation and attachments for both of you. Your step: ${connection.myLeaveStep}/5. ${if (connection.bothLeaving) "You both chose to leave; you can end immediately." else ""}") },
-        confirmButton = { TextButton(onClick = { onAction(if (connection.bothLeaving) "end" else "advance") },
-            enabled = !busy && (connection.bothLeaving || connection.myLeaveStep == 0 || connection.canAdvanceLeave)) {
-            Text(if (connection.bothLeaving) "End now" else "Advance one step")
-        } },
-        dismissButton = { TextButton(onClick = { if (connection.myLeaveStep > 0) onAction("cancel") else onDismiss() }, enabled = !busy) {
-            Text(if (connection.myLeaveStep > 0) "Keep connection" else "Cancel")
-        } })
+        confirmButton = { DangerButton(if (connection.bothLeaving) "End now" else "Advance one step",
+            onClick = { onAction(if (connection.bothLeaving) "end" else "advance") },
+            enabled = !busy && (connection.bothLeaving || connection.myLeaveStep == 0 || connection.canAdvanceLeave)) },
+        dismissButton = { SecondaryButton(if (connection.myLeaveStep > 0) "Keep connection" else "Cancel",
+            onClick = { if (connection.myLeaveStep > 0) onAction("cancel") else onDismiss() }, enabled = !busy) })
 }

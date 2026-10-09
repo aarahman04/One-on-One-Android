@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -276,8 +277,12 @@ private fun LegalLinks() {
     val uri = LocalUriHandler.current
     FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.xs4)) {
-        TextLink("Terms", onClick = { uri.openUri("$LEGAL_ORIGIN/terms") }, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
-        TextLink("Privacy Policy", onClick = { uri.openUri("$LEGAL_ORIGIN/privacy") }, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
+        // .screen__legal: Privacy Policy, Terms, Child Safety; 12sp text-dim, gap 4/14.
+        listOf("Privacy Policy" to "privacy", "Terms" to "terms", "Child Safety" to "child-safety").forEach { (label, path) ->
+            Text(label, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).wrapContentHeight()
+                .clickable(role = Role.Button) { uri.openUri("$LEGAL_ORIGIN/$path") },
+                style = OneTextStyles.cardHint.copy(fontSize = 12.sp), color = OneTheme.colors.textDim)
+        }
     }
 }
 
