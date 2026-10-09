@@ -1,8 +1,8 @@
 package app.web.oneonone.ui.chat
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -14,22 +14,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -44,14 +35,14 @@ import app.web.oneonone.data.model.*
 import app.web.oneonone.data.realtime.ConnectionState
 import app.web.oneonone.ui.chat.cards.AlarmCard
 import app.web.oneonone.ui.chat.cards.CallLogCard
-import app.web.oneonone.ui.theme.BubblePalette
 import app.web.oneonone.ui.theme.BubbleTokens
+import app.web.oneonone.ui.theme.OneTextStyles
+import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 internal fun receiptLabel(message: ChatMessage, readAt: String?, deliveredAt: String?): String = when {
     message.id == null -> message.deliveryState
@@ -95,7 +86,6 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     var duplicate by rememberSaveable { mutableStateOf<String?>(null) }
     var more by remember { mutableStateOf(false) }
     var command by rememberSaveable(connection.id) { mutableStateOf<String?>(null) }
-    var commands by remember { mutableStateOf(false) }
     var appearance by rememberSaveable { mutableStateOf(false) }
     var export by rememberSaveable { mutableStateOf(false) }
     var report by rememberSaveable { mutableStateOf(false) }
@@ -116,96 +106,116 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             list.scrollToItem(filtered.lastIndex + 1)
         }
     }
+    // Live-arrival animation: only messages created after this screen opened, and each key at most once.
+    val openedAt = remember { Instant.now() }
+    val animated = remember { mutableSetOf<String>() }
+    val screenHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+    val slash = if (recording) emptyList() else slashMatches(draft)
+    val runCommand = { name: String -> features.clearError(); if (name == "alarm") alarm = true else command = name }
     Column(Modifier.fillMaxSize().imePadding()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Text(connection.otherNickname ?: "Your One on One", style = MaterialTheme.typography.titleLarge)
-            Text(when (state) { ConnectionState.Connected -> "Connected"; ConnectionState.Connecting -> "Connecting…"; ConnectionState.Offline -> "Waiting for connection" })
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(enabled = !recording, onClick = { features.background(); vm.call(CallKind.Audio) }) { Text("Voice call") }
-                TextButton(enabled = !recording, onClick = { features.background(); vm.call(CallKind.Video) }) { Text("Video call") }
-                Box {
-                    TextButton(onClick = { more = true }) { Text("More") }
-                    DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
-                        DropdownMenuItem(text = { Text("Search") }, onClick = { search = !search; more = false })
-                        DropdownMenuItem(text = { Text("Nickname") }, onClick = { nickname = true; more = false })
-                        DropdownMenuItem(text = { Text("Appearance") }, onClick = { appearance = true; more = false })
-                        DropdownMenuItem(text = { Text("Export conversation") }, onClick = { export = true; more = false })
-                        DropdownMenuItem(text = { Text("Report person") }, onClick = { features.clearError(); report = true; more = false })
-                        DropdownMenuItem(text = { Text("Block person") }, onClick = { features.clearError(); block = true; more = false })
-                        DropdownMenuItem(text = { Text("Settings") }, onClick = { onSettings(); more = false })
-                        DropdownMenuItem(text = { Text("Leave connection") }, onClick = { leave = true; more = false })
+        ChatHeader(
+            title = connection.otherNickname ?: "Your One on One",
+            state = state,
+            callsEnabled = !recording,
+            onVideo = { features.background(); vm.call(CallKind.Video) },
+            onCall = { features.background(); vm.call(CallKind.Audio) },
+            onMore = { more = true },
+            menu = {
+                ChatMenu(
+                    expanded = more, onDismiss = { more = false },
+                    onSearch = { search = !search; more = false },
+                    onAppearance = { appearance = true; more = false },
+                    onSettings = { onSettings(); more = false },
+                    onNickname = { nickname = true; more = false },
+                    onExport = { export = true; more = false },
+                    onReport = { features.clearError(); report = true; more = false },
+                    onBlock = { features.clearError(); block = true; more = false },
+                    onLeave = { leave = true; more = false },
+                )
+            },
+        )
+        if (search) ChatSearchBar(query, { query = it }, onClose = { search = false; query = "" })
+        if (connection.myLeaveStep > 0 || connection.otherLeaveStep > 0) {
+            LeaveBanner("Leave countdown: you ${connection.myLeaveStep}/5, them ${connection.otherLeaveStep}/5")
+        }
+        error?.let { ErrorLine(it) }
+        accountError?.let { ErrorLine(it) }
+        featureError?.let { ErrorLine(it) }
+        if (featureBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            val wallpaper = when (connection.wallpaper) { "love" -> R.drawable.wallpaper_love; "samurai" -> R.drawable.wallpaper_samurai; else -> null }
+            wallpaper?.let {
+                AsyncImage(it, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                Box(Modifier.matchParentSize().background(if (connection.wallpaper == "love") BubbleTokens.LoveWallpaperOverlay else BubbleTokens.SamuraiWallpaperOverlay))
+            }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                LazyColumn(Modifier.widthIn(max = OneTheme.sizes.chatMax720).fillMaxSize(), state = list,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)) {
+                    item(key = "history-control") {
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            if (hasOlder) LoadOlder(enabled = !busy) { vm.older() }
+                            else Text("Start of your One on One", color = OneTheme.colors.muted, style = OneTextStyles.cardHint.copy(fontSize = 12.sp))
+                            EncryptionNote()
+                        }
+                    }
+                    itemsIndexed(filtered, key = { _, it -> it.id ?: "pending:${it.tempId}" }) { index, message ->
+                        val day = dayLabel(message.createdAt)
+                        if (index == 0 || dayLabel(filtered[index - 1].createdAt) != day) DateSeparator(day)
+                        val mine = message.senderId == connection.myUserId
+                        if (message.type == "system") {
+                            SystemLine("${if (mine) "You" else "They"} changed ${message.payload?.get("event")?.jsonPrimitive?.content} to ${message.payload?.get("value")?.jsonPrimitive?.content}")
+                            return@itemsIndexed
+                        }
+                        val label = receiptLabel(message, newerTime(connection.otherLastReadAt, receipts?.lastReadAt),
+                            newerTime(connection.otherLastDeliveredAt, receipts?.lastDeliveredAt))
+                        val original = messages.find { it.id == message.replyTo }
+                        val key = message.id ?: "pending:${message.tempId}"
+                        val animateIn = remember(key) { (message.id == null || Instant.parse(message.createdAt).isAfter(openedAt)) && animated.add(key) }
+                        MessageBubble(message, mine, palette, label,
+                            groupStart = isGroupStart(filtered.getOrNull(index - 1), message),
+                            animateIn = animateIn,
+                            quote = message.replyTo?.let { BubbleQuote(authorOf(original, connection), original?.let(::messageSummary) ?: "Earlier message") },
+                            onReply = { vm.reply(message.id) },
+                            onReact = { emoji -> vm.react(checkNotNull(message.id), emoji,
+                                message.reactions.any { it.emoji == emoji && connection.myUserId in it.userIds }) },
+                            onRetry = { if (message.deliveryState == "unknown") duplicate = message.tempId else message.tempId?.let { vm.retry(it) } },
+                            onReport = { features.clearError(); reportMessage = message.id },
+                            onQuote = { message.replyTo?.let { id ->
+                                val at = filtered.indexOfFirst { it.id == id }
+                                if (at >= 0) scope.launch { list.animateScrollToItem(at + 1) }
+                                else android.widget.Toast.makeText(context, "Load older messages or clear search to see this reply.", android.widget.Toast.LENGTH_SHORT).show()
+                            } },
+                            card = {
+                                when (message.type) {
+                                    "alarm" -> AlarmCard(message, mine, vm::sendCard)
+                                    "call" -> CallLogCard(message, mine, vm::sendCard)
+                                    else -> FeatureCard(message, mine, original, connection, features)
+                                }
+                            })
                     }
                 }
             }
-            if (connection.myLeaveStep > 0 || connection.otherLeaveStep > 0) {
-                Text("Leave countdown: you ${connection.myLeaveStep}/5, them ${connection.otherLeaveStep}/5")
+            if (slash.isNotEmpty()) {
+                SlashMenu(slash, maxHeight = minOf(220.dp, screenHeight * .4f), onPick = runCommand,
+                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = OneTheme.sizes.chatMax720).fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 6.dp))
             }
-            if (search) OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("Search loaded messages") }, singleLine = true)
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            accountError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            featureError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            if (featureBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-        val wallpaper = when (connection.wallpaper) { "love" -> R.drawable.wallpaper_love; "samurai" -> R.drawable.wallpaper_samurai; else -> null }
-        wallpaper?.let { AsyncImage(it, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop) }
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item(key = "history-control") {
-                if (hasOlder) TextButton(onClick = { vm.older() }, enabled = !busy) { Text("Load older messages") }
-                else Text("Start of your One on One")
-            }
-            itemsIndexed(filtered, key = { _, it -> it.id ?: "pending:${it.tempId}" }) { index, message ->
-                val day = dayLabel(message.createdAt)
-                if (index == 0 || dayLabel(filtered[index - 1].createdAt) != day) {
-                    Text(day, Modifier.fillMaxWidth().padding(vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
-                }
-                val mine = message.senderId == connection.myUserId
-                val label = receiptLabel(message, newerTime(connection.otherLastReadAt, receipts?.lastReadAt),
-                    newerTime(connection.otherLastDeliveredAt, receipts?.lastDeliveredAt))
-                MessageBubble(message, mine, palette, label,
-                    reply = messages.find { it.id == message.replyTo },
-                    onReply = { vm.reply(message.id) },
-                    onReact = { emoji -> vm.react(checkNotNull(message.id), emoji,
-                        message.reactions.any { it.emoji == emoji && connection.myUserId in it.userIds }) },
-                    onRetry = { if (message.deliveryState == "unknown") duplicate = message.tempId else message.tempId?.let { vm.retry(it) } },
-                    onSend = vm::sendCard, connection = connection, features = features,
-                    onReport = { features.clearError(); reportMessage = message.id },
-                    onQuote = { message.replyTo?.let { id ->
-                        val at = filtered.indexOfFirst { it.id == id }
-                        if (at >= 0) scope.launch { list.animateScrollToItem(at + 1) }
-                        else android.widget.Toast.makeText(context, "Load older messages or clear search to see this reply.", android.widget.Toast.LENGTH_SHORT).show()
-                    } })
-            }
-        }
         }
         replyTo?.let { id ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Reply: ${messages.find { it.id == id }?.let(::messageSummary) ?: "earlier message"}", Modifier.weight(1f), maxLines = 2)
-                TextButton(onClick = { vm.reply(null) }) { Text("Cancel reply") }
-            }
+            val original = messages.find { it.id == id }
+            ReplyBar(authorOf(original, connection).ifEmpty { "Earlier message" }, original?.let(::messageSummary) ?: "earlier message") { vm.reply(null) }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            Box {
-                TextButton(enabled = !recording, onClick = { commands = true }) { Text("Commands") }
-                DropdownMenu(commands, onDismissRequest = { commands = false }) {
-                    FeatureCommands.forEach { name -> DropdownMenuItem(text = { Text("/$name") }, onClick = {
-                        commands = false; features.clearError(); if (name == "alarm") alarm = true else command = name
-                    }) }
-                }
-            }
-            TextButton(onClick = { more = false; attachmentOpen = !attachmentOpen }) { Text("Attach") }
-        }
-        if (attachmentOpen) AttachmentControls(connection, features, replyTo) { vm.reply(null) }
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(draft, vm::draft, Modifier.weight(1f), label = { Text("Message") }, maxLines = 5)
-            Button(onClick = {
+        if (attachmentOpen) Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) { AttachmentControls(connection, features, replyTo) { vm.reply(null) } }
+        ChatComposer(
+            draft = draft, onDraft = vm::draft,
+            canSend = !busy && !featureBusy,
+            recording = recording,
+            onAttach = { more = false; attachmentOpen = !attachmentOpen },
+            onMic = { attachmentOpen = true },
+            onSend = {
                 val name = draft.trim().removePrefix("/")
-                if (draft.trim().startsWith("/") && name in FeatureCommands) {
-                    features.clearError(); if (name == "alarm") alarm = true else command = name
-                } else vm.send()
-            }, enabled = draft.isNotBlank() && !busy && !featureBusy) { Text("Send") }
-        }
+                if (draft.trim().startsWith("/") && name in FeatureCommands) runCommand(name) else vm.send()
+            },
+        )
     }
     command?.let { type ->
         val close = { command = null; vm.draft(""); vm.reply(null) }
@@ -233,97 +243,43 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     }
 }
 
-@Composable
-private fun MessageBubble(
-    message: ChatMessage, mine: Boolean, palette: BubblePalette, receipt: String, reply: ChatMessage?,
-    onReply: () -> Unit, onReact: (String) -> Unit, onRetry: () -> Unit,
-    onSend: (String, JsonObject, String?) -> Unit,
-    connection: CurrentConnection, features: FeatureViewModel, onReport: () -> Unit, onQuote: () -> Unit,
-) {
-    val context = LocalContext.current
-    if (message.type == "system") {
-        Text("${if (mine) "You" else "They"} changed ${message.payload?.get("event")?.jsonPrimitive?.content} to ${message.payload?.get("value")?.jsonPrimitive?.content}",
-            Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium)
-        return
-    }
-    val colors = if (mine) palette.mine else palette.other
-    val time = remember(message.createdAt) { DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(message.createdAt)) }
-    val ticks = when (receipt) { "Read", "Delivered" -> "✓✓"; "Sent" -> "✓"; else -> "◷" }
-    var menu by remember { mutableStateOf(false) }
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
-        Column(Modifier.fillMaxWidth(.82f).widthIn(max = 420.dp), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-            Box {
-                Surface(shape = RoundedCornerShape(16.dp), color = Color.Transparent, border = BorderStroke(1.dp, colors.edge),
-                    modifier = Modifier.drawBehind {
-                        val x = if (mine) size.width else 0f
-                        val direction = if (mine) 1f else -1f
-                        val tail = Path().apply {
-                            moveTo(x - direction * 4.dp.toPx(), size.height - 12.dp.toPx())
-                            lineTo(x + direction * 6.dp.toPx(), size.height)
-                            lineTo(x - direction * 8.dp.toPx(), size.height - 2.dp.toPx())
-                            close()
-                        }
-                        drawPath(tail, colors.tail)
-                    }.combinedClickable(onClick = { expanded = !expanded }, onLongClick = { menu = true })) {
-                    Column(Modifier.drawWithCache {
-                        // CSS 135deg: a fixed diagonal, independent of bubble aspect ratio.
-                        val half = (size.width + size.height) / 4f
-                        val center = Offset(size.width / 2f, size.height / 2f)
-                        val diagonal = Offset(half, half)
-                        val brush = Brush.linearGradient(listOf(colors.backgroundStart, colors.backgroundEnd), center - diagonal, center + diagonal)
-                        onDrawBehind { drawRect(brush) }
-                    }.padding(12.dp)) {
-                        CompositionLocalProvider(LocalContentColor provides colors.text) {
-                            if (message.replyTo != null) TextButton(onClick = onQuote) { Text("↪ ${reply?.let(::messageSummary) ?: "Earlier message"}", color = colors.text, style = MaterialTheme.typography.labelMedium, maxLines = 2) }
-                            when (message.type) {
-                                "alarm" -> AlarmCard(message, mine, onSend)
-                                "call" -> CallLogCard(message, mine, onSend)
-                                "text" -> Text(buildAnnotatedString {
-                                    append(message.content)
-                                    Regex("https?://[^\\s<>]+").findAll(message.content).forEach { match ->
-                                        addLink(LinkAnnotation.Url(match.value, TextLinkStyles(SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))), match.range.first, match.range.last + 1)
-                                    }
-                                    append("  ")
-                                    withStyle(SpanStyle(color = colors.meta, fontSize = 11.sp)) { append(time) }
-                                    if (mine) withStyle(SpanStyle(color = if (receipt == "Read") palette.read else palette.ticks, fontSize = 11.sp)) { append(" $ticks") }
-                                }, color = colors.text, modifier = Modifier.semantics {
-                                    contentDescription = "${message.content}, $time${if (mine) ", $receipt" else ""}"
-                                })
-                                else -> FeatureCard(message, mine, reply, connection, features)
-                            }
-                            if (message.type != "text") Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(time, color = colors.meta, fontSize = 11.sp)
-                                if (mine && message.type != "call") Text(ticks, color = if (receipt == "Read") palette.read else palette.ticks, fontSize = 11.sp,
-                                    modifier = Modifier.semantics { contentDescription = receipt })
-                            }
-                            if (expanded) Text(message.createdAt, color = colors.meta, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Copy") }, onClick = { copyMessage(context, message); menu = false })
-                    if (message.id != null && !mine) DropdownMenuItem(text = { Text("Report message") }, onClick = { onReport(); menu = false })
-                    if (message.id != null && message.type != "call") {
-                        DropdownMenuItem(text = { Text("Reply") }, onClick = { onReply(); menu = false })
-                        AllowedReactions.forEach { emoji -> DropdownMenuItem(text = { Text("React $emoji") }, onClick = { onReact(emoji); menu = false }) }
-                    }
-                }
-            }
-            if (message.reactions.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                message.reactions.forEach { reaction ->
-                    TextButton(onClick = { onReact(reaction.emoji) }) { Text("${reaction.emoji} ${reaction.userIds.size}") }
-                }
-            }
-            if (message.id == null && message.deliveryState in setOf("failed", "unknown", "queued")) {
-                Text(message.error ?: "Queued — sends when connected", style = MaterialTheme.typography.labelSmall)
-                if (message.deliveryState in setOf("failed", "unknown")) TextButton(onClick = onRetry) { Text(if (message.deliveryState == "unknown") "Review resend" else "Retry") }
-            }
-        }
-    }
+/** Who wrote [message], as shown in a quote / reply bar. Empty when the original isn't loaded. */
+private fun authorOf(message: ChatMessage?, connection: CurrentConnection): String = when {
+    message == null -> ""
+    message.senderId == connection.myUserId -> "You"
+    else -> connection.otherNickname ?: "Them"
 }
 
 private fun dayLabel(value: String) = Instant.parse(value).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+
+/** .chat__date-separator: centred pill on bg-raised. */
+@Composable
+private fun DateSeparator(label: String) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        Text(label, Modifier.clip(RoundedCornerShape(OneTheme.radii.full)).background(OneTheme.colors.bgRaised).padding(horizontal = 12.dp, vertical = 4.dp),
+            color = OneTheme.colors.textDim, style = OneTextStyles.cardHint)
+    }
+}
+
+/** .chat__load-older: small outlined button. */
+@Composable
+private fun LoadOlder(enabled: Boolean, onClick: () -> Unit) {
+    val c = OneTheme.colors
+    Text("Load older messages",
+        Modifier.padding(bottom = 4.dp).border(1.dp, c.border, RoundedCornerShape(OneTheme.radii.xs4))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+        color = if (enabled) c.textDim else c.muted, style = OneTextStyles.cardHint.copy(fontSize = 12.sp))
+}
+
+/** .chat__enc-note: lock glyph + "Messages are encrypted". */
+@Composable
+private fun EncryptionNote() {
+    val c = OneTheme.colors
+    Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Icon(painterResource(R.drawable.ic_lock), null, tint = c.muted, modifier = Modifier.size(11.dp))
+        Text("Messages are encrypted", color = c.muted, style = OneTextStyles.bubbleMeta)
+    }
+}
 
 @Composable
 private fun NicknameDialog(connection: CurrentConnection, busy: Boolean, onDismiss: () -> Unit, onSave: (String) -> Unit) {
