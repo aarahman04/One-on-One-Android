@@ -1,0 +1,25 @@
+# S2 — Sonnet 5.5 (chat screen) — after S1 merges
+
+You are restyling the native Android app at C:\Users\aarah\One-on-One-Android (Kotlin, Jetpack Compose, Material3 via BOM 2026.09.00, minSdk 26, lint warningsAsErrors) to match the web client at C:\Users\aarah\One-on-One\client EXACTLY. The web repo is READ-ONLY reference. Source of truth: client/src/styles/global.css (only stylesheet), client/public/fonts/fonts.css, client/src/features/call/icons.ts, client/src/pages/*.ts, client/src/features/*.ts. After S1 merges, docs/design/WEB-STYLE-SPEC.md in the Android repo holds the extracted spec — read it first.
+
+Hard rules:
+- Presentation only. Do not change ViewModels, repositories, navigation routes, callbacks, network, alarm/call logic, or any behavior. Every existing button/action must still exist and call the same thing.
+- No new Gradle dependencies (fonts are res/font files, icons are vector drawables). No material-icons-extended.
+- Use theme tokens (OneTheme.colors/spacing/radii/sizes/motion, MaterialTheme.typography) and shared primitives in ui/components/. No new Color(0x...) literals outside ui/theme/.
+- The in-app Appearance toggle (DevicePreferences "light"/"dark", default dark) drives the whole app. Do not switch to isSystemInDarkTheme().
+- Wallpapers (off/love/samurai) override bubble palettes, as today.
+- Read CLAUDE.md in the Android repo and follow it. Minimum diff in files you own; do not touch files outside your ownership list.
+- Must pass: ./gradlew assembleDebug lintDebug testDebugUnitTest
+- Append a section to docs/PROGRESS.md (what shipped, verification, device checklist) and add to docs/ARCHITECTURE.md only if structure changed (additive mermaid, no rewrites).
+- PR description: summary, files changed, screenshots for dark, light, love, samurai of every screen you touched, next to the matching web screenshot if available.
+Branch: style/s2-chat off main (S1 merged). You own: ui/chat/ChatScreen.kt and new files under ui/chat/ (e.g. MessageBubble.kt, Composer.kt, ChatHeader.kt, BubbleGrouping.kt) plus their tests. Do NOT touch FeatureUi.kt, cards/, CallOverlay.kt, AppNavigation.kt.
+
+Match web chat (ChatPage.ts markup L2992-3052, global.css L546-1600, L2314, L2981-3060):
+1. Header: min 56dp + status bar inset, bgRaised, bottom 1dp border. 40dp avatar circle (accentYou 18% blended over bg, initial 20sp accentYou). Title 16/600 single-line ellipsis; status 13sp textDim prefixed "● " (dot accentYou, muted when away/connecting). Right: OneIconButton video, phone, more_vertical. The 8 existing "More" items go into OneMenu with web grouping (Search, Appearance, Notifications, Rename, Export; collapsible "Connection & account" danger items; "About"). Search field and leave banner (bg danger@8%) styled per L668/L709.
+2. Log: contentPadding 8/6, chat max width 720dp centered. Date separator = pill on bgRaised, padding 4/12, 13sp. Encryption note: lock icon 11dp + "Messages are encrypted" 11sp muted.
+3. Bubble: extract pure fun isGroupStart(prev, cur): Boolean — false only if same sender AND 0<=delta<=60_000ms AND same local day; unit test it. Top margin 8dp group start, 2dp continuation. Max width 80%, padding 6/9, radius 8 all corners, 135° gradient (existing), 1dp inner edge. Tail: 6dp triangle at TOP outer corner, only on group start, solid tail color (received left -6dp, sent right -6dp). Text 15sp. Meta (time 11sp meta color + tick vector 14x13) floats at end of last line (use a custom Layout/SubcomposeLayout that places meta on the last line if it fits, else a new line). Ticks: pending alpha .7, sent single, delivered double, seen in read color. Failed: " · not sent" danger.
+4. Quote: 3dp left bar, radius 4, padding 3/8, quoteBg, text .85 alpha. Reactions: plain emoji 15sp (count if >1), offset -3dp below bubble, 10dp inset, end-aligned for mine. Long-press (450ms) opens OneMenu with reaction row ❤️ 👍 😂 😮 😢 🙏 and existing actions. Swipe-to-reply: 60dp threshold, 80 max, reply icon alpha = drag/60 (only if trivial to add without behavior change; else skip and note).
+5. Composer: bar padding 8 + nav inset, bg. Pill min 48dp radius 22 bgRaised, focus 1dp accentYou outline; paperclip icon 22dp inside (opens existing attach controls); text 16sp lh 1.4, grows to max 120dp. Outside pill: 48dp circle send (sendBg/sendFg, press scale .94) when text present, mic otherwise (existing actions). Reply bar 56dp bgRaised above composer, name 12/700 accentOther, close X. Slash menu: typing "/" shows drop-up 6dp above composer, radius 6, max height min(220dp, 40% screen), items padding 8/14, "/name" accentOther 600 13sp + description 12sp muted — replaces the "Commands" TextButton dropdown, same commands list and handlers.
+6. Motion: live-arriving messages fade+8dp rise 160ms standard (not history on first load). Menu pop scale .95→1, 200ms emphasized. Respect animator duration scale 0.
+7. Wallpaper: keep AsyncImage, add overlay love rgba(10,14,20,.22) / samurai rgba(10,8,8,.30).
+Screenshots: chat dark, light, love, samurai, with a reply, reactions, grouped run, failed message, slash menu open.

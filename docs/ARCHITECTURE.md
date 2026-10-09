@@ -331,3 +331,16 @@ full-screen CallStyle (token-checked Answer)"]
   RTC <-. "SRTP media (STUN/TURN from /api/turn-credentials)" .-> Peer["Other phone / web"]
 ```
 
+
+## Design system (S1)
+
+```mermaid
+flowchart LR
+  Web["Web global.css (read-only spec)"] --> Spec["docs/design/WEB-STYLE-SPEC.md"]
+  Spec --> Tokens["ui/theme: OneColors / Spacing / Radii / Sizes / Motion / Type"]
+  Tokens --> Theme["OneOnOneTheme(darkTheme) -> MaterialTheme + OneTheme.*"]
+  Theme --> Components["ui/components: buttons, field, modal, menu, pressScale"]
+  Icons["res/drawable ic_*"] --> Components
+  Components --> Screens["Screens (restyled in S2-S4)"]
+  Theme --> Screens
+```

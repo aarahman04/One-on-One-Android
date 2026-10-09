@@ -1,0 +1,22 @@
+# S4 — GPT Sol 6.1 (cards, dialogs, call overlay) — after S3 merges and S2 merged
+
+You are restyling the native Android app at C:\Users\aarah\One-on-One-Android (Kotlin, Jetpack Compose, Material3 via BOM 2026.09.00, minSdk 26, lint warningsAsErrors) to match the web client at C:\Users\aarah\One-on-One\client EXACTLY. The web repo is READ-ONLY reference. Source of truth: client/src/styles/global.css (only stylesheet), client/public/fonts/fonts.css, client/src/features/call/icons.ts, client/src/pages/*.ts, client/src/features/*.ts. After S1 merges, docs/design/WEB-STYLE-SPEC.md in the Android repo holds the extracted spec — read it first.
+
+Hard rules:
+- Presentation only. Do not change ViewModels, repositories, navigation routes, callbacks, network, alarm/call logic, or any behavior. Every existing button/action must still exist and call the same thing.
+- No new Gradle dependencies (fonts are res/font files, icons are vector drawables). No material-icons-extended.
+- Use theme tokens (OneTheme.colors/spacing/radii/sizes/motion, MaterialTheme.typography) and shared primitives in ui/components/. No new Color(0x...) literals outside ui/theme/.
+- The in-app Appearance toggle (DevicePreferences "light"/"dark", default dark) drives the whole app. Do not switch to isSystemInDarkTheme().
+- Wallpapers (off/love/samurai) override bubble palettes, as today.
+- Read CLAUDE.md in the Android repo and follow it. Minimum diff in files you own; do not touch files outside your ownership list.
+- Must pass: ./gradlew assembleDebug lintDebug testDebugUnitTest
+- Append a section to docs/PROGRESS.md (what shipped, verification, device checklist) and add to docs/ARCHITECTURE.md only if structure changed (additive mermaid, no rewrites).
+- PR description: summary, files changed, screenshots for dark, light, love, samurai of every screen you touched, next to the matching web screenshot if available.
+Branch: style/s4-cards-call off main (S1, S2, S3 merged). You own ONLY: ui/chat/FeatureUi.kt, ui/chat/cards/**, ui/call/CallOverlay.kt. Cards render inside the S2 bubble — read ui/chat/ to see how bubble colors are provided and use the bubble text/meta colors (not MaterialTheme onSurface).
+
+1. Cards (global.css L1598-2260, L3017-3061): min width min(80%, 224dp); heading row = 16dp emoji/icon + title 13/600; body 15sp; hints 13sp alpha .8. Letter ✉ (sheet: padding 40/36, radius 10, 16sp lh 1.75; Dawn = 160° gradient #ffe7d0 0%/#ffd1dc 38%/#cfe6ff 100%, text #3a2e3a, serif; Botanical = #f7f3e8, text #34432f, border #b9c9a6, inner 6dp rgba(120,150,90,.12) — move these colors into a LetterThemes object in FeatureUi.kt), countdown ⏳, check-in (😄🙂😐😔😞 buttons radius 4, active accentOther border), ask 💌/🔒, this-or-that 🎲 (two options gap 10, muted "vs"), location (64dp tile radius 6, action buttons min 40dp, bg white@6%, 12/600), image (full bleed, max height 320, meta bottom-end on vertical gradient black@55%→transparent, white .92), voice (40dp play circle, 4dp track currentColor@.3 with progress full), file.
+2. AlarmCard: no OutlinedCard. 4dp start border in danger token while live, 🚨 icon danger-colored, heading 13/600, hint 13 @ .8. Delete AlarmRed literal.
+3. CallLogCard (L2863-2954): row gap 9dp, 36dp disc (discBg) with 19dp phone/video vector, title 13/600, subtitle 12 @ .7, text in bubble text color; missed = disc glyph danger; tap = existing call-back action.
+4. Dialogs (FeatureComposer, LocationConfirmation, AppearanceDialog, Report, Block, Export): OneModal; choices radius 4, 12sp, active accentOther border; FilterChips replaced with this style; fields OneTextField with char counter 12sp muted.
+5. CallOverlay (controller.ts:79-244, global.css L2580-2842): bg token (not hardcoded), padding 32/24 + insets, screen-enter 320ms emphasized. Avatar ring size min(168dp, 44% width), bgRaised, 1dp border; ringing pulse ring (0→26dp spread, accentOther@.3→0, 2s loop; 1.1s while reconnecting); connected border+letter accentOther; reconnecting border muted. Name callName style, status callStatus. Controls panel max width 400dp, padding 32/12/24, radius 16, bgRaised, elevation 3. Buttons 62dp circles with vector icons + 12sp label: neutral bg, active inverted (bg text, fg bg), danger (danger bg, white icon), accept (accentYou bg, #04170a icon). Local preview width min(112dp, 28%), 3:4, radius 10, border white@25%, mirrored. Delete Danger/Accept/CallBackground literals.
+Screenshots: every card type in dark/light/love/samurai, call overlay ringing/connected/video.

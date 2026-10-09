@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Design-system icons land in S1 before any screen references them (S2-S4). Remove entries once used. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@drawable/ic_*" />
