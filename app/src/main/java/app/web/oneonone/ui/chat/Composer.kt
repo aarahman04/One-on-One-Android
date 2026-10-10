@@ -1,5 +1,10 @@
 package app.web.oneonone.ui.chat
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,6 +14,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -109,6 +117,7 @@ internal fun SlashMenu(names: List<String>, maxHeight: androidx.compose.ui.unit.
 
 /**
  * .chat__input-bar: [ pill: paperclip + growing text ] and a 48dp send circle (text present) or mic (empty).
+ * While [recording] the row is a [trash | dot + timer | stop] bar instead.
  * Pure presentation: every action is a callback supplied by ChatScreen.
  */
 @Composable
@@ -121,6 +130,9 @@ internal fun ChatComposer(
     onMic: () -> Unit,
     onSend: () -> Unit,
     modifier: Modifier = Modifier,
+    elapsedSeconds: Int = 0,
+    onStop: () -> Unit = {},
+    onDiscard: () -> Unit = {},
 ) {
     val c = OneTheme.colors
     val pillShape = RoundedCornerShape(OneTheme.radii.pill22)
@@ -128,10 +140,14 @@ internal fun ChatComposer(
     val focused by source.collectIsFocusedAsState()
     val textStyle = TextStyle(fontFamily = FontFamilies.Body, fontSize = 16.sp, lineHeight = 22.4.sp, color = c.text)
     Row(
-        modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars).padding(8.dp),
+        modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(8.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (recording) {
+            RecordingBar(elapsedSeconds, onStop, onDiscard)
+            return@Row
+        }
         Row(
             Modifier
                 .weight(1f)
@@ -174,10 +190,41 @@ internal fun ChatComposer(
                 Icon(painterResource(R.drawable.ic_send), null, tint = c.sendFg, modifier = Modifier.size(20.dp))
             }
         } else {
-            // The voice-note recorder lives in the attachment panel (AttachmentControls); the mic opens it.
             Box(Modifier.size(OneTheme.sizes.send48), contentAlignment = Alignment.Center) {
-                OneIconButton(R.drawable.ic_mic, if (recording) "Recording voice note" else "Record voice note", onMic, tint = if (recording) c.danger else c.textDim)
+                OneIconButton(R.drawable.ic_mic, "Record voice note", onMic)
             }
         }
+    }
+}
+
+/** Same 48dp row as the composer while recording: discard, live timer, and a stop button that sends the voice note. */
+@Composable
+private fun RowScope.RecordingBar(elapsedSeconds: Int, onStop: () -> Unit, onDiscard: () -> Unit) {
+    val c = OneTheme.colors
+    val pulse by rememberInfiniteTransition(label = "recording-dot").animateFloat(
+        initialValue = 1f, targetValue = .3f, label = "alpha",
+        animationSpec = infiniteRepeatable(tween(800, easing = OneTheme.motion.standard), RepeatMode.Reverse),
+    )
+    val stopSource = remember { MutableInteractionSource() }
+    OneIconButton(R.drawable.ic_trash, "Discard recording", onDiscard, Modifier.size(OneTheme.sizes.send48))
+    Row(
+        Modifier.weight(1f).height(OneTheme.sizes.send48).semantics(mergeDescendants = true) { contentDescription = "Recording" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(10.dp).alpha(pulse).clip(CircleShape).background(c.danger))
+        Text("%d:%02d".format(elapsedSeconds / 60, elapsedSeconds % 60), color = c.text, style = OneTextStyles.menuItem)
+    }
+    Box(
+        Modifier
+            .size(OneTheme.sizes.send48)
+            .pressScale(stopSource, .94f)
+            .clip(CircleShape)
+            .background(c.sendBg)
+            .clickable(interactionSource = stopSource, indication = null, role = Role.Button, onClick = onStop)
+            .semantics { contentDescription = "Stop and send voice note" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painterResource(R.drawable.ic_stop), null, tint = c.sendFg, modifier = Modifier.size(20.dp))
     }
 }

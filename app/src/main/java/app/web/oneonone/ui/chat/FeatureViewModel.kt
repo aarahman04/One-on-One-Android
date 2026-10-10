@@ -62,6 +62,9 @@ class FeatureViewModel @Inject constructor(
         onDone()
     }
     fun upload(connection: CurrentConnection, kind: String, uri: Uri, reply: String?, onDone: () -> Unit) = action {
+        sendMedia(connection, kind, uri, reply); onDone()
+    }
+    private suspend fun sendMedia(connection: CurrentConnection, kind: String, uri: Uri, reply: String?) {
         val session = ChatSession(connection.myUserId, connection.id)
         check(service.active.value == session) { "Conversation changed." }
         val duration = if (kind == "voice") saved.get<Double>("voiceDuration") else null
@@ -69,7 +72,6 @@ class FeatureViewModel @Inject constructor(
         check(service.active.value == session) { "Conversation changed during upload." }
         service.send("", kind, payload, reply)
         if (kind == "voice") discardVoice()
-        onDone()
     }
     fun location(connection: CurrentConnection, reply: String?, onDone: () -> Unit) = action {
         val session = ChatSession(connection.myUserId, connection.id)
@@ -78,22 +80,33 @@ class FeatureViewModel @Inject constructor(
         check(service.active.value == session) { "Conversation changed while locating." }
         service.send(featureContent("location", payload), "location", payload, reply); onDone()
     }
-    fun record() {
+    /** [onLimit] runs when the recorder hits its length/size cap; the screen uses it to send what was recorded. */
+    fun record(onLimit: () -> Unit) {
         if (recordingJob?.isActive == true || recording.value || mutableBusy.value) return
         mutableError.value = null
         recordingJob = viewModelScope.launch {
             try {
-                media.startRecording { viewModelScope.launch { stopRecording() } }
+                media.startRecording { viewModelScope.launch { onLimit() } }
                 recording.value = true
             } catch (cancelled: CancellationException) { media.releaseRecording(); throw cancelled }
             catch (error: Exception) { mutableError.value = userError(error) }
         }
     }
-    fun stopRecording() = action {
+    /** Stops the recorder and sends the clip straight away; a clip that fails to send is dropped, not kept for a retry. */
+    fun stopAndSend(connection: CurrentConnection, reply: String?, onDone: () -> Unit) = action {
         recordingJob?.join()
         val clip = try { media.stopRecording() } finally { recording.value = false }
         check(clip != null) { "Record for at least one second." }
         discardVoice(); saved["voicePath"] = clip.file.absolutePath; saved["voiceDuration"] = clip.duration
+        try { sendMedia(connection, "voice", Uri.fromFile(clip.file), reply) } catch (error: Exception) { discardVoice(); throw error }
+        onDone()
+    }
+    /** Stops the recorder and deletes the clip without uploading. */
+    fun cancelRecording() {
+        viewModelScope.launch {
+            recordingJob?.join()
+            try { media.stopRecording()?.let { media.discardVoice(it.file.absolutePath) } } finally { recording.value = false }
+        }
     }
     fun discardVoice() {
         val path = saved.get<String>("voicePath")
