@@ -360,3 +360,24 @@ flowchart TB
   CS --> RB["ReplyBar"]
   CS --> CC["ChatComposer (pill, send / mic)"]
 ```
+
+## Presence and launch (D2)
+
+```mermaid
+flowchart LR
+  Visible["Resumed chat"] --> Heartbeat["MessageService: read every 10s, skip recent reads"]
+  Heartbeat --> Transport["Transport.markRead / existing REST read"]
+  Receipt["Connection.otherLastReadAt + receipt:update"] --> Newest[newerTime]
+  Newest --> Presence["Pure label formatter + resumed 5s ticker"]
+  Socket["Own socket state"] --> Presence
+  Presence --> Header["Pure ChatHeader / crossfade"]
+  Starting["Starting theme / inset launcher logo"] --> Splash["Loading route; keep splash at most 3s"]
+  Splash --> Loading["Same centered logo / dark background"]
+  Loading --> App["Server-driven app route"]
+```
+
+Presence uses the existing receipt timestamp, with a strict 15-second freshness
+window; socket trouble overrides the other member's status. Immediate message
+reads and tick rendering retain their existing behavior. Heartbeat freshness
+uses monotonic time and stops when paused or deactivated. The loading screen
+bypasses ScreenFrame's text, progress and entry animation for a seamless launch.

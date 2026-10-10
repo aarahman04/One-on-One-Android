@@ -13,6 +13,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import java.time.Instant
 import java.util.UUID
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -51,6 +53,10 @@ class MessageService @Inject constructor(
     private val mutableEnded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val ended = mutableEnded.asSharedFlow()
     private var conversationJob: Job? = null
+    private var heartbeatJob: Job? = null
+    private val reading = Mutex()
+    internal var readTimeSource: TimeSource = TimeSource.Monotonic
+    @Volatile private var lastRead: TimeMark? = null
     private val lifecycle = Mutex()
     private val synchronizing = Mutex()
     private val sending = Mutex()
@@ -65,6 +71,9 @@ class MessageService @Inject constructor(
         val session = ChatSession(connection.myUserId, connection.id)
         if (session == active.value) return@withLock
         conversationJob?.cancelAndJoin()
+        heartbeatJob?.cancelAndJoin()
+        heartbeatJob = null
+        lastRead = null
         transport.stop()
         mutableActive.value = session
         mutableError.value = null
@@ -103,22 +112,38 @@ class MessageService @Inject constructor(
         transport.start()
         // REST history works even if the socket is temporarily unavailable.
         conversation.launch { guarded { resync() } }
+        if (chatResumed) visible(true)
     }
 
     suspend fun deactivate(clear: Boolean = false) = lifecycle.withLock {
         val previous = active.value
+        heartbeatJob?.cancelAndJoin()
+        heartbeatJob = null
         conversationJob?.cancelAndJoin()
         conversationJob = null
         transport.stop()
         mutableActive.value = null
         mutableReceipts.value = null
         chatResumed = false
+        lastRead = null
         if (clear && previous != null) store.clear(previous.ownerId, previous.connectionId)
     }
 
     fun visible(resumed: Boolean) {
         chatResumed = resumed
-        if (resumed) scope.launch { guarded { markRead() } }
+        if (!resumed) {
+            heartbeatJob?.cancel()
+            heartbeatJob = null
+        } else if (heartbeatJob?.isActive != true) {
+            heartbeatJob = scope.launch {
+                while (isActive) {
+                    guarded { markRead(heartbeat = true) }
+                    // A skipped tick must not leave a 20-second gap after an immediate read.
+                    val sinceRead = lastRead?.elapsedNow()?.inWholeMilliseconds ?: 10_000
+                    delay(if (sinceRead < 10_000) 10_000 - sinceRead else 10_000)
+                }
+            }
+        }
     }
     fun isChatResumed(connectionId: String): Boolean = chatResumed && active.value?.connectionId == connectionId
 
@@ -224,7 +249,14 @@ class MessageService @Inject constructor(
         all.values.sortedBy { Instant.parse(it.createdAt) }
     }
     suspend fun findSend(tempId: String): ChatMessage? = active.value?.let { store.byTempId(it.ownerId, it.connectionId, tempId) }
-    suspend fun markRead() { active.value?.let { transport.markRead(it.connectionId) } }
+    suspend fun markRead() = markRead(heartbeat = false)
+
+    private suspend fun markRead(heartbeat: Boolean) = reading.withLock {
+        if (heartbeat && (!chatResumed || lastRead?.elapsedNow()?.inWholeMilliseconds?.let { it < 10_000 } == true)) return@withLock
+        val session = active.value ?: return@withLock
+        transport.markRead(session.connectionId)
+        if (session == active.value) lastRead = readTimeSource.markNow()
+    }
 
     private suspend fun guarded(block: suspend () -> Unit) {
         try { block() } catch (cancelled: CancellationException) { throw cancelled }

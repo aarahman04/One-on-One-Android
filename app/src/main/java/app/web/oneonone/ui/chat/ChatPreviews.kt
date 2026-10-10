@@ -13,7 +13,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.web.oneonone.data.model.ChatMessage
 import app.web.oneonone.data.model.ReactionSummary
-import app.web.oneonone.data.realtime.ConnectionState
 import app.web.oneonone.ui.theme.BubblePalette
 import app.web.oneonone.ui.theme.BubbleTokens
 import app.web.oneonone.ui.theme.OneOnOneTheme
@@ -68,8 +67,8 @@ private fun BubblesSamurai() = Host(true) { Conversation(BubbleTokens.Samurai) }
 @Preview(name = "Header", showBackground = true, widthDp = 380)
 @Composable
 private fun HeaderPreview() = Host(true) {
-    ChatHeader("Alex", ConnectionState.Connected, true, {}, {}, {}, {})
-    ChatHeader("A very long nickname that has to be truncated with an ellipsis", ConnectionState.Connecting, true, {}, {}, {}, {})
+    ChatHeader("Alex", ChatPresence("Online", online = true), true, {}, {}, {}, {})
+    ChatHeader("A very long nickname that has to be truncated with an ellipsis", ChatPresence("Connecting…"), true, {}, {}, {}, {})
 }
 
 @Preview(name = "Composer empty", showBackground = true, widthDp = 380)
