@@ -63,11 +63,9 @@ internal fun SettingsScreen(
         } else SettingsGroup("Appearance") {
             SettingsRow(R.drawable.ic_palette, "Theme", trailing = SettingsTrailing.Value(appearanceSummary), onClick = onAppearance)
         }
-        SettingsGroup("Notifications") {
+        SettingsGroup("General") {
             SettingsRow(R.drawable.ic_bell, "Notifications & background", subtitle = "Alerts, autostart and battery",
                 trailing = SettingsTrailing.Chevron, onClick = onNotifications)
-        }
-        SettingsGroup("Account") {
             SettingsRow(R.drawable.ic_user, "Account", subtitle = "Connection ID, blocked accounts, legal",
                 trailing = SettingsTrailing.Chevron, onClick = onAccount)
         }
@@ -104,7 +102,7 @@ internal fun AccountScreen(
         SettingsGroup("Legal") {
             SettingsRow(R.drawable.ic_shield, "Privacy Policy", trailing = SettingsTrailing.External, onClick = { uri.openUri("$LEGAL_ORIGIN/privacy") })
             SettingsRow(R.drawable.ic_file_text, "Terms", trailing = SettingsTrailing.External, onClick = { uri.openUri("$LEGAL_ORIGIN/terms") })
-            SettingsRow(R.drawable.ic_shield, "Child Safety", trailing = SettingsTrailing.External, onClick = { uri.openUri("$LEGAL_ORIGIN/child-safety") })
+            SettingsRow(R.drawable.ic_heart, "Child Safety", trailing = SettingsTrailing.External, onClick = { uri.openUri("$LEGAL_ORIGIN/child-safety") })
         }
         SettingsGroup(null) {
             SettingsRow(R.drawable.ic_log_out, "Sign out", enabled = !state.busy, onClick = onSignOut)

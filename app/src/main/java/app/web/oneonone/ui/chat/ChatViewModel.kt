@@ -58,7 +58,9 @@ class ChatViewModel @Inject constructor(
         if (draft.value == content) saved["draft"] = ""
         saved["replyTo"] = null
     }
-    fun sendCard(type: String, payload: JsonObject, replyTo: String?) = action {
+    // Not busy-gated: an alarm raise/ack must never be dropped because a text send is still in flight.
+    // The outbox serialises sends and the server dedupes acks, so overlapping calls are safe.
+    fun sendCard(type: String, payload: JsonObject, replyTo: String?) = action(showBusy = false) {
         service.send("", type, payload, replyTo)
     }
     fun retry(tempId: String, confirmed: Boolean = false) = action { service.retry(tempId, confirmed) }

@@ -44,6 +44,8 @@ class AttachmentPresentationTest {
             "application/vnd.ms-powerpoint" to "PPT", "application/vnd.openxmlformats-officedocument.presentationml.presentation" to "PPT")
             .forEach { (mime, type) -> assertEquals(type, attachmentType(mime)) }
         assertEquals("FILE", attachmentType("unknown"))
+        assertEquals("TXT", attachmentType("text/plain; charset=utf-8"))
+        assertEquals("PDF", attachmentType("Application/PDF"))
         assertEquals("999 B", attachmentSize(999.0, Locale.US))
         assertEquals("1 kB", attachmentSize(1_000.0, Locale.US))
         assertEquals("1.2 MB", attachmentSize(1_200_000.0, Locale.US))

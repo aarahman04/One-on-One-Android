@@ -23,7 +23,7 @@ internal fun photoPan(pan: Offset, scale: Float, viewport: Size, image: Size): O
     return Offset(pan.x.coerceIn(-maxX, maxX), pan.y.coerceIn(-maxY, maxY))
 }
 
-internal fun attachmentType(mime: String): String = when (mime) {
+internal fun attachmentType(mime: String): String = when (mime.substringBefore(';').trim().lowercase()) {
     "application/pdf" -> "PDF"
     "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "DOC"
     "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> "XLS"

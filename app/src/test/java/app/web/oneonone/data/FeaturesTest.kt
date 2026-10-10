@@ -28,7 +28,8 @@ private class FakeMedia : MediaGateway {
     override suspend fun download(connection: String, payload: JsonObject): Uri = error("offline")
     override suspend fun location() = obj("lat" to 20.0, "lng" to 70.0)
     override suspend fun startRecording(onLimit: () -> Unit) { }
-    override suspend fun stopRecording(): VoiceClip? = null
+    var stops = 0
+    override suspend fun stopRecording(): VoiceClip? { stops++; return null }
     override fun releaseRecording() { }
     override suspend fun discardVoice(path: String?) { if (path != null) discarded++ }
     override suspend fun save(uri: Uri, text: String) { savedText = text }
@@ -122,6 +123,23 @@ class FeaturesTest {
         assertTrue(transport.historyCalls.any { it.first != null })
         transport.history = { _, _ -> service.deactivate(); history.takeLast(50) }
         assertTrue(runCatching { service.exportHistory() }.isFailure)
+    }
+
+    @Test fun stopStopsOnceEvenWhenTappedTwice() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val session = FakeSession(); val service = MessageService(FakeTransport(), MemoryMessageStore(), session, Json, backgroundScope)
+            service.activate(connection("active", true)); runCurrent()
+            val media = FakeMedia()
+            val vm = FeatureViewModel(service, FakeAccountApi(session), media, FakeDeviceStore(), SavedStateHandle())
+            runCurrent(); vm.record {}; runCurrent(); assertTrue(vm.recording.value)
+            val conn = connection("active", true)
+            vm.stopAndSend(conn, null) {}; vm.stopAndSend(conn, null) {}; runCurrent()
+            assertFalse(vm.recording.value); assertEquals(1, media.stops)
+            assertEquals("Record for at least one second.", vm.error.value)
+            vm.cancelRecording(); runCurrent(); assertEquals(1, media.stops)
+            vm.viewModelScope.cancel(); runCurrent(); service.deactivate()
+        } finally { Dispatchers.resetMain() }
     }
 
     @Test fun restoredVoiceWaitsForBootButIsDiscardedOnDifferentConnection() = runTest {

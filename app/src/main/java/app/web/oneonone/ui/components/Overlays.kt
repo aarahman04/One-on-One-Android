@@ -81,7 +81,7 @@ fun OneModal(onDismiss: () -> Unit, modifier: Modifier = Modifier, placement: Mo
                         Column(
                             Modifier
                                 .then(if (bottom) Modifier.navigationBarsPadding() else Modifier)
-                                .padding(PaddingValues(start = 22.dp, top = 46.dp, end = 22.dp, bottom = 22.dp)),
+                                .padding(PaddingValues(start = 22.dp, top = if (bottom) 28.dp else 46.dp, end = 22.dp, bottom = 22.dp)),
                         ) { content() }
                         OneIconButton(
                             icon = R.drawable.ic_x,

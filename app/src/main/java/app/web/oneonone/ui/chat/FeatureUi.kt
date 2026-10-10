@@ -402,7 +402,10 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                 }
                 "file" -> {
                     val type = attachmentType(payload.text("mime"))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // The whole row opens the viewer; the trailing icon saves a copy.
+                    Row(Modifier.clip(RoundedCornerShape(OneTheme.radii.sm6))
+                        .clickable(enabled = !busy && path.isNotBlank(), role = Role.Button, onClickLabel = "View", onClick = onOpenFile),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(44.dp).clip(RoundedCornerShape(OneTheme.radii.sm6))
                             .background(LocalBubbleColors.current.text.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
                             Text(type, color = LocalBubbleColors.current.text, style = OneTextStyles.bubbleMeta.copy(fontWeight = FontWeight.Bold))
@@ -415,7 +418,6 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                         OneIconButton(R.drawable.ic_download, "Save a copy", onSaveCopy,
                             tint = LocalBubbleColors.current.text, enabled = !busy && path.isNotBlank())
                     }
-                    CardAction("View", enabled = !busy && path.isNotBlank(), onClick = onOpenFile)
                 }
                 else -> Text(message.content.ifBlank { message.type })
             }

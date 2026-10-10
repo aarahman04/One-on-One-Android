@@ -666,13 +666,14 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | --- | --- | --- | --- | --- |
 | 1.0.4 | 5 | 2026-10-09 | [37893939464](https://github.com/aarahman04/One-on-One-Android/actions/runs/37893939464) | A0–A7 native app |
 | 1.0.5 | 6 | 2026-10-10 | [37998420889](https://github.com/aarahman04/One-on-One-Android/actions/runs/37998420889) | A0–A7 + S1–S5 web-styling restyle |
+| 2.0.0 | 7 | 2026-10-10 | RUN_PENDING | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
 
 - Both built by the `android-build` workflow (manual dispatch on `main`); version
   name/code are workflow inputs, not stored in the repo. Signed with the existing
   Play upload key (SHA-1 check in the release job passed). Use the
   `android-release` artifact (AAB + APK); `android-debug` and
   `android-release-smoke-unsigned` are test-only.
-- Not yet uploaded to Play. **Next upload needs versionCode 7 or higher.**
+- Not yet uploaded to Play. **Next upload needs versionCode 8 or higher.**
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
   S2–S5 device checklists above, then upload the AAB to internal testing.
 
@@ -830,3 +831,30 @@ pinned Continue button; the long OEM text is a collapsible "Why is this needed?"
 All intents, confirmations and ViewModel calls are unchanged. Verified by build,
 lint and unit tests; @Previews (dark/light) added. Not verified on a device or
 emulator (needs a signed-in session): the live screens remain unchecked.
+
+## D5 — Design polish and bug sweep (2026-10-10)
+
+Status: built, lint/unit tests green; branch `design/d5-polish`. Screens checked on
+the Pixel 9a emulator through a local (uncommitted) debug gallery, dark and light.
+- Headings: the Fraunces serif is gone; screen titles, the settings top bar and the
+  call name use Figtree semibold/bold with slightly tighter tracking.
+- Settings: Notifications + Account share one "General" group; value rows that are
+  tappable (Blocked accounts count) keep a chevron; Child Safety has its own icon.
+- File card: the whole row opens the viewer (no separate View button). Voice card:
+  timestamp sits on the duration line, so the card is one row shorter. Bottom
+  sheets use a 28dp top inset.
+- Bugs fixed: stop-and-send was skipped while another action was busy (recording
+  kept running); a double tap on stop showed a false "Record for at least one
+  second"; a recorder failure during discard could crash the app; starting a
+  recording while a voice note played let playback bleed into the clip; a stale
+  error appeared in the next upload sheet; mimes with parameters
+  (`text/plain; charset=utf-8`) skipped the in-app viewer. New unit tests cover the
+  stop double tap and mime normalisation.
+- /alarm audit: ring/stop paths (FCM + socket, server-confirmed acks only, token-checked
+  activity extras, 2-minute window, handled-id store, fallback notification) checked
+  against the backend rules — correct. One bug fixed: `ChatViewModel.sendCard` was
+  busy-gated, so "Send alarm" (or an ack/cancel tap) while a text send was in flight
+  was silently dropped while the dialog closed. It now always enqueues; the outbox
+  lock serialises sends and the server dedupes acks.
+- [ ] Device check: record → stop sends once; trash; record while a note plays;
+  /alarm while a message is sending still raises; ack and cancel stop the ring.

@@ -92,6 +92,7 @@ class FeatureViewModel @Inject constructor(
     fun record(onLimit: () -> Unit) {
         if (recordingJob?.isActive == true || recording.value || mutableBusy.value) return
         mutableError.value = null
+        stopPlayback() // A playing voice note would otherwise bleed into the recording.
         recordingJob = viewModelScope.launch {
             try {
                 media.startRecording { viewModelScope.launch { onLimit() } }
@@ -100,20 +101,34 @@ class FeatureViewModel @Inject constructor(
             catch (error: Exception) { mutableError.value = userError(error) }
         }
     }
-    /** Stops the recorder and sends the clip straight away; a clip that fails to send is dropped, not kept for a retry. */
-    fun stopAndSend(connection: CurrentConnection, reply: String?, onDone: () -> Unit) = action {
-        recordingJob?.join()
-        val clip = try { media.stopRecording() } finally { recording.value = false }
-        check(clip != null) { "Record for at least one second." }
-        discardVoice(); saved["voicePath"] = clip.file.absolutePath; saved["voiceDuration"] = clip.duration
-        try { sendMedia(connection, "voice", Uri.fromFile(clip.file), reply) } catch (error: Exception) { discardVoice(); throw error }
-        onDone()
+    /**
+     * Stops the recorder and sends the clip straight away; a clip that fails to send is dropped, not kept for a retry.
+     * Not gated on [busy]: stopping must always stop the recorder, and the upload waits for any in-flight action.
+     * Only the first call after a recording does anything, so a double tap can't report a bogus "too short" error.
+     */
+    fun stopAndSend(connection: CurrentConnection, reply: String?, onDone: () -> Unit) {
+        if (!recording.compareAndSet(expect = true, update = false)) return
+        viewModelScope.launch {
+            mutableError.value = null
+            val clip = try { recordingJob?.join(); media.stopRecording() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { mutableError.value = userError(error); return@launch }
+            if (clip == null) { mutableError.value = "Record for at least one second."; return@launch }
+            mutableBusy.first { !it }
+            action {
+                discardVoice(); saved["voicePath"] = clip.file.absolutePath; saved["voiceDuration"] = clip.duration
+                try { sendMedia(connection, "voice", Uri.fromFile(clip.file), reply) } catch (error: Exception) { discardVoice(); throw error }
+                onDone()
+            }
+        }
     }
     /** Stops the recorder and deletes the clip without uploading. */
     fun cancelRecording() {
+        if (!recording.compareAndSet(expect = true, update = false)) return
         viewModelScope.launch {
-            recordingJob?.join()
-            try { media.stopRecording()?.let { media.discardVoice(it.file.absolutePath) } } finally { recording.value = false }
+            try { recordingJob?.join(); media.stopRecording()?.let { media.discardVoice(it.file.absolutePath) } }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { media.releaseRecording() }
         }
     }
     fun discardVoice() {
