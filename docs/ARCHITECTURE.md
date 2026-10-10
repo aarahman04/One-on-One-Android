@@ -382,6 +382,33 @@ reads and tick rendering retain their existing behavior. Heartbeat freshness
 uses monotonic time and stops when paused or deactivated. The loading screen
 bypasses ScreenFrame's text, progress and entry animation for a seamless launch.
 
+## Attachment cards and viewers (D3)
+
+```mermaid
+flowchart LR
+  Card[FeatureCard] --> Play["FeatureViewModel / MediaPlayer"]
+  Play -- "position every 100ms; pause/resume" --> Voice["Compact voice card / filled track"]
+  Card --> Download["Existing openFile / MediaGateway.download"]
+  Download --> URI["Private cached content URI"]
+  URI --> Viewer[DocumentViewer]
+  Viewer --> PDF["PdfRenderer / serialized IO / visible pages only"]
+  PDF --> Pixels["Screen-width bitmaps / recycle off-screen"]
+  Viewer --> Text["UTF-8 text / 1 MiB cap / lazy bounded rows"]
+  Viewer --> Office["Open with chooser / temporary URI read grant"]
+  Photo["Tap photo"] --> Zoom["Full-screen PhotoViewer / bounded pinch + double tap"]
+  Menu["Voice bubble long-press menu"] --> Save["Existing CreateDocument / saveAttachment"]
+  Viewer --> Save
+  Zoom --> Save
+  Card --> Save
+```
+
+Viewer dialogs use a black surface and safe system-bar insets. PDF open/render/
+close runs off the main thread; one mutex coordinates page access and disposal,
+and closing the renderer also closes its descriptor. Only visible PDF rows own
+bitmaps. Text reads at most 1 MiB plus one byte to detect truncation; lazy rows
+also bound the layout work for very long lines. Voice cards register their save
+callback with the containing bubble's existing menu, without adding ChatScreen
+callbacks. No endpoint, payload, attachment authorization or cache boundary changes.
 ### Navigation routes (D4)
 
 ```mermaid

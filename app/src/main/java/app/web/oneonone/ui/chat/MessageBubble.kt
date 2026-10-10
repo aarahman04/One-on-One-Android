@@ -103,6 +103,7 @@ import kotlin.math.roundToInt
  * can read `LocalBubbleColors.current.meta` etc. instead of hard-coding colours.
  */
 val LocalBubbleColors = staticCompositionLocalOf { BubbleTokens.Dark.mine }
+internal val LocalMessageSaveAction = staticCompositionLocalOf<androidx.compose.runtime.MutableState<(() -> Unit)?>?> { null }
 
 /** A reply quote shown at the top of a bubble. */
 internal data class BubbleQuote(val author: String, val snippet: String)
@@ -171,6 +172,7 @@ internal fun MessageBubble(
     val failed = message.id == null && message.deliveryState == "failed"
     val status = if (mine && message.type != "call" && !failed) receiptOf(receipt) else Receipt.None
     var menu by remember { mutableStateOf(false) }
+    val saveCopy = remember(message.id, message.tempId) { mutableStateOf<(() -> Unit)?>(null) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val canReply = message.id != null && message.type != "call"
     val scope = rememberCoroutineScope()
@@ -259,7 +261,8 @@ internal fun MessageBubble(
                         .then(if (message.type == "text") Modifier.width(IntrinsicSize.Max) else Modifier)
                         .padding(start = if (alarm) 12.5.dp else 8.5.dp, end = 8.5.dp, top = 6.dp, bottom = 6.dp),
                 ) {
-                    CompositionLocalProvider(LocalContentColor provides colors.text, LocalBubbleColors provides colors) {
+                    CompositionLocalProvider(LocalContentColor provides colors.text, LocalBubbleColors provides colors,
+                        LocalMessageSaveAction provides saveCopy) {
                         if (quote != null) QuoteBlock(quote, colors, onQuote)
                         when (message.type) {
                             "text" -> {
@@ -293,6 +296,7 @@ internal fun MessageBubble(
                         OneMenuItem("Reply", onClick = { onReply(); menu = false })
                     }
                     OneMenuItem("Copy", onClick = { copyMessage(context, message); menu = false })
+                    saveCopy.value?.let { save -> OneMenuItem("Save a copy", onClick = { save(); menu = false }) }
                     if (message.id != null && !mine) OneMenuItem("Report message", onClick = { onReport(); menu = false })
                 }
             }

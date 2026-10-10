@@ -295,7 +295,16 @@ private fun authorOf(message: ChatMessage?, connection: CurrentConnection): Stri
     else -> connection.otherNickname ?: "Them"
 }
 
-private fun dayLabel(value: String) = Instant.parse(value).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+internal fun dayLabel(value: String, today: java.time.LocalDate = java.time.LocalDate.now(),
+                      zone: ZoneId = ZoneId.systemDefault(), locale: java.util.Locale = java.util.Locale.getDefault()): String {
+    val date = Instant.parse(value).atZone(zone).toLocalDate()
+    return when {
+        date == today -> "Today"
+        date == today.minusDays(1) -> "Yesterday"
+        date.isBefore(today) && !date.isBefore(today.minusDays(6)) -> date.format(java.time.format.DateTimeFormatter.ofPattern("EEEE", locale))
+        else -> date.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", locale))
+    }
+}
 
 /** .chat__date-separator: centred pill on bg-raised. */
 @Composable
