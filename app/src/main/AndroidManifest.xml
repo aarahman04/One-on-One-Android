@@ -53,7 +53,7 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/shared_file_paths" />
         </provider>
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop"
-            android:theme="@style/Theme.OneOnOne.Starting">
+            android:theme="@style/Theme.OneOnOne.Starting" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

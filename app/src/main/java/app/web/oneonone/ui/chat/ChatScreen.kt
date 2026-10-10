@@ -1,8 +1,16 @@
 package app.web.oneonone.ui.chat
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -44,7 +52,10 @@ import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import java.time.Instant
 import java.time.ZoneId
 
@@ -96,6 +107,21 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     var reportMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var block by rememberSaveable { mutableStateOf(false) }
     var attachmentOpen by rememberSaveable { mutableStateOf(false) }
+    var selected by rememberSaveable(connection.id) { mutableStateOf<String?>(null) }
+    var kind by rememberSaveable(connection.id) { mutableStateOf("image") }
+    val featureErrorNow by features.error.collectAsState()
+    fun keepUri(uri: Uri, picked: String) {
+        runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        kind = picked; selected = uri.toString(); attachmentOpen = false
+    }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) keepUri(uri, "image") }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) keepUri(uri, "file") }
+    var elapsed by remember { mutableIntStateOf(0) }
+    LaunchedEffect(recording) { elapsed = 0; while (recording) { delay(1_000); elapsed++ } }
+    val sendRecording: () -> Unit = { features.stopAndSend(connection, replyTo) { vm.reply(null) } }
+    val microphone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) features.record(sendRecording) else features.showError("Microphone access was denied. Allow it in App info → Permissions to record voice notes.")
+    }
     val palette = when (connection.wallpaper) {
         "love" -> BubbleTokens.Love
         "samurai" -> BubbleTokens.Samurai
@@ -116,7 +142,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val screenHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
     val slash = if (recording) emptyList() else slashMatches(draft)
     val runCommand = { name: String -> features.clearError(); if (name == "alarm") alarm = true else command = name }
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize()) {
         ChatHeader(
             title = connection.otherNickname ?: "Your One on One",
             presence = rememberChatPresence(state, newerTime(connection.otherLastReadAt, receipts?.lastReadAt)),
@@ -199,6 +225,10 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                     }
                 }
             }
+            if (attachmentOpen) Box(Modifier.matchParentSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { attachmentOpen = false })
+            AttachSheet(attachmentOpen, Modifier.align(Alignment.BottomCenter).widthIn(max = OneTheme.sizes.chatMax720).padding(bottom = 6.dp),
+                onPhoto = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onFile = { filePicker.launch(FileMimes.toTypedArray()) })
             if (slash.isNotEmpty()) {
                 SlashMenu(slash, maxHeight = minOf(220.dp, screenHeight * .4f), onPick = runCommand,
                     modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = OneTheme.sizes.chatMax720).fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 6.dp))
@@ -208,19 +238,27 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             val original = messages.find { it.id == id }
             ReplyBar(authorOf(original, connection).ifEmpty { "Earlier message" }, original?.let(::messageSummary) ?: "earlier message") { vm.reply(null) }
         }
-        if (attachmentOpen) Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) { AttachmentControls(connection, features, replyTo) { vm.reply(null) } }
         ChatComposer(
             draft = draft, onDraft = vm::draft,
             canSend = !busy && !featureBusy,
             recording = recording,
             onAttach = { more = false; attachmentOpen = !attachmentOpen },
-            onMic = { attachmentOpen = true },
+            onMic = {
+                attachmentOpen = false; features.clearError()
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) features.record(sendRecording)
+                else microphone.launch(Manifest.permission.RECORD_AUDIO)
+            },
+            elapsedSeconds = elapsed,
+            onStop = sendRecording,
+            onDiscard = features::cancelRecording,
             onSend = {
                 val name = draft.trim().removePrefix("/")
                 if (draft.trim().startsWith("/") && name in FeatureCommands) runCommand(name) else vm.send()
             },
         )
     }
+    selected?.let { source -> UploadContent(kind, source, featureBusy, featureErrorNow,
+        send = { features.upload(connection, kind, source.toUri(), replyTo) { selected = null; vm.reply(null) } }, cancel = { selected = null }) }
     command?.let { type ->
         val close = { command = null; vm.draft(""); vm.reply(null) }
         if (type == "location") LocationConfirmation(connection, features, replyTo, close)

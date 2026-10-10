@@ -88,3 +88,14 @@ private fun SlashOpen() = Host(false) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) { SlashMenu(slashMatches("/"), 220.dp, {}) }
     ChatComposer("/", {}, true, false, {}, {}, {})
 }
+
+@Preview(name = "Composer recording", showBackground = true, widthDp = 380)
+@Composable
+private fun ComposerRecording() = Host(true) { ChatComposer("", {}, true, true, {}, {}, {}, elapsedSeconds = 75) }
+
+@Preview(name = "Attach sheet", showBackground = true, widthDp = 380)
+@Composable
+private fun AttachSheetPreview() = Host(true) {
+    AttachSheet(true, Modifier, {}, {})
+    ChatComposer("", {}, true, false, {}, {}, {})
+}
