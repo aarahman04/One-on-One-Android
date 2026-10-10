@@ -48,6 +48,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,7 +70,7 @@ sealed interface SettingsTrailing {
 
 /**
  * Shared frame for Settings / Account / Blocked accounts / Notifications: 56dp top bar (status-bar inset) with a back arrow and a
- * left-aligned serif title, then scrolling content on a 16dp gutter. [bottomBar] stays pinned under the scroll area.
+ * left-aligned title, then scrolling content on a 16dp gutter. [bottomBar] stays pinned under the scroll area.
  */
 @Composable
 fun SettingsScaffold(
@@ -91,7 +92,7 @@ fun SettingsScaffold(
         ) {
             OneIconButton(R.drawable.ic_arrow_left, "Back", onBack)
             Text(title, Modifier.weight(1f).semantics { heading() }, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = OneTextStyles.screenTitle.copy(fontSize = 22.sp, lineHeight = 30.sp))
+                style = OneTextStyles.screenTitle.copy(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold))
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().height(1.dp), color = c.accentYou, trackColor = c.border)
         else HorizontalDivider(color = c.border)
@@ -164,7 +165,11 @@ fun SettingsRow(
                 SettingsTrailing.None -> Unit
                 SettingsTrailing.Chevron -> TrailingIcon(R.drawable.ic_chevron_right)
                 SettingsTrailing.External -> TrailingIcon(R.drawable.ic_external_link)
-                is SettingsTrailing.Value -> Text(trailing.text, Modifier.padding(start = OneTheme.spacing.sm8), style = OneTextStyles.cardHint, color = c.textDim)
+                is SettingsTrailing.Value -> {
+                    Text(trailing.text, Modifier.padding(start = OneTheme.spacing.sm8), style = OneTextStyles.cardHint, color = c.textDim)
+                    // A tappable row still signals that it leads somewhere.
+                    if (onClick != null) TrailingIcon(R.drawable.ic_chevron_right)
+                }
                 is SettingsTrailing.Chip -> StatusChip(trailing.text, trailing.positive)
                 is SettingsTrailing.Action -> Text(trailing.text,
                     Modifier.padding(start = OneTheme.spacing.sm8)

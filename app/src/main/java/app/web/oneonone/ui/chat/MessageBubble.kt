@@ -273,6 +273,11 @@ internal fun MessageBubble(
                                     description = "${message.content}, $time${if (mine) ", $receipt" else ""}",
                                 ) { MetaRow(time, status, colors, palette, receipt = null) }
                             }
+                            // Voice notes keep the time beside the duration line instead of on a row of its own.
+                            "voice" -> Box {
+                                card()
+                                Box(Modifier.align(Alignment.BottomEnd)) { MetaRow(time, status, colors, palette, receipt = receipt) }
+                            }
                             else -> {
                                 card()
                                 Box(Modifier.align(Alignment.End).padding(top = 2.dp)) { MetaRow(time, status, colors, palette, receipt = receipt) }

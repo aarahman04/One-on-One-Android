@@ -9,9 +9,9 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import app.web.oneonone.R
 
-// --font-display / --font-body / --font-mono. Static TTFs generated from the web variable woff2s by scripts/make_fonts.py (latin + latin-ext; Fraunces pinned wght 600 / opsz 28).
+// --font-body / --font-mono. Static TTFs generated from the web variable woff2s by scripts/make_fonts.py (latin + latin-ext).
+// Headings use the body family (Figtree) at heavier weights with tighter tracking — the serif display face was dropped on Android.
 object FontFamilies {
-    val Display = FontFamily(Font(R.font.fraunces_semibold, FontWeight.SemiBold))
     val Body = FontFamily(
         Font(R.font.figtree_regular, FontWeight.Normal),
         Font(R.font.figtree_medium, FontWeight.Medium),
@@ -25,18 +25,22 @@ object FontFamilies {
     )
 }
 
+/** Heading style: Figtree semibold, slightly tightened. */
+private fun heading(size: Float, line: Float, weight: FontWeight = FontWeight.SemiBold) =
+    TextStyle(fontFamily = FontFamilies.Body, fontWeight = weight, fontSize = size.sp, lineHeight = line.sp, letterSpacing = (-0.01).em)
+
 private fun body(size: Float, weight: FontWeight = FontWeight.Normal, line: Float = size * 1.5f) =
     TextStyle(fontFamily = FontFamilies.Body, fontWeight = weight, fontSize = size.sp, lineHeight = line.sp)
 
 /** Web type scale: 11 meta / 12 xs / 13 sm / 15 base / 16 md / 20 lg / 28 xl / 40 display. Body line-height 1.5. */
 val OneTypography = Typography(
-    displayLarge = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 40.sp, lineHeight = 44.sp),
-    displayMedium = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 40.sp, lineHeight = 44.sp),
-    displaySmall = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 31.sp),
-    headlineLarge = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 34.sp),
-    headlineMedium = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 34.sp),
-    headlineSmall = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 30.sp),
-    titleLarge = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 30.sp),
+    displayLarge = heading(40f, 44f),
+    displayMedium = heading(40f, 44f),
+    displaySmall = heading(28f, 31f),
+    headlineLarge = heading(28f, 34f),
+    headlineMedium = heading(28f, 34f),
+    headlineSmall = heading(20f, 30f),
+    titleLarge = heading(20f, 30f),
     titleMedium = body(16f, FontWeight.SemiBold),
     titleSmall = body(13f, FontWeight.SemiBold),
     bodyLarge = body(16f),
@@ -50,7 +54,7 @@ val OneTypography = Typography(
 object OneTextStyles {
     /** Uppercase is applied by the caller; color = muted. */
     val eyebrow = body(13f).copy(letterSpacing = .08.em)
-    val screenTitle = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 42.sp)
+    val screenTitle = heading(28f, 36f, FontWeight.Bold)
     val subtitle = body(15f, line = 22.5f)
     val connectionId = TextStyle(fontFamily = FontFamilies.Mono, fontWeight = FontWeight.Bold, fontSize = 32.sp, lineHeight = 48.sp, letterSpacing = .12.em)
     val bubbleText = body(15f, line = 22.5f)
@@ -59,6 +63,6 @@ object OneTextStyles {
     val cardHint = body(13f)
     val menuItem = body(13f)
     val groupLabel = body(11f).copy(letterSpacing = .08.em)
-    val callName = TextStyle(fontFamily = FontFamilies.Display, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 30.8.sp)
+    val callName = heading(28f, 30.8f)
     val callStatus = TextStyle(fontFamily = FontFamilies.Mono, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 19.5.sp, letterSpacing = .06.em, fontFeatureSettings = "tnum")
 }
