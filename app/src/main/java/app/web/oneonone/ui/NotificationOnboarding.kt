@@ -11,31 +11,24 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.net.toUri
 import app.web.oneonone.push.PushRegistration
-import app.web.oneonone.ui.components.PrimaryButton
-import app.web.oneonone.ui.components.SecondaryButton
+import app.web.oneonone.R
+import app.web.oneonone.ui.components.*
 import app.web.oneonone.ui.theme.OneOnOneTheme
-import app.web.oneonone.ui.theme.OneTextStyles
-import app.web.oneonone.ui.theme.OneTheme
 import java.util.Locale
 
 @Composable
-fun NotificationOnboarding(registration: PushRegistration, onDone: () -> Unit) {
+fun NotificationOnboarding(registration: PushRegistration, firstRun: Boolean, onDone: () -> Unit) {
     val context = LocalContext.current
     val manager = context.getSystemService(NotificationManager::class.java)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -54,7 +47,7 @@ fun NotificationOnboarding(registration: PushRegistration, onDone: () -> Unit) {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    NotificationContent(allowed, fullScreen, Build.VERSION.SDK_INT, problem,
+    NotificationContent(allowed, fullScreen, Build.VERSION.SDK_INT, problem, firstRun,
         onAllow = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) },
         onNotificationSettings = { openSetting(context, listOf(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))) },
         onFullScreenSettings = { if (Build.VERSION.SDK_INT >= 34) openSetting(context, listOf(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).setData("package:${context.packageName}".toUri()))) },
@@ -64,51 +57,51 @@ fun NotificationOnboarding(registration: PushRegistration, onDone: () -> Unit) {
 }
 
 @Composable
-private fun NotificationContent(allowed: Boolean, fullScreen: Boolean, sdk: Int, problem: String?,
+private fun NotificationContent(allowed: Boolean, fullScreen: Boolean, sdk: Int, problem: String?, firstRun: Boolean,
     onAllow: () -> Unit, onNotificationSettings: () -> Unit, onFullScreenSettings: () -> Unit,
     onAutostart: () -> Unit, onBattery: () -> Unit, onRetry: () -> Unit, onDone: () -> Unit) {
-    ScreenFrame(AppState(), screenKey = "notifications") {
-        Surface(Modifier.widthIn(max = 364.dp).fillMaxWidth(), color = OneTheme.colors.bgRaised,
-            shape = RoundedCornerShape(OneTheme.radii.md10), border = BorderStroke(1.dp, OneTheme.colors.border)) {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Stay connected", style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.Bold), color = OneTheme.colors.text)
-                NotificationBody("Let messages reach you when One on One is closed. These settings are optional and can be changed here later.")
-                NotificationBody(if (allowed) "Notifications allowed" else "Notifications are turned off")
-                if (sdk >= 33 && !allowed) PrimaryButton("Allow notifications", onAllow)
-                SecondaryButton("Notification settings", onNotificationSettings)
-                if (sdk >= 34) {
-                    NotificationBody(if (fullScreen) "Full-screen alerts allowed" else "Full-screen alerts are off")
-                    NotificationBody("Full-screen permission lets emergency alarms and calls appear over the lock screen when those features are available.")
-                    SecondaryButton("Full-screen alerts", onFullScreenSettings)
-                }
-                Text("Phone background settings", style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.Bold), color = OneTheme.colors.text)
-                NotificationBody("On Xiaomi, Redmi and POCO (MIUI/HyperOS), enable Background autostart and set battery saver to No restrictions. Oppo, Vivo, OnePlus and Samsung may also restrict background activity; allow autostart/background use and remove this app from sleeping apps.")
-                SecondaryButton("Autostart / background activity", onAutostart)
-                SecondaryButton("Battery restrictions", onBattery)
-                NotificationBody("If a shortcut opens App info instead, look for battery/background settings there. Removing the app from recents is different from Force stop: Force stop blocks pushes until you reopen it.")
-                problem?.let { Text(it, style = OneTextStyles.cardHint, color = OneTheme.colors.danger) }
-                SecondaryButton("Retry notification registration", onRetry)
-                PrimaryButton("Continue", onDone)
-            }
+    SettingsScaffold(if (firstRun) "Stay connected" else "Notifications & background", onDone,
+        bottomBar = if (firstRun) ({ PrimaryButton("Continue", onDone, Modifier.fillMaxWidth()) }) else null) {
+        if (firstRun) SettingsCaption("Let messages reach you when One on One is closed. These settings are optional and can be changed in Settings later.")
+        SettingsGroup("Permissions") {
+            SettingsRow(R.drawable.ic_bell, "Notifications", subtitle = if (allowed) "Messages can reach you" else "Messages won't arrive while the app is closed",
+                trailing = SettingsTrailing.Chip(if (allowed) "Allowed" else "Off", allowed), onClick = onNotificationSettings)
+            if (sdk >= 34) SettingsRow(R.drawable.ic_maximize, "Full-screen alerts",
+                subtitle = "Lets calls and emergency alarms appear over the lock screen",
+                trailing = SettingsTrailing.Chip(if (fullScreen) "Allowed" else "Off", fullScreen), onClick = onFullScreenSettings)
+        }
+        if (sdk >= 33 && !allowed) PrimaryButton("Allow notifications", onAllow, Modifier.fillMaxWidth())
+        SettingsGroup("Background") {
+            SettingsRow(R.drawable.ic_power, "Autostart / background activity", subtitle = "Let the app start in the background",
+                trailing = SettingsTrailing.Chevron, onClick = onAutostart)
+            SettingsRow(R.drawable.ic_battery, "Battery restrictions", subtitle = "Set to no restrictions",
+                trailing = SettingsTrailing.Chevron, onClick = onBattery)
+        }
+        SettingsExpandable("Why is this needed?",
+            "On Xiaomi, Redmi and POCO (MIUI/HyperOS), enable Background autostart and set battery saver to No restrictions. Oppo, Vivo, OnePlus and Samsung may also restrict background activity; allow autostart/background use and remove this app from sleeping apps.\n\nIf a shortcut opens App info instead, look for battery/background settings there. Removing the app from recents is different from Force stop: Force stop blocks pushes until you reopen it.")
+        SettingsGroup("Troubleshooting") {
+            SettingsRow(R.drawable.ic_refresh, "Retry notification registration",
+                subtitle = problem, trailing = SettingsTrailing.Chevron, onClick = onRetry)
         }
     }
 }
 
-@Composable
-private fun NotificationBody(text: String) {
-    Text(text, Modifier.widthIn(max = 320.dp), style = OneTextStyles.subtitle.copy(fontSize = 14.sp, lineHeight = 21.sp), color = OneTheme.colors.textDim)
-}
-
-@Preview(name = "Notifications", widthDp = 390, heightDp = 1200)
+@Preview(name = "Notifications", widthDp = 390, heightDp = 1000)
 @Composable
 private fun NotificationPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
-    OneOnOneTheme(darkTheme = dark) { NotificationContent(false, false, 34, null, {}, {}, {}, {}, {}, {}, {}) }
+    OneOnOneTheme(darkTheme = dark) { NotificationContent(false, false, 34, "Registration failed. Try again.", false, {}, {}, {}, {}, {}, {}, {}) }
 }
 
-@Preview(name = "Notifications allowed", widthDp = 390, heightDp = 1200)
+@Preview(name = "Notifications allowed", widthDp = 390, heightDp = 1000)
 @Composable
 private fun NotificationAllowedPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
-    OneOnOneTheme(darkTheme = dark) { NotificationContent(true, true, 34, null, {}, {}, {}, {}, {}, {}, {}) }
+    OneOnOneTheme(darkTheme = dark) { NotificationContent(true, true, 34, null, false, {}, {}, {}, {}, {}, {}, {}) }
+}
+
+@Preview(name = "Notifications first run", widthDp = 360, heightDp = 800)
+@Composable
+private fun NotificationFirstRunPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
+    OneOnOneTheme(darkTheme = dark) { NotificationContent(false, false, 34, null, true, {}, {}, {}, {}, {}, {}, {}) }
 }
 
 private fun component(packageName: String, className: String) = Intent().setComponent(ComponentName(packageName, className))

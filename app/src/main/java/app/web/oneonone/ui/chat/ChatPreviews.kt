@@ -71,6 +71,14 @@ private fun HeaderPreview() = Host(true) {
     ChatHeader("A very long nickname that has to be truncated with an ellipsis", ChatPresence("Connecting…"), true, {}, {}, {}, {})
 }
 
+@Preview(name = "Menu dark", showBackground = true, widthDp = 380, heightDp = 360)
+@Composable
+private fun MenuDarkPreview() = Host(true) { ChatMenu(true, {}, {}, {}, {}, {}, {}, {}, {}) }
+
+@Preview(name = "Menu light", showBackground = true, widthDp = 380, heightDp = 360)
+@Composable
+private fun MenuLightPreview() = Host(false) { ChatMenu(true, {}, {}, {}, {}, {}, {}, {}, {}) }
+
 @Preview(name = "Composer empty", showBackground = true, widthDp = 380)
 @Composable
 private fun ComposerEmpty() = Host(true) { ChatComposer("", {}, true, false, {}, {}, {}) }
