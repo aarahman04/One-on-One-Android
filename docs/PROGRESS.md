@@ -666,7 +666,7 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | --- | --- | --- | --- | --- |
 | 1.0.4 | 5 | 2026-10-09 | [37893939464](https://github.com/aarahman04/One-on-One-Android/actions/runs/37893939464) | A0–A7 native app |
 | 1.0.5 | 6 | 2026-10-10 | [37998420889](https://github.com/aarahman04/One-on-One-Android/actions/runs/37998420889) | A0–A7 + S1–S5 web-styling restyle |
-| 2.0.0 | 7 | 2026-10-10 | RUN_PENDING | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
+| 2.0.0 | 7 | 2026-10-10 | [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794) | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
 
 - Both built by the `android-build` workflow (manual dispatch on `main`); version
   name/code are workflow inputs, not stored in the repo. Signed with the existing

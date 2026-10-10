@@ -5,7 +5,7 @@ versionName **2.0.0-dev**. Nothing has been uploaded to Play by this work.
 
 ## Release history
 
-Latest signed build: **2.0.0 / versionCode 7** (2026-10-10, D1–D5 design fixes; run in
+Latest signed build: **2.0.0 / versionCode 7** (2026-10-10, D1–D5 design fixes; workflow run [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794); see
 `docs/PROGRESS.md` → Releases). Previous: 1.0.5 / 6 (2026-10-10), 1.0.4 / 5 (2026-10-09). Version name/code are passed as `android-build`
 workflow inputs at dispatch; the repo default stays 5 / 2.0.0-dev. The next Play
 upload must use versionCode **8 or higher**. Full table: `docs/PROGRESS.md` → Releases.
