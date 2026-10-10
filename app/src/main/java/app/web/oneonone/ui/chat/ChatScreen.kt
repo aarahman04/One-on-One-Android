@@ -110,7 +110,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val featureErrorNow by features.error.collectAsState()
     fun keepUri(uri: Uri, picked: String) {
         runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        kind = picked; selected = uri.toString(); attachmentOpen = false
+        features.clearError(); kind = picked; selected = uri.toString(); attachmentOpen = false
     }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) keepUri(uri, "image") }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) keepUri(uri, "file") }

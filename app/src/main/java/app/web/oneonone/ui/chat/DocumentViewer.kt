@@ -99,10 +99,12 @@ internal fun AttachmentViewerFrame(name: String, busy: Boolean, save: () -> Unit
 @Composable
 internal fun DocumentViewer(uri: Uri, mime: String, name: String, busy: Boolean,
                             save: () -> Unit, openWith: () -> Unit, close: () -> Unit) {
-    val nativePreview = mime in setOf("application/pdf", "text/plain", "text/csv")
-    LaunchedEffect(uri, mime) { if (!nativePreview) openWith() }
+    // Stored mimes can carry parameters ("text/plain; charset=utf-8"); match on the bare type.
+    val type = mime.substringBefore(';').trim().lowercase()
+    val nativePreview = type in setOf("application/pdf", "text/plain", "text/csv")
+    LaunchedEffect(uri, type) { if (!nativePreview) openWith() }
     AttachmentViewerFrame(name, busy, save, close, openWith) {
-        when (mime) {
+        when (type) {
             "application/pdf" -> PdfPages(uri)
             "text/plain", "text/csv" -> TextDocument(uri)
             else -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,

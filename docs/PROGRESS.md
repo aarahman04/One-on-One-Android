@@ -830,3 +830,23 @@ pinned Continue button; the long OEM text is a collapsible "Why is this needed?"
 All intents, confirmations and ViewModel calls are unchanged. Verified by build,
 lint and unit tests; @Previews (dark/light) added. Not verified on a device or
 emulator (needs a signed-in session): the live screens remain unchecked.
+
+## D5 — Design polish and bug sweep (2026-10-10)
+
+Status: built, lint/unit tests green; branch `design/d5-polish`. Screens checked on
+the Pixel 9a emulator through a local (uncommitted) debug gallery, dark and light.
+- Headings: the Fraunces serif is gone; screen titles, the settings top bar and the
+  call name use Figtree semibold/bold with slightly tighter tracking.
+- Settings: Notifications + Account share one "General" group; value rows that are
+  tappable (Blocked accounts count) keep a chevron; Child Safety has its own icon.
+- File card: the whole row opens the viewer (no separate View button). Voice card:
+  timestamp sits on the duration line, so the card is one row shorter. Bottom
+  sheets use a 28dp top inset.
+- Bugs fixed: stop-and-send was skipped while another action was busy (recording
+  kept running); a double tap on stop showed a false "Record for at least one
+  second"; a recorder failure during discard could crash the app; starting a
+  recording while a voice note played let playback bleed into the clip; a stale
+  error appeared in the next upload sheet; mimes with parameters
+  (`text/plain; charset=utf-8`) skipped the in-app viewer. New unit tests cover the
+  stop double tap and mime normalisation.
+- [ ] Device check: record → stop sends once; trash; record while a note plays.
