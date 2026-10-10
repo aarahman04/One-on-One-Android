@@ -120,7 +120,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     LaunchedEffect(recording) { elapsed = 0; while (recording) { delay(1_000); elapsed++ } }
     val sendRecording: () -> Unit = { features.stopAndSend(connection, replyTo) { vm.reply(null) } }
     val microphone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-        if (allowed) features.record(sendRecording) else features.showError("Microphone access was denied. Allow it in App info 2192 Permissions to record voice notes.")
+        if (allowed) features.record(sendRecording) else features.showError("Microphone access was denied. Allow it in App info → Permissions to record voice notes.")
     }
     val palette = when (connection.wallpaper) {
         "love" -> BubbleTokens.Love
