@@ -99,18 +99,17 @@ internal fun ChatHeader(
 }
 
 /**
- * The More menu, grouped like MenuDropdown.ts: Search / Appearance / Settings / Nickname / Export, a divider, then a
- * collapsible "Connection & account" group with the danger actions. Every entry calls the same handler as before.
+ * The More menu: Search / Nickname / Settings / Account, a divider, then a
+ * collapsible "Connection" group with the danger actions. Every entry calls the same handler as before.
  */
 @Composable
 internal fun ChatMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     onSearch: () -> Unit,
-    onAppearance: () -> Unit,
     onSettings: () -> Unit,
     onNickname: () -> Unit,
-    onExport: () -> Unit,
+    onAccount: () -> Unit,
     onReport: () -> Unit,
     onBlock: () -> Unit,
     onLeave: () -> Unit,
@@ -118,16 +117,15 @@ internal fun ChatMenu(
     var danger by remember { mutableStateOf(false) }
     OneMenu(expanded, onDismiss) {
         OneMenuItem("Search", onClick = onSearch)
-        OneMenuItem("Appearance", onClick = onAppearance)
-        OneMenuItem("Settings", onClick = onSettings)
         OneMenuItem("Nickname", onClick = onNickname)
-        OneMenuItem("Export conversation", onClick = onExport)
+        OneMenuItem("Settings", onClick = onSettings)
+        OneMenuItem("Account", onClick = onAccount)
         HorizontalDivider(Modifier.padding(vertical = 4.dp), color = OneTheme.colors.border)
         Row(
             Modifier.fillMaxWidth().clickable(role = Role.Button) { danger = !danger }.padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Connection & account", style = OneTextStyles.menuItem, color = OneTheme.colors.text)
+            Text("Connection", style = OneTextStyles.menuItem, color = OneTheme.colors.text)
             Text(if (danger) "▴" else "▾", style = OneTextStyles.menuItem, color = OneTheme.colors.muted)
         }
         if (danger) {

@@ -497,15 +497,15 @@ internal fun LocationContent(busy: Boolean, error: String?, onShare: () -> Unit,
 }
 
 @Composable
-fun AppearanceDialog(connection: CurrentConnection, vm: FeatureViewModel, refresh: () -> Unit, close: () -> Unit) {
+fun AppearanceDialog(connection: CurrentConnection?, vm: FeatureViewModel, refresh: () -> Unit, close: () -> Unit) {
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
-    AppearanceContent(connection.wallpaper, busy, error, onTheme = { vm.theme(it) },
-        onWallpaper = { vm.wallpaper(connection.id, it, refresh) }, close)
+    AppearanceContent(connection?.wallpaper ?: "off", busy, error, onTheme = { vm.theme(it) },
+        onWallpaper = { if (connection != null) vm.wallpaper(connection.id, it, refresh) }, close, showWallpaper = connection != null)
 }
 
 @Composable
-internal fun AppearanceContent(wallpaper: String, busy: Boolean, error: String?, onTheme: (String) -> Unit, onWallpaper: (String) -> Unit, close: () -> Unit) {
+internal fun AppearanceContent(wallpaper: String, busy: Boolean, error: String?, onTheme: (String) -> Unit, onWallpaper: (String) -> Unit, close: () -> Unit, showWallpaper: Boolean = true) {
     FeatureModal(onDismissRequest = close, title = { Text("Appearance") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Theme on this device")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -513,8 +513,10 @@ internal fun AppearanceContent(wallpaper: String, busy: Boolean, error: String?,
                 selected = (OneTheme.colors.bg == app.web.oneonone.ui.theme.OneColors.Dark.bg) == (option == "dark"),
                 enabled = !busy, onClick = { onTheme(option) }) }
         }
-        Text("Wallpaper shared by both of you")
-        Choices(listOf("off", "love", "samurai"), wallpaper) { if (!busy) onWallpaper(it) }
+        if (showWallpaper) {
+            Text("Wallpaper shared by both of you")
+            Choices(listOf("off", "love", "samurai"), wallpaper) { if (!busy) onWallpaper(it) }
+        }
         ErrorLine(error)
     } }, confirmButton = { SecondaryButton("Done", onClick = close) })
 }

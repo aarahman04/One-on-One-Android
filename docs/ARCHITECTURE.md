@@ -409,3 +409,17 @@ bitmaps. Text reads at most 1 MiB plus one byte to detect truncation; lazy rows
 also bound the layout work for very long lines. Voice cards register their save
 callback with the containing bubble's existing menu, without adding ChatScreen
 callbacks. No endpoint, payload, attachment authorization or cache boundary changes.
+### Navigation routes (D4)
+
+```mermaid
+flowchart LR
+  Home["home (boot route / ChatScreen)"] -->|menu: Settings| Settings
+  Home -->|menu: Account| Account
+  Settings --> Account["account"]
+  Settings --> Notif["notifications"]
+  Account --> Blocks["blocks"]
+  Onboard["auto: notifications?first=true"] -.-> Notif
+```
+
+`settings`, `account`, `blocks` and `notifications` share `SettingsScaffold`.
+Appearance/Export dialogs are hosted by the `settings` route (chat connection only).

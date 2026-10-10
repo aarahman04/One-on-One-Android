@@ -67,7 +67,7 @@ internal fun receiptLabel(message: ChatMessage, readAt: String?, deliveredAt: St
 }
 
 @Composable
-fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: FeatureViewModel, onSettings: () -> Unit, onRefresh: () -> Unit, accountError: String? = null) {
+fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: FeatureViewModel, onSettings: () -> Unit, onAccount: () -> Unit, onRefresh: () -> Unit, accountError: String? = null) {
     val context = LocalContext.current
     val messages by vm.messages.collectAsState()
     val draft by vm.draft.collectAsState()
@@ -101,8 +101,6 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     var duplicate by rememberSaveable { mutableStateOf<String?>(null) }
     var more by remember { mutableStateOf(false) }
     var command by rememberSaveable(connection.id) { mutableStateOf<String?>(null) }
-    var appearance by rememberSaveable { mutableStateOf(false) }
-    var export by rememberSaveable { mutableStateOf(false) }
     var report by rememberSaveable { mutableStateOf(false) }
     var reportMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var block by rememberSaveable { mutableStateOf(false) }
@@ -154,10 +152,9 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                 ChatMenu(
                     expanded = more, onDismiss = { more = false },
                     onSearch = { search = !search; more = false },
-                    onAppearance = { appearance = true; more = false },
                     onSettings = { onSettings(); more = false },
                     onNickname = { nickname = true; more = false },
-                    onExport = { export = true; more = false },
+                    onAccount = { onAccount(); more = false },
                     onReport = { features.clearError(); report = true; more = false },
                     onBlock = { features.clearError(); block = true; more = false },
                     onLeave = { leave = true; more = false },
@@ -264,8 +261,6 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         if (type == "location") LocationConfirmation(connection, features, replyTo, close)
         else FeatureComposer(type, connection, features, replyTo, close)
     }
-    if (appearance) AppearanceDialog(connection, features, onRefresh) { appearance = false }
-    if (export) ExportDialog(connection, features) { export = false }
     if (report || reportMessage != null) ReportDialog(connection, reportMessage, features) { report = false; reportMessage = null }
     if (block) BlockDialog(connection, features, close = { block = false }, refresh = onRefresh)
     if (alarm) FeatureModal(onDismissRequest = { alarm = false }, title = { Text("Send an emergency alarm?") },
