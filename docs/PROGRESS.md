@@ -646,6 +646,18 @@ Known content differences vs web (not styling, left as-is pending owner call): A
 
 Device checklist: open each chat dialog above (dark + light); alarm bubble shows red left bar for raise and ack; legal links open the right pages.
 
+## D1 — Composer, keyboard and attachments
+
+Status: build verified (see PR); device check pending.
+
+- Keyboard gap: `MainActivity` uses `windowSoftInputMode="adjustResize"`; `ChatScreen` no longer applies `imePadding()` on the root, and `ChatComposer` applies `navigationBars ∪ ime` once, so the header stays visible and the composer sits flush on the keyboard.
+- Mic records immediately (asks for `RECORD_AUDIO` first if missing). While recording the composer row is a 48dp bar: trash (discard), pulsing red dot + mm:ss timer, and a stop circle that stops and sends the voice note (reply respected). `FeatureViewModel` gained `stopAndSend` and `cancelRecording`; `stopRecording`, the voicePath "Send voice note / Discard" row and `AttachmentControls` are gone. Under one second still shows "Record for at least one second." and nothing is sent. The recorder's size/length cap sends what was recorded.
+- Attach chooser is Photo + File only: a bottom-anchored `AttachSheet` above the composer (animated, tap outside or the pin to close). Picker launchers live in `ChatScreen`, so picking closes the sheet immediately.
+- `OneModal` has `placement: ModalPlacement { Top (default), Bottom }`, threaded through `FeatureModal`. The upload confirmation uses Bottom (full-width sheet, top corners md10, nav-bar inset, slides up); photo preview max 280dp, rounded, `ContentScale.Fit`.
+- Previews added for the recording bar, attach sheet and bottom modal.
+
+Device checklist: open keyboard in chat (header visible, no gap, none after closing); mic tap records, stop sends, trash discards, under 1 s errors; pin shows only Photo/File; pick a photo -> sheet closes, confirm sheet at the bottom; leaving the chat mid-recording discards it.
+
 ## Releases
 
 | versionName | versionCode | Date | Workflow run | Contents |

@@ -88,3 +88,18 @@ private fun ModalSample() {
         DangerButton("Leave", onClick = {})
     }
 }
+
+@Preview(name = "Modal bottom dark", showBackground = true) @Composable
+private fun ModalBottomDark() = PreviewHost(true) { ModalBottomSample() }
+
+@Preview(name = "Modal bottom light", showBackground = true) @Composable
+private fun ModalBottomLight() = PreviewHost(false) { ModalBottomSample() }
+
+@Composable
+private fun ModalBottomSample() {
+    OneModal(onDismiss = {}, placement = ModalPlacement.Bottom) {
+        ScreenTitle("Send image?")
+        Subtitle("Up to 10 MiB.")
+        PrimaryButton("Send", onClick = {})
+    }
+}

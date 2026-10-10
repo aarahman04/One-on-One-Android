@@ -10,8 +10,13 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -47,7 +54,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.net.toUri
+import app.web.oneonone.R
 import app.web.oneonone.data.api.CurrentConnection
 import app.web.oneonone.data.model.*
 import coil3.compose.AsyncImage
@@ -158,8 +165,8 @@ private fun ChoiceButton(option: String, selected: Boolean, enabled: Boolean = t
 
 @Composable
 internal fun FeatureModal(onDismissRequest: () -> Unit, title: @Composable () -> Unit = {}, text: @Composable () -> Unit,
-    confirmButton: @Composable () -> Unit, dismissButton: @Composable () -> Unit = {}) {
-    OneModal(onDismiss = onDismissRequest) {
+    confirmButton: @Composable () -> Unit, dismissButton: @Composable () -> Unit = {}, placement: ModalPlacement = ModalPlacement.Top) {
+    OneModal(onDismiss = onDismissRequest, placement = placement) {
         CompositionLocalProvider(LocalContentColor provides OneTheme.colors.text) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 CompositionLocalProvider(LocalTextStyle provides OneTextStyles.subtitle.copy(fontWeight = FontWeight.Bold)) { title() }
@@ -378,48 +385,42 @@ private fun openAttachment(context: Context, uri: Uri, mime: String) {
     catch (_: android.content.ActivityNotFoundException) { android.widget.Toast.makeText(context, "No app can open this file.", android.widget.Toast.LENGTH_LONG).show() }
 }
 
+/** Photo / File chooser: two tiles anchored above the composer. The pickers live in ChatScreen so a pick closes the sheet at once. */
 @Composable
-fun AttachmentControls(connection: CurrentConnection, vm: FeatureViewModel, reply: String?, done: () -> Unit) {
-    val context = LocalContext.current
-    val busy by vm.busy.collectAsState()
-    val recording by vm.recording.collectAsState()
-    val voice by vm.voicePath.collectAsState()
-    var selected by rememberSaveable(connection.id) { mutableStateOf<String?>(null) }
-    var kind by rememberSaveable(connection.id) { mutableStateOf("image") }
-    fun keepUri(uri: Uri) {
-        runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        selected = uri.toString()
+internal fun AttachSheet(visible: Boolean, modifier: Modifier, onPhoto: () -> Unit, onFile: () -> Unit) {
+    val motion = OneTheme.motion
+    AnimatedVisibility(visible, modifier,
+        enter = slideInVertically(tween(motion.enter160, easing = motion.standard)) { it } + fadeIn(tween(motion.enter160)),
+        exit = slideOutVertically(tween(motion.fast120, easing = motion.standard)) { it } + fadeOut(tween(motion.fast120))) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AttachTile(R.drawable.ic_image, "Photo", onPhoto, Modifier.weight(1f))
+            AttachTile(R.drawable.ic_file, "File", onFile, Modifier.weight(1f))
+        }
     }
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) { kind = "image"; keepUri(uri) } }
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) { kind = "file"; keepUri(uri) } }
-    val microphone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-        if (allowed) vm.record() else vm.showError("Microphone access was denied. Allow it in App info → Permissions to record voice notes.")
-    }
-    DisposableEffect(vm) { onDispose { vm.background() } }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SecondaryButton("Photo", enabled = !busy && !recording, onClick = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
-        SecondaryButton("File", enabled = !busy && !recording, onClick = { filePicker.launch(FileMimes.toTypedArray()) })
-        SecondaryButton(if (recording) "Stop recording" else "Voice note", enabled = !busy && voice == null, onClick = {
-            if (recording) vm.stopRecording()
-            else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) vm.record()
-            else microphone.launch(Manifest.permission.RECORD_AUDIO)
-        })
-    }
-    if (recording) Text("Recording… Keep this chat open. Leaving discards the recording.", style = MaterialTheme.typography.labelMedium)
-    voice?.let { path -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        PrimaryButton("Send voice note", enabled = !busy, onClick = { vm.upload(connection, "voice", Uri.fromFile(java.io.File(path)), reply, done) })
-        SecondaryButton("Discard", enabled = !busy, onClick = vm::discardVoice)
-    } }
-    val error by vm.error.collectAsState()
-    selected?.let { source -> UploadContent(kind, source, busy, error,
-        send = { vm.upload(connection, kind, source.toUri(), reply) { selected = null; done() } }, cancel = { selected = null }) }
 }
 
 @Composable
+private fun AttachTile(icon: Int, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val c = OneTheme.colors
+    val shape = RoundedCornerShape(OneTheme.radii.md10)
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Column(
+        modifier.pressScale(source).clip(shape).background(c.bgRaised).border(1.dp, c.border, shape)
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
+            .padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(painterResource(icon), null, tint = c.textDim, modifier = Modifier.size(24.dp))
+        Text(label, style = OneTextStyles.menuItem, color = c.text)
+    }
+}
+
+
+@Composable
 internal fun UploadContent(kind: String, source: String?, busy: Boolean, error: String?, send: () -> Unit, cancel: () -> Unit) {
-    FeatureModal(onDismissRequest = { if (!busy) cancel() }, title = { Text("Send $kind?") },
+    FeatureModal(onDismissRequest = { if (!busy) cancel() }, placement = ModalPlacement.Bottom, title = { Text("Send $kind?") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (kind == "image") AsyncImage(source, "Selected photo", Modifier.fillMaxWidth().height(220.dp), contentScale = ContentScale.Fit)
+            if (kind == "image") AsyncImage(source, "Selected photo", Modifier.fillMaxWidth().heightIn(max = 280.dp).clip(RoundedCornerShape(OneTheme.radii.md10)), contentScale = ContentScale.Fit)
             Text(if (kind == "image") "Up to 10 MiB. Static photos have location metadata removed; very large photos are resized." else "Up to 25 MiB. PDF, text, CSV, Word, Excel and PowerPoint.")
             ErrorLine(error)
         } },
