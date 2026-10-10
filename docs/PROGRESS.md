@@ -12,6 +12,7 @@
 | A7 | Merged, PR #7; green CI; device QA pending | Release hardening and Play checklist |
 | S1–S5 | Merged, PRs #10–#14; green CI; device QA pending | Restyle to match the web client (tokens, fonts, icons, chat, screens, cards, call overlay) |
 | D2 | Local checks green; PR review pending; live QA skipped | Chat header presence and logo-only launch |
+| D3 | Local checks green; PR review pending; fixture emulator QA passed | Compact attachment cards, native viewers and friendly dates |
 
 ## A0 â€” 2026-10-07
 
@@ -733,3 +734,81 @@ Screenshots: [cold launch](design/screens/d2-cold-launch.png),
   older dates, muted/accent dots and TalkBack/large-font header truncation.
 - [ ] Confirm single grey / double grey / blue ticks, message reads and calls
   retain their existing behavior.
+
+## D3 - compact attachment cards and viewers (2026-10-10)
+
+- Voice cards use a 44dp filled vector play/pause control, optical play offset,
+  elapsed/duration label and real progress. MediaPlayer position polling runs
+  every 100ms during playback and stops on pause, completion and background.
+  Save a copy lives in the existing voice bubble long-press menu.
+- Photos open by tapping the image. The black full-screen dialog has safe
+  system-bar insets, close/save controls, bounded pinch zoom, double-tap zoom
+  and accessibility zoom/reset actions.
+- File cards show a type badge, readable decimal size, View and a small download
+  icon. DocumentViewer uses the existing downloaded content URI: PDF pages
+  render serially on IO at screen width, visible pages own disposable bitmaps,
+  and the renderer/descriptor close on disposal. Text/CSV previews use lazy
+  monospace rows with a 1 MiB cap and a truncation note. Office files use the
+  existing Open with chooser; all document viewers offer save and Open with.
+- Dates use Today, Yesterday, localized weekdays for the previous six calendar
+  days, then a localized day/month/year. Unit coverage includes the seven-day
+  boundary, time zones, locale/year boundaries, progress/size/type formatting,
+  bounded text reads/rows, PDF raster limits and photo pan bounds.
+- ChatScreen changes only dayLabel. FeatureUi changes only the attachment-card,
+  openAttachment and PhotoViewer areas plus imports. D4-owned settings/menu/
+  appearance/export code and the separate D4 worktree are untouched. No new
+  dependency or backend change. The design-reference folder is excluded.
+
+### Verification
+
+`gradlew.bat :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
+--max-workers=2` passed after removing the temporary QA sources: 83 tests,
+zero failures/errors, zero lint issues. The final APK contains no fixture
+activity, instrumentation or assets; it installed and cold-launched on the
+separate AVD without an AndroidRuntime crash.
+
+A separate API 36 Pixel 7 AVD (`OneOnOne_D3`, emulator-5560) exercised the actual
+production composables and native MediaPlayer/PdfRenderer using temporary local
+fixtures. The fixture activity, instrumentation and assets were removed before
+final build/commit. No authenticated backend attachment test is claimed.
+
+- Playback advanced, paused at a stable position and resumed. The compact card
+  and play icon were inspected in dark and light themes.
+- Image tap opened full-screen. Native two-finger events enlarged the displayed
+  image; double tap returned it to fitted size (colored pixel area
+  14376 -> 62414 -> 14376).
+- A 12-page PDF opened and scrolled with its indicator. Rotation retained the
+  viewer and one descriptor; close released it. Rapid repeated scrolling and
+  closing produced no AndroidRuntime crash and left no PDF descriptor open.
+- TXT and CSV opened in-app; a large text file showed the truncation note. DOCX
+  offered the chooser. The AVD has no Office handler, so launching an installed
+  Office application remains unverified.
+- Voice-menu, file-card, photo-viewer, TXT-viewer and CSV-viewer saves wrote
+  byte-for-byte matching files. PDF toolbar save returned to the viewer.
+
+Screenshots (local fixtures, not a signed-in conversation):
+[cards dark](design/screens/d3-cards-dark.png),
+[cards light](design/screens/d3-cards-light.png),
+[voice playback](design/screens/d3-voice-playing-dark.png),
+[voice actions](design/screens/d3-voice-actions-light.png),
+[photo fitted](design/screens/d3-photo-fit-dark.png),
+[photo zoomed](design/screens/d3-photo-pinch-dark.png),
+[PDF scrolled](design/screens/d3-pdf-scrolled-light.png),
+[PDF landscape](design/screens/d3-pdf-landscape-light.png),
+[TXT](design/screens/d3-text-light.png),
+[CSV](design/screens/d3-csv-light.png),
+[text cap](design/screens/d3-text-truncated-dark.png),
+[Office chooser](design/screens/d3-office-chooser-light.png).
+Viewer surfaces intentionally stay black in both appearance modes.
+
+### Xiaomi / HyperOS device checklist (owner)
+
+- [ ] In a signed-in chat, play/pause/resume a downloaded voice note; check
+  elapsed time/progress, centered icon, completion and background cleanup.
+- [ ] Tap a received photo, pinch/double tap, rotate, close and save from its bar.
+- [ ] View a real multi-page PDF, scroll/rotate/close; check the page indicator
+  and save/Open with actions. Repeat with TXT/CSV and a file above 1 MiB.
+- [ ] View DOCX/XLSX/PPTX with a compatible app installed; confirm the chooser
+  can grant read access and save preserves the original bytes.
+- [ ] Check Today/Yesterday/recent weekday/older-date separators in the device
+  time zone, dark/light appearance, large fonts and TalkBack controls.

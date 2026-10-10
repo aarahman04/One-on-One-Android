@@ -29,10 +29,18 @@ class FeatureViewModel @Inject constructor(
     val error = mutableError.asStateFlow()
     val recording = MutableStateFlow(false)
     val playing = MutableStateFlow<String?>(null)
+    private val mutablePlaybackPosition = MutableStateFlow(0)
+    val playbackPosition = mutablePlaybackPosition.asStateFlow()
+    private val mutablePlaybackDuration = MutableStateFlow(0)
+    val playbackDuration = mutablePlaybackDuration.asStateFlow()
+    private val mutablePlaybackPaused = MutableStateFlow(false)
+    val playbackPaused = mutablePlaybackPaused.asStateFlow()
     val voicePath = saved.getStateFlow<String?>("voicePath", null)
     val signature = MutableStateFlow("")
     private var player: MediaPlayer? = null
     private var playbackJob: Job? = null
+    private var progressJob: Job? = null
+    private var playbackPrepared = false
     private var recordingJob: Job? = null
 
     init { viewModelScope.launch {
@@ -120,7 +128,20 @@ class FeatureViewModel @Inject constructor(
     }
     fun play(connection: String, path: String) {
         if (recording.value) { showError("Stop recording before playing a voice note."); return }
-        if (playing.value == path) { stopPlayback(); return }
+        if (playing.value == path) {
+            val current = player
+            if (current == null || !playbackPrepared) { stopPlayback(); return }
+            try {
+                if (mutablePlaybackPaused.value) {
+                    current.start(); mutablePlaybackPaused.value = false; pollPlayback(current)
+                } else {
+                    current.pause(); progressJob?.cancel()
+                    mutablePlaybackPosition.value = current.currentPosition
+                    mutablePlaybackPaused.value = true
+                }
+            } catch (error: Exception) { stopPlayback(); mutableError.value = userError(error) }
+            return
+        }
         stopPlayback(); playing.value = path
         playbackJob = viewModelScope.launch {
             try {
@@ -132,16 +153,39 @@ class FeatureViewModel @Inject constructor(
                 next.apply {
                     setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
                     setDataSource(url)
-                    setOnPreparedListener { if (player === it) it.start() }
-                    setOnCompletionListener { stopPlayback() }
-                    setOnErrorListener { _, _, _ -> mutableError.value = "Couldn't play this voice note. Try again."; stopPlayback(); true }
+                    setOnPreparedListener { if (player === it) {
+                        playbackPrepared = true; mutablePlaybackDuration.value = it.duration
+                        it.start(); pollPlayback(it)
+                    } }
+                    setOnCompletionListener { if (player === it) stopPlayback() }
+                    setOnErrorListener { failed, _, _ ->
+                        if (player === failed) { mutableError.value = "Couldn't play this voice note. Try again."; stopPlayback() }
+                        true
+                    }
                     prepareAsync()
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { stopPlayback(); mutableError.value = userError(error) }
         }
     }
-    private fun stopPlayback() { playbackJob?.cancel(); player?.release(); player = null; playing.value = null; media.abandonPlaybackFocus() }
+    private fun pollPlayback(current: MediaPlayer) {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            try {
+                while (player === current && current.isPlaying) {
+                    mutablePlaybackPosition.value = current.currentPosition
+                    delay(100)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { stopPlayback(); mutableError.value = userError(error) }
+        }
+    }
+    private fun stopPlayback() {
+        playbackJob?.cancel(); progressJob?.cancel(); player?.release(); player = null
+        playbackPrepared = false; playing.value = null
+        mutablePlaybackPosition.value = 0; mutablePlaybackDuration.value = 0; mutablePlaybackPaused.value = false
+        media.abandonPlaybackFocus()
+    }
     fun openFile(connection: String, payload: JsonObject, onReady: (Uri) -> Unit) = action { onReady(media.download(connection, payload)) }
     fun saveAttachment(connection: String, payload: JsonObject, destination: Uri) = action { media.saveAttachment(connection, payload, destination) }
     fun theme(value: String) = action { preferences.setTheme(value) }
@@ -164,7 +208,7 @@ class FeatureViewModel @Inject constructor(
     }
     fun saveLetter(uri: Uri, message: ChatMessage) = action { media.save(uri, letterHtml(message)) }
     override fun onCleared() {
-        recordingJob?.cancel(); player?.release(); media.abandonPlaybackFocus()
+        recordingJob?.cancel(); stopPlayback()
         // The application-scoped recorder must release even after this ViewModel's scope is cancelled.
         CoroutineScope(Dispatchers.IO).launch { media.releaseRecording() }
     }

@@ -22,14 +22,23 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.sp
@@ -227,6 +236,9 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     val busy by vm.busy.collectAsState()
     val path = payload.text("path")
     val playing by vm.playing.collectAsState()
+    val position = if (message.type == "voice") vm.playbackPosition.collectAsState().value else 0
+    val duration = if (message.type == "voice") vm.playbackDuration.collectAsState().value else 0
+    val paused = if (message.type == "voice") vm.playbackPaused.collectAsState().value else false
     var url by remember(path) { mutableStateOf<String?>(null) }
     var urlError by remember(path) { mutableStateOf<String?>(null) }
     var retryUrl by remember { mutableIntStateOf(0) }
@@ -235,6 +247,14 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     val attachmentDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         if (uri != null && payload != null) vm.saveAttachment(connection.id, payload, uri)
     }
+    val saveCopy = { attachmentDownload.launch(payload.text("name").ifBlank { path.substringAfterLast('/') }) }
+    val currentSaveCopy by rememberUpdatedState(saveCopy)
+    val menuSave = LocalMessageSaveAction.current
+    DisposableEffect(menuSave, message.type, path) {
+        if (message.type == "voice" && path.isNotBlank()) menuSave?.value = { if (!vm.busy.value) currentSaveCopy() }
+        onDispose { if (message.type == "voice") menuSave?.value = null }
+    }
+    var documentUri by rememberSaveable(message.id, message.tempId) { mutableStateOf<Uri?>(null) }
     if (message.type == "image" && path.isNotBlank()) LaunchedEffect(path, connection.id, retryUrl) {
         while (true) {
             try { url = vm.media.signedUrl(connection.id, path); urlError = null }
@@ -247,17 +267,22 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
         onSend = { t, body, response, r, done -> vm.send(t, body, response, r, done) },
         onPlay = { vm.play(connection.id, it) },
         onLetterDownload = { letterDownload.launch("one-on-one-letter.html") },
-        onOpenFile = { payload?.let { p -> vm.openFile(connection.id, p) { openAttachment(context, it, p.text("mime")) } } },
+        onOpenFile = { payload?.let { p -> vm.openFile(connection.id, p) { documentUri = it } } },
         onImageError = { urlError = "Photo unavailable. Tap retry." },
         onRetryPhoto = { url = null; urlError = null; retryUrl++ },
-        onSaveCopy = { attachmentDownload.launch(payload.text("name").ifBlank { path.substringAfterLast('/') }) })
+        onSaveCopy = saveCopy, playbackPosition = position, playbackDuration = duration, playbackPaused = paused)
+    documentUri?.let { uri ->
+        DocumentViewer(uri, payload.text("mime"), payload.text("name"), busy, saveCopy,
+            openWith = { openAttachment(context, uri, payload.text("mime")) }, close = { documentUri = null })
+    }
 }
 
 @Composable
 internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: ChatMessage?, connection: CurrentConnection,
     busy: Boolean, playing: String?, url: String?, urlError: String?,
     onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, onPlay: (String) -> Unit,
-    onLetterDownload: () -> Unit, onOpenFile: () -> Unit, onImageError: () -> Unit, onRetryPhoto: () -> Unit, onSaveCopy: () -> Unit) {
+    onLetterDownload: () -> Unit, onOpenFile: () -> Unit, onImageError: () -> Unit, onRetryPhoto: () -> Unit, onSaveCopy: () -> Unit,
+    playbackPosition: Int = 0, playbackDuration: Int = 0, playbackPaused: Boolean = false) {
     val payload = message.payload
     val path = payload.text("path")
     val uriHandler = LocalUriHandler.current
@@ -344,44 +369,64 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                 }
                 "image" -> {
                     if (url == null && urlError == null) Text("Loading photo…")
-                    url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "Shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp), contentScale = ContentScale.Crop,
+                    url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "View shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp)
+                        .clickable(role = Role.Button) { reveal = true }, contentScale = ContentScale.Crop,
                 placeholder = ColorPainter(OneTheme.colors.bgRaised), error = if (LocalInspectionMode.current) ColorPainter(OneTheme.colors.bgRaised) else null,
                         onError = { onImageError() }) }
                     urlError?.let { Text(it); CardAction("Retry photo", onClick = { onRetryPhoto() }) }
-                    CardAction("View photo", enabled = !busy, onClick = { reveal = true })
-                    if (reveal) PhotoViewer(url, busy, onOpenFile, close = { reveal = false })
+                    if (reveal) PhotoViewer(url, busy, onSaveCopy, close = { reveal = false })
                 }
                 "voice" -> {
-                    CardHint("Voice note · ${payload.number("duration")?.toInt() ?: 0}s")
+                    val active = playing == path && path.isNotBlank()
+                    val running = active && !playbackPaused
+                    val length = if (active && playbackDuration > 0) playbackDuration else ((payload.number("duration") ?: 0.0) * 1_000).toInt()
+                    val elapsed = if (active) playbackPosition else 0
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(onClick = { onPlay(path) }, enabled = path.isNotBlank(), modifier = Modifier.size(40.dp)
-                            .semantics { contentDescription = if (playing == path) "Stop" else "Play" },
-                            shape = CircleShape, color = Color.Transparent, border = BorderStroke(1.dp, LocalBubbleColors.current.edge)) {
-                            Box(contentAlignment = Alignment.Center) { Text(if (playing == path) "■" else "▶", color = LocalBubbleColors.current.text) }
+                        Surface(onClick = { onPlay(path) }, enabled = path.isNotBlank(), modifier = Modifier.size(44.dp)
+                            .semantics { contentDescription = if (running) "Pause voice note" else "Play voice note" },
+                            shape = CircleShape, color = LocalBubbleColors.current.text.copy(alpha = .18f)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(painterResource(if (running) R.drawable.ic_pause else R.drawable.ic_play), null,
+                                    Modifier.size(24.dp).offset(x = if (running) 0.dp else 2.dp), tint = LocalBubbleColors.current.text)
+                            }
                         }
-                        Box(Modifier.weight(1f).height(40.dp), contentAlignment = Alignment.Center) {
-                            // shortcut: playback has no position flow, add a progress fill when the ViewModel exposes one.
-                            Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(LocalBubbleColors.current.text.copy(alpha = .3f)))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            LinearProgressIndicator(progress = { playbackProgress(elapsed, length) },
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
+                                color = LocalBubbleColors.current.text, trackColor = LocalBubbleColors.current.text.copy(alpha = .25f),
+                                gapSize = 0.dp, drawStopIndicator = {})
+                            Text(playbackTime(if (active) elapsed else length), color = LocalBubbleColors.current.meta,
+                                style = OneTextStyles.bubbleMeta)
                         }
-                        CardHint(if (playing == path) "Stop" else "Play")
                     }
                 }
                 "file" -> {
-                    CardHeading("📄", payload.text("name")); CardHint("${((payload.number("size") ?: 0.0) / 1024).toInt()} KiB · ${payload.text("mime")}")
-                    CardAction("Download and open", enabled = !busy, onClick = { onOpenFile() })
+                    val type = attachmentType(payload.text("mime"))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(OneTheme.radii.sm6))
+                            .background(LocalBubbleColors.current.text.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
+                            Text(type, color = LocalBubbleColors.current.text, style = OneTextStyles.bubbleMeta.copy(fontWeight = FontWeight.Bold))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(payload.text("name"), style = OneTextStyles.cardHeading, maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            CardHint("${attachmentSize(payload.number("size") ?: 0.0)} · $type")
+                        }
+                        OneIconButton(R.drawable.ic_download, "Save a copy", onSaveCopy,
+                            tint = LocalBubbleColors.current.text, enabled = !busy && path.isNotBlank())
+                    }
+                    CardAction("View", enabled = !busy && path.isNotBlank(), onClick = onOpenFile)
                 }
                 else -> Text(message.content.ifBlank { message.type })
             }
-            if (message.type in setOf("image", "voice", "file") && path.isNotBlank()) CardAction("Save a copy", enabled = !busy, onClick = {
-                onSaveCopy()
-            })
     }
     }
 }
 
-private fun openAttachment(context: Context, uri: Uri, mime: String) {
+internal fun openAttachment(context: Context, uri: Uri, mime: String) {
     val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    try { context.startActivity(Intent.createChooser(intent, "Open attachment")) }
+        .apply { clipData = ClipData.newRawUri("Attachment", uri) }
+    try { context.startActivity(Intent.createChooser(intent, "Open with…")) }
     catch (_: android.content.ActivityNotFoundException) { android.widget.Toast.makeText(context, "No app can open this file.", android.widget.Toast.LENGTH_LONG).show() }
 }
 
@@ -546,8 +591,39 @@ internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () 
 }
 
 @Composable
-internal fun PhotoViewer(url: String?, busy: Boolean, open: () -> Unit, close: () -> Unit) {
-    FeatureModal(onDismissRequest = close, text = {
-        AsyncImage(url, "Shared photo", Modifier.fillMaxWidth().heightIn(max = 480.dp), contentScale = ContentScale.Fit)
-    }, confirmButton = { SecondaryButton("Close", close) }, dismissButton = { SecondaryButton("Open in app", open, enabled = !busy) })
+internal fun PhotoViewer(url: String?, busy: Boolean, save: () -> Unit, close: () -> Unit) {
+    var scale by remember(url) { mutableFloatStateOf(1f) }
+    var pan by remember(url) { mutableStateOf(Offset.Zero) }
+    var viewport by remember { mutableStateOf(IntSize.Zero) }
+    var imageSize by remember(url) { mutableStateOf(Size.Zero) }
+    var photoError by remember(url) { mutableStateOf(false) }
+    AttachmentViewerFrame("Photo", busy, save, close) {
+        Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged {
+                viewport = it
+                pan = photoPan(pan, scale, Size(it.width.toFloat(), it.height.toFloat()), imageSize)
+            }
+            .semantics {
+                customActions = listOf(
+                    androidx.compose.ui.semantics.CustomAccessibilityAction("Zoom in") { scale = (scale * 1.5f).coerceAtMost(5f); true },
+                    androidx.compose.ui.semantics.CustomAccessibilityAction("Reset zoom") { scale = 1f; pan = Offset.Zero; true })
+            }
+            .pointerInput(url) { detectTapGestures(onDoubleTap = { point ->
+                scale = if (scale > 1f) 1f else 2.5f
+                pan = photoPan((Offset(viewport.width / 2f, viewport.height / 2f) - point) * (scale - 1), scale,
+                    Size(viewport.width.toFloat(), viewport.height.toFloat()), imageSize)
+            }) }
+            .pointerInput(url) { detectTransformGestures { centroid, delta, zoom, _ ->
+                val oldScale = scale
+                scale = (scale * zoom).coerceIn(1f, 5f)
+                val focus = centroid - Offset(viewport.width / 2f, viewport.height / 2f)
+                pan = photoPan(pan * (scale / oldScale) + delta + focus * (1 - scale / oldScale), scale,
+                    Size(viewport.width.toFloat(), viewport.height.toFloat()), imageSize)
+            } }, contentAlignment = Alignment.Center) {
+            AsyncImage(url, "Shared photo. Pinch or double tap to zoom.", Modifier.fillMaxSize().graphicsLayer {
+                scaleX = scale; scaleY = scale; translationX = pan.x; translationY = pan.y
+            }, contentScale = ContentScale.Fit, onSuccess = { imageSize = it.painter.intrinsicSize; photoError = false }, onError = { photoError = true })
+            if (photoError || url == null) Text(if (photoError) "Photo unavailable. Close and retry." else "Loading photo…",
+                color = Color.White, style = OneTextStyles.cardHint)
+        }
+    }
 }
