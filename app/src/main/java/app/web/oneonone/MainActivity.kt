@@ -3,6 +3,7 @@ package app.web.oneonone
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -15,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.drawable.toDrawable
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import app.web.oneonone.ui.AppNavigation
 import app.web.oneonone.ui.AppViewModel
+import app.web.oneonone.ui.BootRoute
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.ui.theme.OneColors
@@ -47,7 +50,12 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var alarms: AlarmCoordinator
     @Inject lateinit var calls: CallManager
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
+        val splashStartedAt = SystemClock.uptimeMillis()
         super.onCreate(savedInstanceState)
+        splash.setKeepOnScreenCondition {
+            viewModel.state.value.route == BootRoute.Loading && SystemClock.uptimeMillis() - splashStartedAt < 3_000
+        }
         enableEdgeToEdge()
         handleAlarmIntent(intent)
         handleCallIntent(intent)
@@ -60,13 +68,15 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val dark by viewModel.darkTheme.collectAsState()
+            val state by viewModel.state.collectAsState()
+            val launchDark = dark || state.route == BootRoute.Loading
             SideEffect {
                 WindowInsetsControllerCompat(window, window.decorView).apply {
-                    isAppearanceLightStatusBars = !dark
-                    isAppearanceLightNavigationBars = !dark
+                    isAppearanceLightStatusBars = !launchDark
+                    isAppearanceLightNavigationBars = !launchDark
                 }
                 // Keep the window behind Compose in the resolved theme so light mode never flashes dark.
-                window.setBackgroundDrawable((if (dark) OneColors.Dark else OneColors.Light).bg.toArgb().toDrawable())
+                window.setBackgroundDrawable((if (launchDark) OneColors.Dark else OneColors.Light).bg.toArgb().toDrawable())
             }
             OneOnOneTheme(darkTheme = dark) {
                 Surface(modifier = Modifier.fillMaxSize()) {

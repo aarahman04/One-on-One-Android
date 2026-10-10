@@ -1,5 +1,7 @@
 package app.web.oneonone.ui.chat
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +37,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.web.oneonone.R
-import app.web.oneonone.data.realtime.ConnectionState
 import app.web.oneonone.ui.components.OneIconButton
 import app.web.oneonone.ui.components.OneMenu
 import app.web.oneonone.ui.components.OneMenuItem
@@ -47,7 +48,7 @@ import app.web.oneonone.ui.theme.OneTheme
 @Composable
 internal fun ChatHeader(
     title: String,
-    state: ConnectionState,
+    presence: ChatPresence,
     callsEnabled: Boolean,
     onVideo: () -> Unit,
     onCall: () -> Unit,
@@ -74,15 +75,15 @@ internal fun ChatHeader(
             }
             Column(Modifier.weight(1f, fill = false)) {
                 Text(title, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val label = when (state) { ConnectionState.Connected -> "Connected"; ConnectionState.Connecting -> "Connecting…"; ConnectionState.Offline -> "Waiting for connection" }
-                // .chat__nav-status::before — a green dot, muted while away/connecting.
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(color = if (state == ConnectionState.Connected) c.accentYou else c.muted)) { append("● ") }
-                        append(label)
-                    },
-                    color = c.textDim, style = OneTextStyles.cardHint, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+                Crossfade(presence, animationSpec = tween(200), label = "Chat presence") { status ->
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(color = if (status.online) c.accentYou else c.muted)) { append("● ") }
+                            append(status.label)
+                        },
+                        color = c.textDim, style = OneTextStyles.cardHint, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {

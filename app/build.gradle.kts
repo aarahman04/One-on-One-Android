@@ -80,6 +80,7 @@ ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 dependencies {
     implementation(libs.androidx.core)
+    implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.exif)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)

@@ -81,6 +81,8 @@ class FakeTransport : Transport {
     val historyCalls = mutableListOf<Pair<String?, String?>>()
     var loseAckOnce = false
     var echoFirst = false
+    val readCalls = mutableListOf<String>()
+    var read: suspend () -> Unit = { }
     var history: suspend (String?, String?) -> List<ChatMessage> = { _, _ -> emptyList() }
     override suspend fun start() { state.value = ConnectionState.Connected }
     override suspend fun stop() { state.value = ConnectionState.Offline }
@@ -97,12 +99,73 @@ class FakeTransport : Transport {
         historyCalls += before to after
         return history(before, after)
     }
-    override suspend fun markRead(connectionId: String) { }
+    override suspend fun markRead(connectionId: String) { readCalls += connectionId; read() }
     override suspend fun react(messageId: String, emoji: String, remove: Boolean) { }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MessageServiceTest {
+    @Test fun visibleChatHeartbeatsWithoutDuplicatingRecentReadsAndStopsWhenHidden() = runTest {
+        val transport = FakeTransport()
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        service.readTimeSource = testScheduler.timeSource
+        service.activate(connection("active", true)); runCurrent()
+        assertTrue(transport.readCalls.isEmpty())
+        service.visible(true); service.visible(true); runCurrent()
+        assertEquals(1, transport.readCalls.size)
+        advanceTimeBy(9_999); runCurrent()
+        assertEquals(1, transport.readCalls.size)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(2, transport.readCalls.size)
+        advanceTimeBy(5_000); service.markRead()
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(3, transport.readCalls.size)
+        advanceTimeBy(4_999); runCurrent()
+        assertEquals(3, transport.readCalls.size)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(4, transport.readCalls.size)
+        service.visible(false)
+        advanceTimeBy(20_000); runCurrent()
+        assertEquals(4, transport.readCalls.size)
+        service.visible(true); runCurrent()
+        assertEquals(5, transport.readCalls.size)
+        service.deactivate()
+        advanceTimeBy(20_000); runCurrent()
+        assertEquals(5, transport.readCalls.size)
+    }
+
+    @Test fun heartbeatRetriesFailuresAndCancelsAnInFlightReadOnPause() = runTest {
+        val transport = FakeTransport().apply { read = { throw IOException("offline") } }
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        service.readTimeSource = testScheduler.timeSource
+        service.activate(connection("active", true)); runCurrent()
+        service.visible(true); runCurrent()
+        assertEquals("offline", service.error.value)
+        transport.read = { awaitCancellation() }
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(2, transport.readCalls.size)
+        service.visible(false); runCurrent()
+        transport.read = { }
+        service.visible(true); runCurrent()
+        assertEquals(3, transport.readCalls.size)
+        service.deactivate()
+        advanceTimeBy(20_000); runCurrent()
+        assertEquals(3, transport.readCalls.size)
+    }
+
+    @Test fun visibilityBeforeActivationStillStartsHeartbeatForTheConversation() = runTest {
+        val transport = FakeTransport()
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        service.readTimeSource = testScheduler.timeSource
+        service.visible(true); runCurrent()
+        service.activate(connection("active", true)); runCurrent()
+        val initialReads = transport.readCalls.size
+        assertTrue(initialReads > 0)
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(initialReads + 1, transport.readCalls.size)
+        service.deactivate()
+    }
+
     @Test fun connectionEndedPurgesCacheAndPendingSends() = runTest {
         val transport = FakeTransport().apply { loseAckOnce = true }
         val store = MemoryMessageStore()

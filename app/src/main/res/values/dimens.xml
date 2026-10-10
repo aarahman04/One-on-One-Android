@@ -1,0 +1,4 @@
+<resources>
+    <dimen name="splash_icon_size">288dp</dimen>
+    <dimen name="splash_icon_inset">28.8dp</dimen>
+</resources>

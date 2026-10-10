@@ -145,7 +145,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     Column(Modifier.fillMaxSize()) {
         ChatHeader(
             title = connection.otherNickname ?: "Your One on One",
-            state = state,
+            presence = rememberChatPresence(state, newerTime(connection.otherLastReadAt, receipts?.lastReadAt)),
             callsEnabled = !recording,
             onVideo = { features.background(); vm.call(CallKind.Video) },
             onCall = { features.background(); vm.call(CallKind.Audio) },

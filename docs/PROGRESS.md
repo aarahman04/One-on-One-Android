@@ -11,6 +11,7 @@
 | A6 | Merged, PR #6; green CI; device QA pending | Feature parity |
 | A7 | Merged, PR #7; green CI; device QA pending | Release hardening and Play checklist |
 | S1–S5 | Merged, PRs #10–#14; green CI; device QA pending | Restyle to match the web client (tokens, fonts, icons, chat, screens, cards, call overlay) |
+| D2 | Local checks green; PR review pending; live QA skipped | Chat header presence and logo-only launch |
 
 ## A0 â€” 2026-10-07
 
@@ -673,3 +674,62 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 - Not yet uploaded to Play. **Next upload needs versionCode 7 or higher.**
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
   S2–S5 device checklists above, then upload the AAB to internal testing.
+
+## D2 — presence and logo-only splash (2026-10-10)
+
+Branch `design/d2-presence-splash`, based on main. No backend changes. The
+reference-image folder and D1's composer/feature/overlay files are excluded;
+ChatScreen changes only the ChatHeader argument.
+
+- MessageService runs a heartbeat only while the chat is resumed, suppresses
+  heartbeat reads for ten seconds after any successful read, and cancels on
+  pause/deactivation. Immediate message/resync/notification reads remain immediate.
+  Monotonic timing and a shared read mutex prevent overlapping heartbeat reads;
+  skipped ticks wait only the remaining interval, avoiding a 20-second gap.
+- The newest connection/live receipt timestamp drives the header's strict
+  15-second Online window. A resumed five-second ticker expires it without events.
+  Own socket Offline/Connecting wins; otherwise show Online, today's/yesterday's
+  local time, an older locale-aware date, or Offline. System 12/24-hour preference
+  determines the time pattern. ChatHeader crossfades pure label/dot inputs.
+  Single/double/read tick calculation and rendering are unchanged.
+- AndroidX core-splashscreen 1.2.0, a launcher-activity starting theme, the existing
+  launcher foreground inset 10% per side (28.8dp on a 288dp canvas), and the fixed dark
+  background provide a logo-only splash. All six bitmap densities fit inside the
+  192dp safe circle (maximum normalized artwork radius after inset: 0.610 < 2/3).
+  installSplashScreen precedes super.onCreate; keep-on-screen reads the boot route
+  with a monotonic three-second cap. Compose Loading uses the same image/size and
+  background, without ScreenFrame's text, progress or entry animation; its preview
+  covers both app themes. Window/system bars stay dark while Loading.
+
+Verification: `gradlew.bat :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
+--max-workers=2` passed on the final code (77 JVM tests, zero failures/errors;
+lint: no issues). Added pure
+presence checks for the exact 15-second boundary, today/yesterday/older/null,
+socket priority, locale, time patterns, timezone boundaries and newest receipt;
+service checks cover heartbeat cadence, recent-read suppression, repeated resume,
+pause/deactivation cancellation, failed/in-flight reads and visibility before
+activation. Live two-client testing is skipped at the user's request. No physical
+Xiaomi/device verification is claimed. The API 36 emulator showed the intact
+centered logo on the dark splash and reached sign-in; captures are linked below.
+The first capture was obscured by a System UI ANR, dismissed before recapture;
+the successful launch log has no app crash or ANR. Emulator process startup was
+slow, so this is visual evidence, not a performance or three-second-cap timing
+claim. Slow authenticated-session handoff, light appearance, API 26 fallback,
+live presence/Wi-Fi and Xiaomi behavior remain unverified.
+
+Screenshots: [cold launch](design/screens/d2-cold-launch.png),
+[after launch](design/screens/d2-after-launch.png).
+
+### Xiaomi / HyperOS and two-client checklist (unverified)
+
+- [ ] Cold launch in dark/light appearance: only the intact centered logo on dark
+  background, then the app; no opening text/spinner or logo handoff flash.
+- [ ] With a slow restored session, native splash releases by roughly three
+  seconds; the Compose loading logo remains aligned. Rotate/background/relaunch.
+- [ ] With two accounts, open the other chat: Online within roughly ten seconds;
+  close/background it: Last seen within 15–20 seconds after its last read.
+- [ ] Turn off Wi-Fi: Waiting for network; reconnect: Connecting… then presence.
+- [ ] Change timezone/locale and 12/24-hour settings; verify today, yesterday,
+  older dates, muted/accent dots and TalkBack/large-font header truncation.
+- [ ] Confirm single grey / double grey / blue ticks, message reads and calls
+  retain their existing behavior.

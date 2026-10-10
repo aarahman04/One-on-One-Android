@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -54,6 +55,7 @@ import app.web.oneonone.ui.components.*
 import app.web.oneonone.ui.theme.OneOnOneTheme
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
+import app.web.oneonone.ui.theme.OneColors
 import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
@@ -130,12 +132,16 @@ private fun HomeScreen(
     onConnectionAction: (String) -> Unit,
     onSettings: () -> Unit,
 ) {
+    if (state.route == BootRoute.Loading) {
+        Box(Modifier.fillMaxSize().background(OneColors.Dark.bg), contentAlignment = Alignment.Center) {
+            Image(painterResource(R.mipmap.ic_launcher_foreground), null,
+                Modifier.size(dimensionResource(R.dimen.splash_icon_size)).padding(dimensionResource(R.dimen.splash_icon_inset)))
+        }
+        return
+    }
     ScreenFrame(state) { narrow ->
         when (state.route) {
-            BootRoute.Loading -> {
-                Subtitle("Opening your One on One…")
-                CircularProgressIndicator(color = OneTheme.colors.accentYou, trackColor = OneTheme.colors.border)
-            }
+            BootRoute.Loading -> Unit
             BootRoute.SignIn -> {
                 Image(painterResource(R.mipmap.ic_launcher_foreground), null, Modifier.size(96.dp))
                 Eyebrow("ONE")
@@ -369,7 +375,7 @@ private fun HomePreview(route: BootRoute, dark: Boolean, busy: Boolean = false, 
     }
 }
 
-@Preview(name = "Loading", widthDp = 390, heightDp = 844)
+@Preview(name = "Loading — logo only", widthDp = 390, heightDp = 844)
 @Composable private fun LoadingPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) = HomePreview(BootRoute.Loading, dark)
 
 @Preview(name = "Sign in", widthDp = 390, heightDp = 844)
