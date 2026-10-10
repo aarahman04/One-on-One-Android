@@ -381,3 +381,18 @@ window; socket trouble overrides the other member's status. Immediate message
 reads and tick rendering retain their existing behavior. Heartbeat freshness
 uses monotonic time and stops when paused or deactivated. The loading screen
 bypasses ScreenFrame's text, progress and entry animation for a seamless launch.
+
+### Navigation routes (D4)
+
+```mermaid
+flowchart LR
+  Home["home (boot route / ChatScreen)"] -->|menu: Settings| Settings
+  Home -->|menu: Account| Account
+  Settings --> Account["account"]
+  Settings --> Notif["notifications"]
+  Account --> Blocks["blocks"]
+  Onboard["auto: notifications?first=true"] -.-> Notif
+```
+
+`settings`, `account`, `blocks` and `notifications` share `SettingsScaffold`.
+Appearance/Export dialogs are hosted by the `settings` route (chat connection only).

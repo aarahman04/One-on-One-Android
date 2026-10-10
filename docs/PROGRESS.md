@@ -733,3 +733,22 @@ Screenshots: [cold launch](design/screens/d2-cold-launch.png),
   older dates, muted/accent dots and TalkBack/large-font header truncation.
 - [ ] Confirm single grey / double grey / blue ticks, message reads and calls
   retain their existing behavior.
+
+## D4 — Settings and Account redesign (2026-10-10)
+
+Status: built, lint/unit tests green; branch `design/d4-settings-account`.
+New shared kit `ui/components/Settings.kt` (`SettingsScaffold`, `SettingsGroup`,
+`SettingsRow` with Chevron/Value/External/Chip/Action trailing, `SettingsCaption`,
+`SettingsExpandable`) plus 18 new Lucide-style vectors. Settings, Account (new),
+Blocked accounts and Notifications screens all use it (`ui/SettingsScreens.kt`,
+`NotificationOnboarding.kt`). The chat 3-dot menu is now Search, Nickname,
+Settings, Account and a collapsible "Connection" group (Report, Block, Leave).
+Appearance and Export moved to Settings ("Chat" group, only with a chat
+connection); without a connection a Theme row opens `AppearanceDialog` with the
+wallpaper section hidden. Account holds the connection ID card (copy), Blocked
+accounts (count), Legal links, Sign out and a "Danger zone" Delete account that
+reuses the existing confirm modal. First-run notification onboarding keeps a
+pinned Continue button; the long OEM text is a collapsible "Why is this needed?".
+All intents, confirmations and ViewModel calls are unchanged. Verified by build,
+lint and unit tests; @Previews (dark/light) added. Not verified on a device or
+emulator (needs a signed-in session): the live screens remain unchecked.

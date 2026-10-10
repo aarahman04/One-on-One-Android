@@ -6,7 +6,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -44,11 +43,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import app.web.oneonone.ui.chat.AppearanceDialog
+import app.web.oneonone.ui.chat.ExportDialog
 import app.web.oneonone.R
-import app.web.oneonone.data.api.BlockedUser
 import app.web.oneonone.data.api.CurrentConnection
 import app.web.oneonone.data.api.Me
 import app.web.oneonone.ui.components.*
@@ -62,7 +64,7 @@ import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.push.PushRegistration
 import java.time.LocalDate
 
-private const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
+internal const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
 @Composable
 fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, featureViewModel: FeatureViewModel, pushRegistration: PushRegistration) {
@@ -87,7 +89,7 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
     }
     LaunchedEffect(state.route, state.needsNotificationOnboarding) {
         if (state.needsNotificationOnboarding && state.route in setOf(BootRoute.Connect, BootRoute.Waiting, BootRoute.Request, BootRoute.Chat)) {
-            nav.navigate("notifications") { launchSingleTop = true }
+            nav.navigate("notifications?first=true") { launchSingleTop = true }
             viewModel.onboardingShown()
         }
     }
@@ -96,7 +98,7 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
             val connection = state.connection
             if (state.route == BootRoute.Chat && connection != null) {
                 key(connection.myUserId, connection.id) {
-                    ChatScreen(connection, chatViewModel, featureViewModel, onSettings = { nav.navigate("settings") }, onRefresh = { viewModel.refresh() }, accountError = state.error)
+                    ChatScreen(connection, chatViewModel, featureViewModel, onSettings = { nav.navigate("settings") }, onAccount = { nav.navigate("account") }, onRefresh = { viewModel.refresh() }, accountError = state.error)
                 }
             } else {
                 val context = LocalContext.current
@@ -107,15 +109,30 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
             }
         }
         composable("settings") {
-            SettingsScreen(state, onNotifications = { nav.navigate("notifications") }, onBlocks = { nav.navigate("blocks") },
-                onSignOut = { viewModel.signOut() }, onDelete = viewModel::deleteAccount, onBack = { nav.popBackStack() })
+            val connection = state.connection?.takeIf { state.route == BootRoute.Chat }
+            var appearance by rememberSaveable { mutableStateOf(false) }
+            var export by rememberSaveable { mutableStateOf(false) }
+            val dark = OneTheme.colors.bg == OneColors.Dark.bg
+            val theme = if (dark) "Dark" else "Light"
+            val summary = if (connection == null) theme else
+                "$theme · " + when (connection.wallpaper) { "love" -> "Love wallpaper"; "samurai" -> "Samurai wallpaper"; else -> "No wallpaper" }
+            SettingsScreen(state, chat = connection != null, appearanceSummary = summary,
+                onAppearance = { appearance = true }, onExport = { export = true },
+                onNotifications = { nav.navigate("notifications") }, onAccount = { nav.navigate("account") }, onBack = { nav.popBackStack() })
+            if (appearance) AppearanceDialog(connection, featureViewModel, { viewModel.refresh() }) { appearance = false }
+            if (export && connection != null) ExportDialog(connection, featureViewModel) { export = false }
+        }
+        composable("account") {
+            LaunchedEffect(Unit) { viewModel.loadBlocks() }
+            AccountScreen(state, onBlocks = { nav.navigate("blocks") }, onSignOut = { viewModel.signOut() },
+                onDelete = viewModel::deleteAccount, onBack = { nav.popBackStack() })
         }
         composable("blocks") {
             LaunchedEffect(Unit) { viewModel.loadBlocks() }
             BlocksScreen(state, onUnblock = { viewModel.unblock(it) }, onBack = { nav.popBackStack() })
         }
-        composable("notifications") {
-            NotificationOnboarding(pushRegistration, onDone = { nav.popBackStack() })
+        composable("notifications?first={first}", arguments = listOf(navArgument("first") { type = NavType.BoolType; defaultValue = false })) { entry ->
+            NotificationOnboarding(pushRegistration, firstRun = entry.arguments?.getBoolean("first") == true, onDone = { nav.popBackStack() })
         }
     }
 }
@@ -243,42 +260,6 @@ private fun ConnectionId(code: String, narrow: Boolean) {
 }
 
 @Composable
-private fun SettingsScreen(state: AppState, onNotifications: () -> Unit, onBlocks: () -> Unit,
-    onSignOut: () -> Unit, onDelete: () -> Unit, onBack: () -> Unit) {
-    ScreenFrame(state, screenKey = "settings") {
-        Title("Settings")
-        Column(Modifier.widthIn(max = 320.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
-            Text("PREFERENCES", style = OneTextStyles.groupLabel, color = OneTheme.colors.muted)
-            TextLink("Notifications and background settings", onNotifications, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
-            TextLink("Blocked accounts", onBlocks, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
-        }
-        LegalLinks()
-        Text("ACCOUNT", style = OneTextStyles.groupLabel, color = OneTheme.colors.muted)
-        SecondaryButton("Sign out", onSignOut, enabled = !state.busy)
-        DeleteAccountButton(state.busy, onDelete)
-        TextLink("Back", onBack, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
-    }
-}
-
-@Composable
-private fun BlocksScreen(state: AppState, onUnblock: (String) -> Unit, onBack: () -> Unit) {
-    ScreenFrame(state, screenKey = "blocks") {
-        Title("Blocked accounts")
-        ScreenSubtitle("Unblocking allows a future connection request. It does not restore a conversation.")
-        if (state.blocks.isEmpty()) ScreenSubtitle("No blocked accounts.")
-        if (state.blocks.isNotEmpty()) Text("ACCOUNTS", style = OneTextStyles.groupLabel, color = OneTheme.colors.muted)
-        state.blocks.forEach { block ->
-            Column(Modifier.widthIn(max = 320.dp).fillMaxWidth().defaultMinSize(minHeight = OneTheme.sizes.touch40),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
-                Text(block.blockedUserId, style = OneTextStyles.subtitle, color = OneTheme.colors.text, textAlign = TextAlign.Center)
-                SecondaryButton("Unblock", onClick = { onUnblock(block.blockedUserId) }, enabled = !state.busy)
-            }
-        }
-        TextLink("Back", onBack, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
-    }
-}
-
-@Composable
 private fun LegalLinks() {
     val uri = LocalUriHandler.current
     FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
@@ -329,20 +310,7 @@ private fun ConsentScreen(busy: Boolean, onAccept: () -> Unit) {
 }
 
 @Composable
-private fun DeleteAccountButton(busy: Boolean, onDelete: () -> Unit) {
-    var open by rememberSaveable { mutableStateOf(false) }
-    var confirmation by rememberSaveable { mutableStateOf("") }
-    DangerButton("Delete account", onClick = { open = true }, enabled = !busy)
-    if (open) {
-        BackHandler(enabled = busy) { }
-        OneModal(onDismiss = { if (!busy) open = false }) {
-            DeleteAccountContent(busy, confirmation, onConfirmation = { confirmation = it }, onDelete, onCancel = { open = false })
-        }
-    }
-}
-
-@Composable
-private fun DeleteAccountContent(busy: Boolean, confirmation: String, onConfirmation: (String) -> Unit,
+internal fun DeleteAccountContent(busy: Boolean, confirmation: String, onConfirmation: (String) -> Unit,
     onDelete: () -> Unit, onCancel: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.md12)) {
         Text("Delete your account?", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
@@ -403,21 +371,6 @@ private fun HomePreview(route: BootRoute, dark: Boolean, busy: Boolean = false, 
 @Preview(name = "Busy and error", widthDp = 390, heightDp = 844)
 @Composable private fun BusyErrorPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) =
     HomePreview(BootRoute.Connect, dark, busy = true, error = "Unable to connect. Please try again.")
-
-@Preview(name = "Settings", widthDp = 390, heightDp = 844)
-@Composable private fun SettingsPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
-    OneOnOneTheme(darkTheme = dark) { SettingsScreen(AppState(), {}, {}, {}, {}, {}) }
-}
-
-@Preview(name = "Blocks", widthDp = 390, heightDp = 844)
-@Composable private fun BlocksPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
-    OneOnOneTheme(darkTheme = dark) { BlocksScreen(AppState(blocks = listOf(BlockedUser("blocked-account", ""))), {}, {}) }
-}
-
-@Preview(name = "Blocks empty", widthDp = 390, heightDp = 844)
-@Composable private fun EmptyBlocksPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
-    OneOnOneTheme(darkTheme = dark) { BlocksScreen(AppState(), {}, {}) }
-}
 
 @Preview(name = "Delete account", widthDp = 390, heightDp = 844)
 @Composable private fun DeleteAccountPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) {
