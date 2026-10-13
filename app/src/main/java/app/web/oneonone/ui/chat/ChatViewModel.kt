@@ -33,6 +33,10 @@ class ChatViewModel @Inject constructor(
     val ended = service.ended
     val draft = saved.getStateFlow("draft", "")
     val replyTo = saved.getStateFlow<String?>("replyTo", null)
+    /** Id of my message being edited in the composer, or null. */
+    val editing = saved.getStateFlow<String?>("editing", null)
+    val otherTyping = service.otherTyping
+    val pin = service.pin
     private val mutableError = MutableStateFlow<String?>(null)
     val error = combine(mutableError, service.error) { local, network -> local ?: network }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -51,6 +55,7 @@ class ChatViewModel @Inject constructor(
         if (saved.get<String>("draftOwner") != draftOwner) {
             saved["draft"] = ""
             saved["replyTo"] = null
+            saved["editing"] = null
             saved["draftOwner"] = draftOwner
             mutableHasOlder.value = true
         }
@@ -58,10 +63,31 @@ class ChatViewModel @Inject constructor(
     }
     fun close(clear: Boolean) = action(showBusy = false) { service.deactivate(clear) }
     fun visible(resumed: Boolean) = service.visible(resumed)
-    fun draft(value: String) { saved["draft"] = value.take(4_000) }
+    private var typingSentAt = 0L
+    fun draft(value: String) {
+        saved["draft"] = value.take(4_000)
+        // Typing signal: at most every 3 s while there's text; "stopped" once when it empties.
+        val now = System.currentTimeMillis()
+        if (value.isNotBlank() && editing.value == null) {
+            if (now - typingSentAt > 3_000) { typingSentAt = now; service.typing(true) }
+        } else if (typingSentAt != 0L) { typingSentAt = 0L; service.typing(false) }
+    }
+    fun startEdit(id: String, content: String) { saved["replyTo"] = null; saved["editing"] = id; draft(content) }
+    fun cancelEdit() { saved["editing"] = null; draft("") }
+    fun delete(ids: List<String>) = action { ids.forEach { service.delete(it) } }
+    fun pin(id: String?) = action { service.pin(id) }
+    fun syncPin(connection: CurrentConnection) = service.syncPin(connection)
+    suspend fun linkPreview(url: String) = service.linkPreview(url)
     fun reply(id: String?) { saved["replyTo"] = id }
     fun send() = action {
         val content = draft.value
+        editing.value?.let { id ->
+            service.edit(id, content)
+            saved["editing"] = null
+            if (draft.value == content) saved["draft"] = ""
+            return@action
+        }
+        if (typingSentAt != 0L) { typingSentAt = 0L; service.typing(false) }
         service.send(content, replyTo = replyTo.value)
         if (draft.value == content) saved["draft"] = ""
         saved["replyTo"] = null

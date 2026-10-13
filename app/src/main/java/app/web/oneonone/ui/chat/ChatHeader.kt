@@ -1,6 +1,9 @@
 package app.web.oneonone.ui.chat
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.Crossfade
@@ -121,7 +124,8 @@ internal fun ChatHeader(
  * copy and a More menu. Same height and colours as [ChatHeader] so the swap doesn't shift the list.
  */
 @Composable
-internal fun SelectionBar(count: Int, onClose: () -> Unit, onReply: (() -> Unit)?, onCopy: () -> Unit, onMore: () -> Unit, menu: @Composable () -> Unit) {
+internal fun SelectionBar(count: Int, onClose: () -> Unit, onReply: (() -> Unit)?, onCopy: () -> Unit, onMore: () -> Unit, menu: @Composable () -> Unit,
+                          onEdit: (() -> Unit)? = null, onDelete: (() -> Unit)? = null) {
     val c = OneTheme.colors
     Row(
         Modifier
@@ -140,7 +144,9 @@ internal fun SelectionBar(count: Int, onClose: () -> Unit, onReply: (() -> Unit)
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite; contentDescription = if (n == 1) "1 message selected" else "$n messages selected" })
         }
         if (onReply != null) OneIconButton(R.drawable.ic_reply, "Reply", onReply)
+        if (onEdit != null) OneIconButton(R.drawable.ic_pencil, "Edit", onEdit)
         OneIconButton(R.drawable.ic_copy, "Copy", onCopy)
+        if (onDelete != null) OneIconButton(R.drawable.ic_trash, "Delete", onDelete)
         Box {
             OneIconButton(R.drawable.ic_more_vertical, "More options", onMore)
             menu()
@@ -177,12 +183,15 @@ internal fun ChatMenu(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("Connection", style = OneTextStyles.menuItem, color = OneTheme.colors.text)
-            Text(if (danger) "▴" else "▾", style = OneTextStyles.menuItem, color = OneTheme.colors.muted)
+            val turn by animateFloatAsState(if (danger) 180f else 0f, tween(240, easing = OneTheme.motion.standard), label = "chevron")
+            Icon(painterResource(R.drawable.ic_chevron_down), null, tint = OneTheme.colors.muted, modifier = Modifier.size(18.dp).rotate(turn))
         }
-        if (danger) {
-            OneMenuItem("Report person", onClick = onReport, danger = true)
-            OneMenuItem("Block person", onClick = onBlock, danger = true)
-            OneMenuItem("Leave connection", onClick = onLeave, danger = true)
+        Reveal(danger) {
+            Column {
+                OneMenuItem("Report person", onClick = onReport, danger = true)
+                OneMenuItem("Block person", onClick = onBlock, danger = true)
+                OneMenuItem("Leave connection", onClick = onLeave, danger = true)
+            }
         }
     }
 }

@@ -20,6 +20,7 @@ androidx-exif = { module = "androidx.exifinterface:exifinterface", version = "1.
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version = "1.13.0" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version = "2.10.2" }
 androidx-lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version = "2.10.0" }
+androidx-emoji-picker = { module = "androidx.emoji2:emoji2-emojipicker", version = "1.4.0" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose" }
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-preview = { module = "androidx.compose.ui:ui-tooling-preview" }

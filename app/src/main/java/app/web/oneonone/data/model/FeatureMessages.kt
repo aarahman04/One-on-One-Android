@@ -100,7 +100,7 @@ fun countdownText(target: String, now: Instant = Instant.now()): String {
     }
 }
 
-fun messageSummary(message: ChatMessage): String = when (message.type) {
+fun messageSummary(message: ChatMessage): String = if (message.deletedAt != null) "This message was deleted" else when (message.type) {
     "image" -> "Photo"
     "voice" -> "Voice note"
     "file" -> message.payload.text("name").ifBlank { "File" }

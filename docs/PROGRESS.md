@@ -1012,3 +1012,30 @@ Xiaomi checklist:
 - [ ] Typing when a call arrives: keyboard closes; ringtone plays inside the app.
 - [ ] Alarm received while in chat: red glow + banner, ring continues until Acknowledge.
 - [ ] Alarm received in background: tap notification, chat opens glowing; Acknowledge stops it.
+
+## Edit, delete, pin, typing, any-emoji reactions, link previews (2026-10-14, same branch)
+
+Backend: web repo branch `feat/edit-delete-pin-typing-preview` (migration 036). Contract §5/§8 updated (copy here).
+- Long press = select + quick reactions above the message; "+" opens the full emoji picker (androidx emoji2-emojipicker).
+- Selection bar: reply · edit (own text, ≤30 min) · copy · delete for everyone (own, ≤30 min, with confirm) · ⋮ Pin/Unpin, Save, Report.
+- Edited messages show "edited HH:mm"; deleted show "This message was deleted" for both. Tap a bubble for the full sent/edited date.
+- Pinned banner under the header (tap jumps to it, × unpins); one pin per chat, newest replaces.
+- Typing: header says "typing…" and a three-dot bubble bounces at the bottom; sent at most every 3 s.
+- Link cards (server unfurl): wide art full width (YouTube, Spotify, Amazon), square art / site icon as a thumbnail.
+- /location fixed: last fix from the past 2 min, else all providers raced for 20 s (GPS alone timed out indoors and nothing was sent), then any fix from the last 30 min.
+- Composer pill 44 dp (was 48 + padding); reactions chips spring in/out; reaction bar animates out; Connection menu group, search bar,
+  banners, reply/edit bar, slash menu and the header/selection swap all fade + fold instead of popping.
+- Debug builds have a second launcher icon "1on1 Demo": the real chat UI against a scripted contact (types, replies, reacts; send "alarm"
+  for an emergency alarm), with link cards produced by the real unfurler. Not in release builds.
+
+Deploy order: run `036_message_edit_delete_pin.sql` in Supabase, then deploy the backend, then install this build.
+
+Xiaomi checklist (after deploy):
+- [ ] Long press: selects + reaction bar; "+" → picker; picked emoji shows on both phones.
+- [ ] Edit within 30 min: both see the new text + "edited". After 30 min edit/delete hidden.
+- [ ] Delete for everyone: both see "This message was deleted".
+- [ ] Pin on A, then pin another on B: both show B's pin. × unpins on both.
+- [ ] Typing on A shows "typing…" + dots on B, stops ~6 s after A stops.
+- [ ] YouTube / Spotify / Instagram / Amazon links show cards on both phones.
+- [ ] /location indoors sends a snapshot within ~20 s.
+

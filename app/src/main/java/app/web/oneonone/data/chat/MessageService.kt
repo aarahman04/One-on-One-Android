@@ -50,6 +50,13 @@ class MessageService @Inject constructor(
     val receipts = mutableReceipts.asStateFlow()
     private val mutableError = MutableStateFlow<String?>(null)
     val error = mutableError.asStateFlow()
+    private val mutableTyping = MutableStateFlow(false)
+    /** The other member is typing now (expires 6 s after their last signal). */
+    val otherTyping = mutableTyping.asStateFlow()
+    private val mutablePin = MutableStateFlow(PinState())
+    val pin = mutablePin.asStateFlow()
+    @Volatile private var lastPinEvent = 0L
+    private val previews = java.util.concurrent.ConcurrentHashMap<String, Deferred<LinkPreview?>>()
     private val mutableEnded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val ended = mutableEnded.asSharedFlow()
     private var conversationJob: Job? = null
@@ -78,15 +85,25 @@ class MessageService @Inject constructor(
         mutableActive.value = session
         mutableError.value = null
         mutableReceipts.value = null
+        mutableTyping.value = false
+        mutablePin.value = PinState(connection.pinnedMessageId, connection.pinnedBy, connection.pinnedAt)
         val job = SupervisorJob(scope.coroutineContext[Job])
         conversationJob = job
         val conversation = CoroutineScope(scope.coroutineContext + job)
         conversation.launch { guarded {
             transport.incoming.collect { message ->
                 store.reconcile(session.ownerId, session.connectionId, message)
+                if (message.senderId != session.ownerId) mutableTyping.value = false
                 if (chatResumed && message.senderId != session.ownerId) markRead()
             }
         } }
+        conversation.launch { guarded { transport.updates.collect { store.reconcile(session.ownerId, session.connectionId, it) } } }
+        conversation.launch { transport.typing.collectLatest { update ->
+            if (update.userId == session.ownerId) return@collectLatest
+            mutableTyping.value = update.typing
+            if (update.typing) { delay(6_000); mutableTyping.value = false }
+        } }
+        conversation.launch { transport.pins.collect { lastPinEvent = System.currentTimeMillis(); mutablePin.value = it } }
         conversation.launch { guarded { transport.reactions.collect {
             store.reaction(session.ownerId, session.connectionId, it)
         } } }
@@ -124,6 +141,8 @@ class MessageService @Inject constructor(
         transport.stop()
         mutableActive.value = null
         mutableReceipts.value = null
+        mutableTyping.value = false
+        mutablePin.value = PinState()
         chatResumed = false
         lastRead = null
         if (clear && previous != null) store.clear(previous.ownerId, previous.connectionId)
@@ -234,6 +253,9 @@ class MessageService @Inject constructor(
             check(next != cursor) { "History cursor did not advance." }
             cursor = next
         }
+        // Edits and deletes don't move created_at, so the "after" cursor can't see them: refresh the newest page too.
+        if (session == active.value && store.watermark(session.ownerId, session.connectionId) != null)
+            transport.history(session.connectionId).forEach { store.reconcile(session.ownerId, session.connectionId, it) }
         if (chatResumed) markRead()
         mutableError.value = null
     }
@@ -246,6 +268,29 @@ class MessageService @Inject constructor(
         batch.size == 50
     }
     suspend fun react(messageId: String, emoji: String, remove: Boolean) = transport.react(messageId, emoji, remove)
+    suspend fun edit(messageId: String, content: String) {
+        val session = checkNotNull(active.value) { "No active connection." }
+        require(content.isNotBlank() && content.trim().length <= 4_000) { "Messages must be 1–4000 characters." }
+        store.reconcile(session.ownerId, session.connectionId, transport.edit(messageId, content.trim()))
+    }
+    suspend fun delete(messageId: String) {
+        val session = checkNotNull(active.value) { "No active connection." }
+        store.reconcile(session.ownerId, session.connectionId, transport.delete(messageId))
+    }
+    suspend fun pin(messageId: String?) { mutablePin.value = transport.pin(messageId); lastPinEvent = System.currentTimeMillis() }
+    /** The connection poll is the fallback for a missed pin:update; a live event in the last 10 s wins. */
+    fun syncPin(connection: CurrentConnection) {
+        if (active.value?.connectionId != connection.id || System.currentTimeMillis() - lastPinEvent < 10_000) return
+        mutablePin.value = PinState(connection.pinnedMessageId, connection.pinnedBy, connection.pinnedAt)
+    }
+    fun typing(active: Boolean) { if (transport.state.value == ConnectionState.Connected) transport.typing(active) }
+    /** Server-side unfurl, cached per URL for the process; a failed fetch is retried next time. */
+    suspend fun linkPreview(url: String): LinkPreview? {
+        if (previews.size > 200) previews.clear()
+        val pending = previews.getOrPut(url) { scope.async { transport.linkPreview(url) } }
+        return try { pending.await() } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { previews.remove(url, pending); null }
+    }
     suspend fun exportHistory(): List<ChatMessage> = synchronizing.withLock {
         // ponytail: export holds the conversation in memory; stream pages for conversations that exceed device memory.
         val session = checkNotNull(active.value)

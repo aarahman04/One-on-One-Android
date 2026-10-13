@@ -8,6 +8,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -145,6 +152,11 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     LaunchedEffect(connection.id, connection.otherNickname) {
         if (connection.otherNickname == null && !nicknameAsked) { nicknameAsked = true; nickname = true }
     }
+    val editing by vm.editing.collectAsState()
+    val otherTyping by vm.otherTyping.collectAsState()
+    val pinState by vm.pin.collectAsState()
+    LaunchedEffect(connection.pinnedMessageId, connection.pinnedAt) { vm.syncPin(connection) }
+    var confirmDelete by remember { mutableStateOf<List<String>?>(null) }
     val shared by vm.shared.collectAsState()
     LaunchedEffect(shared) {
         val content = shared ?: return@LaunchedEffect
@@ -228,13 +240,20 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             drawRect(danger.copy(alpha = alarmGlow), style = Stroke(4.dp.toPx()))
         }
     }) {
-        if (selecting) {
+        AnimatedContent(selecting, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) }, label = "header") { selectingNow ->
+        if (selectingNow) {
             val picked = selectedKeys.mapNotNull { key -> messages.find { messageKey(it) == key } }
             val single = picked.singleOrNull()
+            val now = System.currentTimeMillis()
+            fun recentMine(m: ChatMessage) = m.id != null && m.senderId == connection.myUserId && m.deletedAt == null &&
+                m.type !in setOf("call", "system", "alarm") && now - Instant.parse(m.createdAt).toEpochMilli() <= EditWindowMs
             SelectionBar(
+                onEdit = single?.takeIf { recentMine(it) && it.type == "text" }?.let { m -> { vm.startEdit(checkNotNull(m.id), m.content); clearSelection()
+                    runCatching { composerFocus.requestFocus(); keyboard?.show() } } },
+                onDelete = picked.takeIf { it.isNotEmpty() && it.all(::recentMine) }?.let { all -> { confirmDelete = all.mapNotNull { it.id } } },
                 count = selectedKeys.size,
                 onClose = clearSelection,
-                onReply = single?.takeIf { it.id != null && it.type != "call" }?.let { { startReply(it.id); clearSelection() } },
+                onReply = single?.takeIf { it.id != null && it.type != "call" && it.deletedAt == null }?.let { { startReply(it.id); clearSelection() } },
                 onCopy = {
                     copyMessages(context, picked.sortedBy { Instant.parse(it.createdAt) })
                     if (android.os.Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(context, if (picked.size > 1) "Messages copied" else "Message copied", android.widget.Toast.LENGTH_SHORT).show()
@@ -245,6 +264,11 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                     val save = single?.let { saves[messageKey(it)]?.value }
                     val reportable = single?.takeIf { it.id != null && it.senderId != connection.myUserId }
                     app.web.oneonone.ui.components.OneMenu(selectionMenu, { selectionMenu = false }) {
+                        if (single?.id != null && single.deletedAt == null && single.type != "system") {
+                            val isPinned = pinState.messageId == single.id
+                            app.web.oneonone.ui.components.OneMenuItem(if (isPinned) "Unpin" else "Pin", onClick = {
+                                vm.pin(if (isPinned) null else single.id); selectionMenu = false; clearSelection() })
+                        }
                         if (save != null) app.web.oneonone.ui.components.OneMenuItem("Save a copy", onClick = { save(); selectionMenu = false; clearSelection() })
                         app.web.oneonone.ui.components.OneMenuItem("Report message", enabled = reportable != null, danger = true,
                             onClick = { features.clearError(); reportMessage = reportable?.id; selectionMenu = false; clearSelection() })
@@ -253,7 +277,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             )
         } else ChatHeader(
             title = connection.otherNickname ?: "Your One on One",
-            presence = rememberChatPresence(state, newerTime(connection.otherLastReadAt, receipts?.lastReadAt)),
+            presence = rememberChatPresence(state, newerTime(connection.otherLastReadAt, receipts?.lastReadAt))
+                .let { if (otherTyping) ChatPresence("typing…", online = true) else it },
             callsEnabled = !recording,
             onVideo = { features.background(); vm.call(CallKind.Video) },
             onCall = { features.background(); vm.call(CallKind.Audio) },
@@ -271,12 +296,28 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                 )
             },
         )
-        if (search) ChatSearchBar(query, { query = it }, count = if (matches.isEmpty()) "0/0" else "${current + 1}/${matches.size}",
-            onOlder = { step(-1) }, onNewer = { step(1) }, onClose = closeSearch)
-        if (connection.myLeaveStep > 0 || connection.otherLeaveStep > 0) {
+        }
+        Reveal(search) { ChatSearchBar(query, { query = it }, count = if (matches.isEmpty()) "0/0" else "${current + 1}/${matches.size}",
+            onOlder = { step(-1) }, onNewer = { step(1) }, onClose = closeSearch) }
+        Reveal(connection.myLeaveStep > 0 || connection.otherLeaveStep > 0) {
             LeaveBanner("Leave countdown: you ${connection.myLeaveStep}/5, them ${connection.otherLeaveStep}/5")
         }
-        if (liveAlarm != null) AlarmBanner(connection.otherNickname ?: "Your One on One", acknowledgeAlarm)
+        var lastPinId by remember { mutableStateOf(pinState.messageId) }
+        if (pinState.messageId != null) lastPinId = pinState.messageId
+        Reveal(pinState.messageId != null) { lastPinId?.let { pinnedId ->
+            val pinnedMessage = messages.find { it.id == pinnedId }
+            PinnedBanner(
+                author = if (pinState.pinnedBy == connection.myUserId) "you" else connection.otherNickname ?: "them",
+                snippet = pinnedMessage?.let { it.content.ifBlank { messageSummary(it) } } ?: "Pinned message",
+                onOpen = {
+                    val at = messages.indexOfFirst { it.id == pinnedId }
+                    if (at >= 0) scope.launch { list.animateScrollToItem(at + 1, -list.layoutInfo.viewportSize.height / 3) }
+                    else android.widget.Toast.makeText(context, "Load older messages to see it.", android.widget.Toast.LENGTH_SHORT).show()
+                },
+                onUnpin = { vm.pin(null) },
+            )
+        } }
+        Reveal(liveAlarm != null) { AlarmBanner(connection.otherNickname ?: "Your One on One", acknowledgeAlarm) }
         if (featureBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val wallpaper = when (connection.wallpaper) { "love" -> R.drawable.wallpaper_love; "samurai" -> R.drawable.wallpaper_samurai; else -> null }
@@ -320,7 +361,11 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                             onSelect = { selectedKeys = if (key in selectedKeys) selectedKeys - key else selectedKeys + key },
                             myReaction = message.reactions.firstOrNull { connection.myUserId in it.userIds }?.emoji,
                             saveCopy = save,
-                            onReact = { emoji -> vm.react(checkNotNull(message.id), emoji,
+                            preview = remember(message.content, message.type, message.deletedAt) {
+                                if (message.type != "text" || message.deletedAt != null) null
+                                else messageLinks(message.content).firstOrNull { !it.second.startsWith("tel:") }?.second
+                            }?.let { url -> { LinkPreviewCard(url, vm::linkPreview) } },
+                            onReact = { emoji -> selectedKeys = emptyList(); vm.react(checkNotNull(message.id), emoji,
                                 message.reactions.any { it.emoji == emoji && connection.myUserId in it.userIds }) },
                             onRetry = { if (message.deliveryState == "unknown") duplicate = message.tempId else message.tempId?.let { vm.retry(it) } },
                             onQuote = { message.replyTo?.let { id ->
@@ -336,6 +381,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                                 }
                             })
                     }
+                    item(key = "typing") { TypingBubble(otherTyping, palette) }
                 }
             }
             // Offline: one calm status pill (debounced so brief reconnects don't flash). Otherwise errors show for a few seconds.
@@ -350,15 +396,27 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             AttachSheet(attachmentOpen, Modifier.align(Alignment.BottomCenter).widthIn(max = OneTheme.sizes.chatMax720).padding(bottom = 6.dp),
                 onPhoto = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 onFile = { filePicker.launch(FileMimes.toTypedArray()) })
-            if (slash.isNotEmpty()) {
-                SlashMenu(slash, maxHeight = minOf(220.dp, screenHeight * .4f), onPick = runCommand,
-                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = OneTheme.sizes.chatMax720).fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 6.dp))
+            var lastSlash by remember { mutableStateOf(slash) }
+            if (slash.isNotEmpty()) lastSlash = slash
+            androidx.compose.animation.AnimatedVisibility(visible = slash.isNotEmpty(), modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(tween(160)) + slideInVertically(tween(200, easing = OneTheme.motion.standard)) { it / 4 },
+                exit = fadeOut(tween(120)) + slideOutVertically(tween(160)) { it / 4 }) {
+                SlashMenu(lastSlash, maxHeight = minOf(220.dp, screenHeight * .4f), onPick = runCommand,
+                    modifier = Modifier.widthIn(max = OneTheme.sizes.chatMax720).fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 6.dp))
             }
         }
-        replyTo?.let { id ->
+        var lastEdit by remember { mutableStateOf(editing) }
+        if (editing != null) lastEdit = editing
+        Reveal(editing != null) { lastEdit?.let { id ->
+            ReplyBar("Edit message", messages.find { it.id == id }?.content ?: "", onCancel = vm::cancelEdit)
+        } }
+        val replying = replyTo?.takeIf { editing == null }
+        var lastReply by remember { mutableStateOf(replying) }
+        if (replying != null) lastReply = replying
+        Reveal(replying != null) { lastReply?.let { id ->
             val original = messages.find { it.id == id }
             ReplyBar(authorOf(original, connection).ifEmpty { "Earlier message" }, original?.let(::messageSummary) ?: "earlier message") { vm.reply(null) }
-        }
+        } }
         ChatComposer(
             draft = draft, onDraft = vm::draft,
             canSend = !busy && !featureBusy,
@@ -398,6 +456,13 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         text = { Text("Its delivery is unknown. Check the conversation first; resending can create a duplicate.") },
         confirmButton = { PrimaryButton("Resend", onClick = { vm.retry(tempId, true); duplicate = null }) },
         dismissButton = { SecondaryButton("Cancel", onClick = { duplicate = null }) }) }
+    confirmDelete?.let { ids ->
+        FeatureModal(onDismissRequest = { confirmDelete = null },
+            title = { Text(if (ids.size > 1) "Delete ${ids.size} messages?" else "Delete message?") },
+            text = { Text("They'll be deleted for both of you. This can't be undone.") },
+            confirmButton = { DangerButton("Delete for everyone", onClick = { vm.delete(ids); confirmDelete = null; clearSelection() }) },
+            dismissButton = { SecondaryButton("Cancel", onClick = { confirmDelete = null }) })
+    }
     if (nickname) NicknameDialog(connection, busy, onDismiss = { nickname = false }) {
         vm.nickname(connection.id, it) { nickname = false; onRefresh() }
     }
@@ -424,7 +489,7 @@ private fun authorOf(message: ChatMessage?, connection: CurrentConnection): Stri
 /** Indices of [messages] with a word starting with [query] (trimmed, any case) in text or card summary; system rows never match. */
 internal fun searchMatches(messages: List<ChatMessage>, query: String): List<Int> {
     if (query.isBlank()) return emptyList()
-    return messages.indices.filter { messages[it].type != "system" && matchRanges(messages[it].content + " " + messageSummary(messages[it]), query).isNotEmpty() }
+    return messages.indices.filter { messages[it].type != "system" && messages[it].deletedAt == null && matchRanges(messages[it].content + " " + messageSummary(messages[it]), query).isNotEmpty() }
 }
 
 /** Ranges where [query] (trimmed, any case) starts a word in [text], like WhatsApp: "hey" finds "Hey!" and "heyy", not "they". */

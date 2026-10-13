@@ -63,6 +63,8 @@ import app.web.oneonone.ui.theme.FontFamilies
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 
+private val ComposerHeight = 44.dp
+
 /** Slash-command descriptions, copied from client/src/features/slashCommands.ts. */
 private val CommandDescriptions = mapOf(
     "letter" to "Write a letter",
@@ -152,7 +154,7 @@ internal fun ChatComposer(
     LaunchedEffect(focused) { if (focused) onFocus() }
     val textStyle = TextStyle(fontFamily = FontFamilies.Body, fontSize = 16.sp, lineHeight = 22.4.sp, color = c.text)
     Row(
-        modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(8.dp),
+        modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -163,14 +165,15 @@ internal fun ChatComposer(
         Row(
             Modifier
                 .weight(1f)
-                .heightIn(min = OneTheme.sizes.send48)
+                .heightIn(min = ComposerHeight)
                 .clip(pillShape)
                 .background(c.bgRaised)
                 .then(if (focused) Modifier.border(1.dp, c.accentYou, pillShape) else Modifier)
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            OneIconButton(R.drawable.ic_paperclip, "Attach", onAttach, Modifier.padding(bottom = 4.dp))
+            // 44dp pill: the 40dp attach button sits 2dp in from the bottom, so one line of text stays a slim pill.
+            OneIconButton(R.drawable.ic_paperclip, "Attach", onAttach, Modifier.padding(bottom = 2.dp))
             BasicTextField(
                 value = draft,
                 onValueChange = onDraft,
@@ -179,7 +182,7 @@ internal fun ChatComposer(
                 cursorBrush = SolidColor(c.accentYou),
                 interactionSource = source,
                 decorationBox = { inner ->
-                    Box(Modifier.padding(horizontal = 8.dp, vertical = 12.dp)) {
+                    Box(Modifier.padding(start = 4.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)) {
                         if (draft.isEmpty()) Text("Message", style = textStyle, color = c.muted)
                         inner()
                     }
@@ -190,7 +193,7 @@ internal fun ChatComposer(
             val sendSource = remember { MutableInteractionSource() }
             Box(
                 Modifier
-                    .size(OneTheme.sizes.send48)
+                    .size(ComposerHeight)
                     .pressScale(sendSource, .94f)
                     .alpha(if (canSend) 1f else .5f)
                     .clip(CircleShape)
@@ -202,7 +205,7 @@ internal fun ChatComposer(
                 Icon(painterResource(R.drawable.ic_send), null, tint = c.sendFg, modifier = Modifier.size(20.dp))
             }
         } else {
-            Box(Modifier.size(OneTheme.sizes.send48), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(ComposerHeight), contentAlignment = Alignment.Center) {
                 OneIconButton(R.drawable.ic_mic, "Record voice note", onMic)
             }
         }

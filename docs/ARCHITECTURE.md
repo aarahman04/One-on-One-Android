@@ -501,3 +501,15 @@ sequenceDiagram
     FCM-->>AC: server-confirmed ack
     AC->>AS: stop
 ```
+
+### Edit / delete / pin / typing / link previews (2026-10-14)
+
+```mermaid
+flowchart LR
+    UI[ChatScreen] --> VM[ChatViewModel] --> MS[MessageService] --> T[Transport] --> IT[InternetTransport]
+    IT -- "message:edit / message:delete / message:pin / typing" --> S[(Socket.IO)]
+    S -- "message:update" --> IT -->|reconcile| R[(Room cache)]
+    S -- "pin:update / typing" --> IT --> MS
+    IT -- "GET /api/link-preview" --> API[Backend unfurl<br/>SSRF-guarded]
+    API -->|title + base64 image| MS -->|cached per URL| UI
+```
