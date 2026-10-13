@@ -668,17 +668,17 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | 1.0.5 | 6 | 2026-10-10 | [37998420889](https://github.com/aarahman04/One-on-One-Android/actions/runs/37998420889) | A0–A7 + S1–S5 web-styling restyle |
 | 2.0.0 | 7 | 2026-10-10 | [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794) | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
 | 2.0.1 | 8 | 2026-10-13 | [38348089207](https://github.com/aarahman04/One-on-One-Android/actions/runs/38348089207) | Scroll-to-end, web-parity search, crisp splash logo |
-| 2.0.2 | 9 | pending dispatch | — | Onboarding/connect redesign, gates per sign-in, links, friendly errors, vector icons |
-| 2.0.3 | 10 | 2026-10-14 | pending (dispatch on `fix/chat-polish-1014`) | Chat polish (gestures, selection, alarm glow, calls, share target), edit/delete/pin/typing, any-emoji reactions, link previews, /location fix, animations |
+| 2.0.2 | 9 | 2026-10-13 | [38377404608](https://github.com/aarahman04/One-on-One-Android/actions/runs/38377404608) | Onboarding/connect redesign, gates per sign-in, links, friendly errors, vector icons |
+| 2.0.3 | 10 | pending dispatch | pending (dispatch on `main`) | Chat polish (gestures, selection, alarm glow, calls, share target), edit/delete/pin/typing, any-emoji reactions, link previews, /location fix, animations |
 
-- Both built by the `android-build` workflow (manual dispatch on `main`); version
+- Signed releases use the `android-build` workflow (manual dispatch on `main`); version
   name/code are workflow inputs, not stored in the repo. Signed with the existing
   Play upload key (SHA-1 check in the release job passed). Use the
   `android-release` artifact (AAB + APK); `android-debug` and
   `android-release-smoke-unsigned` are test-only.
 - 2.0.2 uses versionCode 9; 2.0.3 uses versionCode 10 (workflow defaults now 10 / 2.0.3);
   **the upload after it needs versionCode 11 or higher.**
-- 2.0.3 needs the backend from web PR #100 (deployed to Railway 2026-10-14 with `railway up`) and migration 036 (run 2026-10-14).
+- 2.0.3 needs the backend from web PR #100 (merged to web `main`; deployed to Railway 2026-10-14 with `railway up`) and migration 036 (run 2026-10-14).
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
   S2–S5 device checklists above, then upload the AAB to internal testing.
 
@@ -991,11 +991,8 @@ Client-only; no endpoint, payload or backend rule added. Build-verified, not dev
   alarm is live the whole chat glows red with a red "Emergency alarm from X · Acknowledge" banner;
   acknowledging sends the contract ack, which stops the ring on every device.
 
-Not built (needs backend; the contract has no route or event for it):
-- Typing indicator, edit (30 min), delete for everyone (30 min), shared pinned message.
-- "+" for any emoji: `reaction:add` accepts only ❤️ 👍 😂 😮 😢 🙏.
-- Link preview cards: no server unfurl; fetching from the phone would show every link's site the
-  reader's IP. Owner decision needed.
+The backend-dependent additions below supersede this batch's initial exclusions:
+typing, edit/delete, shared pins, any-emoji reactions and server-side link previews.
 
 Xiaomi checklist:
 - [ ] Double-tap a message with the keyboard open: bar pops from the bubble, keyboard stays up.
@@ -1017,7 +1014,7 @@ Xiaomi checklist:
 
 ## Edit, delete, pin, typing, any-emoji reactions, link previews (2026-10-14, same branch)
 
-Backend: web repo branch `feat/edit-delete-pin-typing-preview` (migration 036). Contract §5/§8 updated (copy here).
+Backend: web `main`, merged PR #100 (migration 036). Contract §5/§8 updated (copy here).
 - Long press = select + quick reactions above the message; "+" opens the full emoji picker (androidx emoji2-emojipicker).
 - Selection bar: reply · edit (own text, ≤30 min) · copy · delete for everyone (own, ≤30 min, with confirm) · ⋮ Pin/Unpin, Save, Report.
 - Edited messages show "edited HH:mm"; deleted show "This message was deleted" for both. Tap a bubble for the full sent/edited date.
