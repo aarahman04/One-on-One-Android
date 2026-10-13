@@ -669,14 +669,16 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | 2.0.0 | 7 | 2026-10-10 | [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794) | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
 | 2.0.1 | 8 | 2026-10-13 | [38348089207](https://github.com/aarahman04/One-on-One-Android/actions/runs/38348089207) | Scroll-to-end, web-parity search, crisp splash logo |
 | 2.0.2 | 9 | pending dispatch | — | Onboarding/connect redesign, gates per sign-in, links, friendly errors, vector icons |
+| 2.0.3 | 10 | 2026-10-14 | pending (dispatch on `fix/chat-polish-1014`) | Chat polish (gestures, selection, alarm glow, calls, share target), edit/delete/pin/typing, any-emoji reactions, link previews, /location fix, animations |
 
 - Both built by the `android-build` workflow (manual dispatch on `main`); version
   name/code are workflow inputs, not stored in the repo. Signed with the existing
   Play upload key (SHA-1 check in the release job passed). Use the
   `android-release` artifact (AAB + APK); `android-debug` and
   `android-release-smoke-unsigned` are test-only.
-- 2.0.2 uses versionCode 9 (workflow defaults now 9 / 2.0.2);
-  **the upload after it needs versionCode 10 or higher.**
+- 2.0.2 uses versionCode 9; 2.0.3 uses versionCode 10 (workflow defaults now 10 / 2.0.3);
+  **the upload after it needs versionCode 11 or higher.**
+- 2.0.3 needs the backend from web PR #100 (deployed to Railway 2026-10-14 with `railway up`) and migration 036 (run 2026-10-14).
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
   S2–S5 device checklists above, then upload the AAB to internal testing.
 
