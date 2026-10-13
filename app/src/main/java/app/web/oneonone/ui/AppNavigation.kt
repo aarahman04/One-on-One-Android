@@ -191,11 +191,14 @@ private fun HomeScreen(
             BootRoute.SignIn -> {
                 // The splash vector has empty space above and below the circles; crop it so the stack stays tight.
                 Image(painterResource(R.drawable.splash_logo), null, Modifier.size(width = 128.dp, height = 64.dp), contentScale = ContentScale.Crop)
-                Eyebrow("ONE")
                 Title("One on One")
                 ScreenSubtitle(stringResource(R.string.tagline))
-                PrimaryButton("Continue with Google", onSignIn, enabled = !state.busy)
-                LegalLinks()
+                // The button spans exactly the legal links row beneath it.
+                Column(Modifier.width(IntrinsicSize.Max), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    PrimaryButton("Continue with Google", onSignIn, modifier = Modifier.fillMaxWidth(), enabled = !state.busy)
+                    LegalLinks()
+                }
             }
             BootRoute.Age -> AgeScreen(state.busy, onVerify)
             BootRoute.UnderAge -> {
