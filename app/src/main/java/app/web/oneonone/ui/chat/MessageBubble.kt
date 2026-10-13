@@ -163,6 +163,8 @@ internal fun MessageBubble(
     onReport: () -> Unit,
     card: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    highlight: String = "",
+    currentMatch: Boolean = false,
 ) {
     val c = OneTheme.colors
     val motion = OneTheme.motion
@@ -252,7 +254,7 @@ internal fun MessageBubble(
                             val brush = Brush.linearGradient(listOf(colors.backgroundStart, colors.backgroundEnd), center - diagonal, center + diagonal)
                             onDrawBehind { drawRect(brush) }
                         }
-                        .border(1.dp, colors.edge, shape)
+                        .then(if (currentMatch) Modifier.border(2.dp, c.accentOther, shape) else Modifier.border(1.dp, colors.edge, shape))
                         // .chat__message[data-type='alarm'] .chat__message-body { border-left: 4px solid var(--danger) }
                         .then(if (alarm) Modifier.drawBehind { drawRect(c.danger, size = Size(4.dp.toPx(), size.height)) } else Modifier)
                         .combinedClickable(onClick = { expanded = !expanded }, onLongClick = { menu = true })
@@ -266,7 +268,9 @@ internal fun MessageBubble(
                         if (quote != null) QuoteBlock(quote, colors, onQuote)
                         when (message.type) {
                             "text" -> {
-                                val text = remember(message.content, failed, colors, c.danger) { bubbleText(message.content, failed, c.danger) }
+                                // web: mark = accent-you, current row's marks = accent-other, dark text
+                                val mark = if (currentMatch) c.accentOther else c.accentYou
+                                val text = remember(message.content, failed, colors, c.danger, highlight, mark) { bubbleText(message.content, failed, c.danger, highlight, mark) }
                                 TextWithMeta(
                                     text = text,
                                     textColor = colors.text,
@@ -333,8 +337,9 @@ internal fun MessageBubble(
     }
 }
 
-private fun bubbleText(content: String, failed: Boolean, danger: Color): AnnotatedString = buildAnnotatedString {
+private fun bubbleText(content: String, failed: Boolean, danger: Color, highlight: String, mark: Color): AnnotatedString = buildAnnotatedString {
     append(content)
+    matchRanges(content, highlight).forEach { addStyle(SpanStyle(background = mark, color = Color(0xFF04170A)), it.first, it.last + 1) }
     Regex("https?://[^\\s<>]+").findAll(content).forEach { match ->
         addLink(LinkAnnotation.Url(match.value, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))), match.range.first, match.range.last + 1)
     }

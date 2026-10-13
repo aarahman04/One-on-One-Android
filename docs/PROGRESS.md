@@ -667,13 +667,15 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | 1.0.4 | 5 | 2026-10-09 | [37893939464](https://github.com/aarahman04/One-on-One-Android/actions/runs/37893939464) | A0–A7 native app |
 | 1.0.5 | 6 | 2026-10-10 | [37998420889](https://github.com/aarahman04/One-on-One-Android/actions/runs/37998420889) | A0–A7 + S1–S5 web-styling restyle |
 | 2.0.0 | 7 | 2026-10-10 | [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794) | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
+| 2.0.1 | 8 | pending dispatch | — | Scroll-to-end, web-parity search, crisp splash logo |
 
 - Both built by the `android-build` workflow (manual dispatch on `main`); version
   name/code are workflow inputs, not stored in the repo. Signed with the existing
   Play upload key (SHA-1 check in the release job passed). Use the
   `android-release` artifact (AAB + APK); `android-debug` and
   `android-release-smoke-unsigned` are test-only.
-- Not yet uploaded to Play. **Next upload needs versionCode 8 or higher.**
+- Not yet uploaded to Play. 2.0.1 uses versionCode 8 (workflow defaults now 8 / 2.0.1);
+  **the upload after it needs versionCode 9 or higher.**
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
   S2–S5 device checklists above, then upload the AAB to internal testing.
 
@@ -858,3 +860,35 @@ the Pixel 9a emulator through a local (uncommitted) debug gallery, dark and ligh
   lock serialises sends and the server dedupes acks.
 - [ ] Device check: record → stop sends once; trash; record while a note plays;
   /alarm while a message is sending still raises; ack and cancel stop the ring.
+
+## 2.0.1 — scroll-to-end, search parity, crisp splash (2026-10-13)
+
+Branch `release/2.0.1`. Build-verified only (`assembleDebug lintDebug testDebugUnitTest`
+green); nothing device-tested. No backend, endpoint or cache changes.
+
+- Chat stays pinned to the newest message: opening (Room cache then server), keyboard
+  opening, images/cards growing and tapping the composer all land on the end, and a
+  tall last bubble is scrolled fully into view. A user scroll that stops short of the
+  bottom unpins; a reply from the other side then leaves you where you are.
+- Search matches web: the full log stays, every match is highlighted (accent-you;
+  current match accent-other with an accent border), `N/M` count, ▲ older / ▼ newer
+  wrapping, starts on the newest match, keyboard Search = older, Back closes and
+  clears. Search stays client-side over loaded messages (no search endpoint exists).
+- Splash logo is now a vector of the web `icon.svg` circles instead of a stretched
+  192px PNG.
+- `android-build` dispatch defaults: versionCode 8, versionName 2.0.1. Gradle
+  fallback stays 5 / 2.0.0-dev. New unit tests: `ChatSearchTest`.
+
+### Xiaomi / HyperOS device checklist (owner)
+
+- [ ] Splash logo sharp on cold start (light and dark).
+- [ ] Open a chat with long history + images: lands on the newest message; the last
+  bubble is fully visible after images load.
+- [ ] Scroll up, tap the text box: jumps to newest; with the keyboard open the newest
+  message stays visible.
+- [ ] Scroll up, receive a message from the other side: stays where you are; send your
+  own: jumps to the end.
+- [ ] Search "a": full chat stays, matches highlighted, count `M/M`, starts on the
+  newest; ▲/▼ step and wrap; keyboard Search steps older.
+- [ ] Back button / ✕ closes search and clears highlights; tapping a quote still jumps.
+- [ ] Rotate, dark mode, Love and Samurai wallpapers: highlights readable.

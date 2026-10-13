@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A fractional inset keeps the safe zone intact when Android pre-renders at launcher size. -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@mipmap/ic_launcher_foreground"
-    android:inset="10%" />
+<!-- Vector copy of the web icon.svg circles so the splash icon stays sharp; 240dp is the splash icon size, drawn once. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="VectorRaster"
+    android:width="240dp"
+    android:height="240dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+    <group android:translateX="24" android:translateY="24">
+        <path android:fillColor="#7ee787" android:pathData="M36,96a40,40 0,1 0,80 0a40,40 0,1 0,-80 0z" />
+        <path android:fillColor="#79c0ff" android:fillAlpha="0.85" android:pathData="M76,96a40,40 0,1 0,80 0a40,40 0,1 0,-80 0z" />
+    </group>
+</vector>
