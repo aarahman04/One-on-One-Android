@@ -33,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -133,11 +134,13 @@ internal fun ChatComposer(
     elapsedSeconds: Int = 0,
     onStop: () -> Unit = {},
     onDiscard: () -> Unit = {},
+    onFocus: () -> Unit = {},
 ) {
     val c = OneTheme.colors
     val pillShape = RoundedCornerShape(OneTheme.radii.pill22)
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
+    LaunchedEffect(focused) { if (focused) onFocus() }
     val textStyle = TextStyle(fontFamily = FontFamilies.Body, fontSize = 16.sp, lineHeight = 22.4.sp, color = c.text)
     Row(
         modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(8.dp),

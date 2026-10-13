@@ -1,14 +1,14 @@
 ﻿# Native Android release checklist
 
-Prepared 2026-10-07 for `app.web.oneonone`. Default versionCode stays **5** and
-versionName **2.0.0-dev**. Nothing has been uploaded to Play by this work.
+Prepared 2026-10-07 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **8** /
+versionName **2.0.1** (next build); the Gradle fallback stays 5 / 2.0.0-dev. Nothing has been uploaded to Play by this work.
 
 ## Release history
 
 Latest signed build: **2.0.0 / versionCode 7** (2026-10-10, D1–D5 design fixes; workflow run [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794); see
 `docs/PROGRESS.md` → Releases). Previous: 1.0.5 / 6 (2026-10-10), 1.0.4 / 5 (2026-10-09). Version name/code are passed as `android-build`
-workflow inputs at dispatch; the repo default stays 5 / 2.0.0-dev. The next Play
-upload must use versionCode **8 or higher**. Full table: `docs/PROGRESS.md` → Releases.
+workflow inputs at dispatch (defaults 8 / 2.0.1; Gradle fallback 5 / 2.0.0-dev). Next build:
+**2.0.1 / versionCode 8**; the upload after it must use versionCode **9 or higher**. Full table: `docs/PROGRESS.md` → Releases.
 
 A4 (alarm, PR #8), A5 (calls, PR #9) and the S1–S5 restyle (PRs #10–#14) are now
 merged; the A7-era notes below that call them pending are historical. Owner Xiaomi

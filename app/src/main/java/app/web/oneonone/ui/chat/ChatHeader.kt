@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,11 +28,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -136,16 +140,20 @@ internal fun ChatMenu(
     }
 }
 
-/** .chat__search: input + close, bottom border. Closing clears the filter (web search-close). */
+/** .chat__search: input, N/M count, ▲ older / ▼ newer, close. Enter steps to the older match (web). */
 @Composable
-internal fun ChatSearchBar(query: String, onQuery: (String) -> Unit, onClose: () -> Unit) {
+internal fun ChatSearchBar(query: String, onQuery: (String) -> Unit, count: String, onOlder: () -> Unit, onNewer: () -> Unit, onClose: () -> Unit) {
     val c = OneTheme.colors
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        OneTextField(query, onQuery, Modifier.weight(1f), placeholder = "Search messages…")
+        OneTextField(query, onQuery, Modifier.weight(1f), placeholder = "Search messages…",
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { onOlder() }))
+        Text(count, color = c.muted, style = OneTextStyles.cardHint)
+        OneIconButton(R.drawable.ic_chevron_down, "Previous match", onOlder, Modifier.rotate(180f))
+        OneIconButton(R.drawable.ic_chevron_down, "Next match", onNewer)
         OneIconButton(R.drawable.ic_x, "Close search", onClose)
     }
     HorizontalDivider(color = c.border)

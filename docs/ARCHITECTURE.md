@@ -423,3 +423,22 @@ flowchart LR
 
 `settings`, `account`, `blocks` and `notifications` share `SettingsScaffold`.
 Appearance/Export dialogs are hosted by the `settings` route (chat connection only).
+
+### Chat scroll pinning and search (2.0.1)
+
+```mermaid
+flowchart TD
+  Open["open chat / cache + server load"] --> Grow
+  Kbd["keyboard opens (viewport shrinks)"] --> Grow
+  Img["image / card grows"] --> Grow
+  Grow["canScrollForward becomes true"] -->|pinned, not scrolling, no query| End["scrollToEnd(): last item + scroll rest of tall bubble"]
+  Focus["composer focused"] -->|pinned = true| End
+  NewMsg["new last message"] -->|mine, or near bottom and no query| End
+  UserScroll["user scroll ends"] --> Pin{"at bottom?"} -->|yes| Pinned["pinned = true"]
+  Pin -->|no| Unpinned["pinned = false"]
+  Query["search query"] --> Matches["searchMatches(messages, query)"] --> Current["current = newest; ▲ -1 / ▼ +1 wrap"]
+  Current --> Jump["animateScrollToItem(index + 1, -viewport/3)"]
+  Matches --> Mark["MessageBubble highlight: matchRanges spans + current-match border"]
+```
+
+Search is client-side over loaded messages only; the full log stays visible.

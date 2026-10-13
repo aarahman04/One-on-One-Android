@@ -4,12 +4,14 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +55,7 @@ import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -127,13 +130,30 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val filtered = remember(messages, query) { messages.filter { query.isBlank() || (it.content + " " + messageSummary(it)).contains(query, ignoreCase = true) } }
     val wasNearBottom by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 3 } ?: true } }
-    LaunchedEffect(filtered.lastOrNull()?.id, filtered.lastOrNull()?.tempId) {
-        if (filtered.isNotEmpty() && (wasNearBottom || filtered.last().senderId == connection.myUserId)) {
-            list.scrollToItem(filtered.lastIndex + 1)
-        }
+    // Pinned = stay on the newest message; a user scroll that ends short of the bottom unpins.
+    var pinned by remember(connection.id) { mutableStateOf(true) }
+    suspend fun scrollToEnd() {
+        list.scrollToItem((list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+        // scrollToItem top-aligns, so a tall last bubble needs the rest scrolled in (bounded).
+        repeat(10) { if (list.canScrollForward) list.scrollBy(list.layoutInfo.viewportSize.height.toFloat()) }
     }
+    LaunchedEffect(list, connection.id) { snapshotFlow { list.isScrollInProgress }.drop(1).collect { if (!it) pinned = !list.canScrollForward } }
+    // Content grew or the viewport shrank (cache/server load, keyboard, images): stay on the end while pinned.
+    LaunchedEffect(list, connection.id) {
+        snapshotFlow { list.canScrollForward }.collect { if (it && pinned && !list.isScrollInProgress && query.isBlank()) scrollToEnd() }
+    }
+    LaunchedEffect(messages.lastOrNull()?.id, messages.lastOrNull()?.tempId) {
+        val mine = messages.lastOrNull()?.senderId == connection.myUserId
+        if (messages.isNotEmpty() && (mine || (wasNearBottom && query.isBlank()))) { pinned = true; scrollToEnd() }
+    }
+    // Search (web parity): full log stays, matches highlighted, start on newest, ▲ older / ▼ newer, wrapping.
+    val matches = remember(messages, query) { searchMatches(messages, query) }
+    var current by remember(matches) { mutableIntStateOf(matches.lastIndex) }
+    LaunchedEffect(matches, current) { matches.getOrNull(current)?.let { list.animateScrollToItem(it + 1, -list.layoutInfo.viewportSize.height / 3) } }
+    val step = { dir: Int -> if (matches.isNotEmpty()) current = (current + dir + matches.size) % matches.size }
+    val closeSearch = { search = false; query = "" }
+    BackHandler(search, closeSearch)
     // Live-arrival animation: only messages created after this screen opened, and each key at most once.
     val openedAt = remember { Instant.now() }
     val animated = remember { mutableSetOf<String>() }
@@ -161,7 +181,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                 )
             },
         )
-        if (search) ChatSearchBar(query, { query = it }, onClose = { search = false; query = "" })
+        if (search) ChatSearchBar(query, { query = it }, count = if (matches.isEmpty()) "0/0" else "${current + 1}/${matches.size}",
+            onOlder = { step(-1) }, onNewer = { step(1) }, onClose = closeSearch)
         if (connection.myLeaveStep > 0 || connection.otherLeaveStep > 0) {
             LeaveBanner("Leave countdown: you ${connection.myLeaveStep}/5, them ${connection.otherLeaveStep}/5")
         }
@@ -185,9 +206,9 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                             EncryptionNote()
                         }
                     }
-                    itemsIndexed(filtered, key = { _, it -> messageKey(it) }) { index, message ->
+                    itemsIndexed(messages, key = { _, it -> messageKey(it) }) { index, message ->
                         val day = dayLabel(message.createdAt)
-                        if (index == 0 || dayLabel(filtered[index - 1].createdAt) != day) DateSeparator(day)
+                        if (index == 0 || dayLabel(messages[index - 1].createdAt) != day) DateSeparator(day)
                         val mine = message.senderId == connection.myUserId
                         if (message.type == "system") {
                             SystemLine("${if (mine) "You" else "They"} changed ${message.payload?.get("event")?.jsonPrimitive?.content} to ${message.payload?.get("value")?.jsonPrimitive?.content}")
@@ -199,7 +220,9 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                         val key = messageKey(message)
                         val animateIn = remember(key) { (message.id == null || Instant.parse(message.createdAt).isAfter(openedAt)) && animated.add(key) }
                         MessageBubble(message, mine, palette, label,
-                            groupStart = isGroupStart(filtered.getOrNull(index - 1), message),
+                            groupStart = isGroupStart(messages.getOrNull(index - 1), message),
+                            highlight = query.trim(),
+                            currentMatch = matches.getOrNull(current) == index,
                             animateIn = animateIn,
                             quote = message.replyTo?.let { BubbleQuote(authorOf(original, connection), original?.let(::messageSummary) ?: "Earlier message") },
                             onReply = { vm.reply(message.id) },
@@ -208,9 +231,9 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                             onRetry = { if (message.deliveryState == "unknown") duplicate = message.tempId else message.tempId?.let { vm.retry(it) } },
                             onReport = { features.clearError(); reportMessage = message.id },
                             onQuote = { message.replyTo?.let { id ->
-                                val at = filtered.indexOfFirst { it.id == id }
+                                val at = messages.indexOfFirst { it.id == id }
                                 if (at >= 0) scope.launch { list.animateScrollToItem(at + 1) }
-                                else android.widget.Toast.makeText(context, "Load older messages or clear search to see this reply.", android.widget.Toast.LENGTH_SHORT).show()
+                                else android.widget.Toast.makeText(context, "Load older messages to see this reply.", android.widget.Toast.LENGTH_SHORT).show()
                             } },
                             card = {
                                 when (message.type) {
@@ -248,6 +271,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             elapsedSeconds = elapsed,
             onStop = sendRecording,
             onDiscard = features::cancelRecording,
+            onFocus = { pinned = true; scope.launch { scrollToEnd() } },
             onSend = {
                 val name = draft.trim().removePrefix("/")
                 if (draft.trim().startsWith("/") && name in FeatureCommands) runCommand(name) else vm.send()
@@ -293,6 +317,21 @@ private fun authorOf(message: ChatMessage?, connection: CurrentConnection): Stri
     message == null -> ""
     message.senderId == connection.myUserId -> "You"
     else -> connection.otherNickname ?: "Them"
+}
+
+/** Indices of [messages] whose text or card summary contains [query] (trimmed, any case); system rows never match. */
+internal fun searchMatches(messages: List<ChatMessage>, query: String): List<Int> {
+    val q = query.trim()
+    if (q.isEmpty()) return emptyList()
+    return messages.indices.filter { messages[it].type != "system" && (messages[it].content + " " + messageSummary(messages[it])).contains(q, ignoreCase = true) }
+}
+
+/** Non-overlapping ranges of [query] (trimmed, any case) in [text], for highlighting. */
+internal fun matchRanges(text: String, query: String): List<IntRange> {
+    val q = query.trim()
+    if (q.isEmpty()) return emptyList()
+    return generateSequence(text.indexOf(q, ignoreCase = true)) { text.indexOf(q, it + q.length, ignoreCase = true) }
+        .takeWhile { it >= 0 }.map { it until it + q.length }.toList()
 }
 
 internal fun dayLabel(value: String, today: java.time.LocalDate = java.time.LocalDate.now(),
