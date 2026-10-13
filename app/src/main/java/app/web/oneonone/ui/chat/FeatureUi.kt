@@ -174,7 +174,7 @@ private fun ChoiceButton(option: String, selected: Boolean, enabled: Boolean = t
 
 @Composable
 internal fun FeatureModal(onDismissRequest: () -> Unit, title: @Composable () -> Unit = {}, text: @Composable () -> Unit,
-    confirmButton: @Composable () -> Unit, dismissButton: @Composable () -> Unit = {}, placement: ModalPlacement = ModalPlacement.Top) {
+    confirmButton: @Composable () -> Unit, dismissButton: @Composable () -> Unit = {}, placement: ModalPlacement = ModalPlacement.Center) {
     OneModal(onDismiss = onDismissRequest, placement = placement) {
         CompositionLocalProvider(LocalContentColor provides OneTheme.colors.text) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

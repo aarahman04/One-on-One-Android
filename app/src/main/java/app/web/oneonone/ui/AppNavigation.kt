@@ -1,6 +1,5 @@
 package app.web.oneonone.ui
 
-import android.app.DatePickerDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -9,24 +8,41 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.dimensionResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -62,7 +78,18 @@ import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.push.PushRegistration
+import kotlinx.coroutines.delay
 import java.time.LocalDate
+import java.time.Month
+import java.time.YearMonth
+import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
+import android.view.HapticFeedbackConstants
+import android.view.SoundEffectConstants
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 
 internal const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
@@ -88,7 +115,7 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
         if (state.route != BootRoute.Chat) chatViewModel.close(clear = state.route == BootRoute.Connect)
     }
     LaunchedEffect(state.route, state.needsNotificationOnboarding) {
-        if (state.needsNotificationOnboarding && state.route in setOf(BootRoute.Connect, BootRoute.Waiting, BootRoute.Request, BootRoute.Chat)) {
+        if (state.needsNotificationOnboarding && state.route == BootRoute.Chat) {
             nav.navigate("notifications?first=true") { launchSingleTop = true }
             viewModel.onboardingShown()
         }
@@ -151,21 +178,27 @@ private fun HomeScreen(
 ) {
     if (state.route == BootRoute.Loading) {
         Box(Modifier.fillMaxSize().background(OneColors.Dark.bg), contentAlignment = Alignment.Center) {
-            Image(painterResource(R.mipmap.ic_launcher_foreground), null,
-                Modifier.size(dimensionResource(R.dimen.splash_icon_size)).padding(dimensionResource(R.dimen.splash_icon_inset)))
+            // Same vector at the system splash icon's 240dp, so the hand-off doesn't jump.
+            Image(painterResource(R.drawable.splash_logo), null, Modifier.size(240.dp))
         }
         return
     }
-    ScreenFrame(state) { narrow ->
+    // Connect has two steps: share your ID, or enter theirs. Resets whenever the route changes.
+    var entering by rememberSaveable(state.route) { mutableStateOf(false) }
+    BackHandler(entering) { entering = false }
+    ScreenFrame(state, screenKey = state.route to entering) { _ ->
         when (state.route) {
             BootRoute.Loading -> Unit
             BootRoute.SignIn -> {
-                Image(painterResource(R.mipmap.ic_launcher_foreground), null, Modifier.size(96.dp))
-                Eyebrow("ONE")
+                // The splash vector has empty space above and below the circles; crop it so the stack stays tight.
+                Image(painterResource(R.drawable.splash_logo), null, Modifier.size(width = 128.dp, height = 64.dp), contentScale = ContentScale.Crop)
                 Title("One on One")
-                ScreenSubtitle(stringResource(R.string.tagline))
-                PrimaryButton("Continue with Google", onSignIn, enabled = !state.busy)
-                LegalLinks()
+                // The button spans exactly the legal links row beneath it.
+                Column(Modifier.width(IntrinsicSize.Max), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    PrimaryButton("Continue with Google", onSignIn, modifier = Modifier.fillMaxWidth(), enabled = !state.busy)
+                    LegalLinks()
+                }
             }
             BootRoute.Age -> AgeScreen(state.busy, onVerify)
             BootRoute.UnderAge -> {
@@ -174,48 +207,29 @@ private fun HomeScreen(
                 SecondaryButton("Sign out", onSignOut, enabled = !state.busy)
             }
             BootRoute.Consent -> ConsentScreen(state.busy, onAcceptTerms)
-            BootRoute.Connect -> {
-                Eyebrow("YOUR CONNECTION ID")
+            BootRoute.Connect -> if (entering) {
+                EnterTheirId(state.busy, onRequest, onBack = { entering = false })
+            } else {
                 Title("Your connection ID")
-                ConnectionId(state.me?.connectionCode.orEmpty(), narrow)
-                ScreenSubtitle("Give this ID to the person you want to connect with.")
-                val context = LocalContext.current
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SecondaryButton("Copy", onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Connection ID", state.me?.connectionCode))
-                    }, enabled = !state.busy && state.me != null)
-                    SecondaryButton("Get a new ID", onRegenerate, enabled = !state.busy)
-                }
-                var code by rememberSaveable { mutableStateOf("") }
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
-                    Text("Their connection ID", style = OneTextStyles.cardHint, color = OneTheme.colors.textDim)
-                    OneTextField(code, { code = it.take(8) },
-                        modifier = Modifier.widthIn(max = 240.dp).fillMaxWidth().semantics { contentDescription = "Their connection ID" },
-                        textStyle = (if (narrow) MaterialTheme.typography.bodyLarge else OneTextStyles.subtitle)
-                            .copy(textAlign = TextAlign.Center, letterSpacing = .08.em))
-                }
-                PrimaryButton("Connect", onClick = { onRequest(code) }, enabled = !state.busy)
-                TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
+                ScreenSubtitle("Share this ID to connect.")
+                ConnectionId(state.me?.connectionCode.orEmpty(), state.busy, onRegenerate)
+                PrimaryButton("I have their ID", onClick = { entering = true }, enabled = !state.busy)
+                FooterLinks(state.busy, onSettings, onSignOut)
             }
             BootRoute.Waiting -> {
-                Eyebrow("CONNECTION REQUEST SENT")
-                Title("Connection request sent")
+                Title("Request sent")
                 ScreenSubtitle("Waiting for ${state.connection?.otherConnectionCode.orEmpty()} to accept.")
-                SecondaryButton("Cancel request", onClick = { onConnectionAction("cancel") }, enabled = !state.busy)
-                TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
+                SecondaryButton("Cancel request", onClick = { onConnectionAction("cancel") }, modifier = BlockWidth, enabled = !state.busy)
+                FooterLinks(state.busy, onSettings, onSignOut)
             }
             BootRoute.Request -> {
-                Eyebrow("CONNECTION REQUEST")
                 Title("Connection request")
                 ScreenSubtitle("${state.connection?.otherConnectionCode.orEmpty()} wants to connect with you.")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PrimaryButton("Accept", onClick = { onConnectionAction("accept") }, enabled = !state.busy)
-                    DangerButton("Decline", onClick = { onConnectionAction("decline") }, enabled = !state.busy)
+                Row(BlockWidth, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DangerButton("Decline", onClick = { onConnectionAction("decline") }, modifier = Modifier.weight(1f), enabled = !state.busy)
+                    PrimaryButton("Accept", onClick = { onConnectionAction("accept") }, modifier = Modifier.weight(1f), enabled = !state.busy)
                 }
-                TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
+                FooterLinks(state.busy, onSettings, onSignOut)
             }
             BootRoute.Chat -> Unit
         }
@@ -249,13 +263,71 @@ internal fun ScreenFrame(state: AppState, screenKey: Any = state.route, content:
 
 @Composable private fun ScreenSubtitle(text: String) { Subtitle(text, Modifier.widthIn(max = 320.dp)) }
 
+/** Shared width for pre-chat cards and buttons so every block lines up. */
+private val BlockWidth = Modifier.widthIn(max = 340.dp).fillMaxWidth()
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConnectionId(code: String, narrow: Boolean) {
-    Surface(shape = RoundedCornerShape(OneTheme.radii.md10), color = OneTheme.colors.bgRaised,
-        border = BorderStroke(1.dp, OneTheme.colors.border), shadowElevation = OneTheme.elevation.e1) {
-        Text(code, Modifier.padding(horizontal = if (narrow) 18.dp else 28.dp, vertical = if (narrow) 12.dp else 16.dp),
-            style = if (narrow) OneTextStyles.connectionId.copy(fontSize = 24.sp, lineHeight = 36.sp) else OneTextStyles.connectionId,
-            color = OneTheme.colors.text, textAlign = TextAlign.Center)
+private fun ConnectionId(code: String, busy: Boolean, onRegenerate: () -> Unit) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) { if (copied) { delay(1_500); copied = false } }
+    val copy = {
+        if (code.isNotEmpty()) {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Connection ID", code))
+            copied = true
+        }
+    }
+    Column(BlockWidth, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(OneTheme.radii.md10), color = OneTheme.colors.bgRaised,
+            border = BorderStroke(1.dp, OneTheme.colors.border), shadowElevation = OneTheme.elevation.e1) {
+            Column(Modifier.combinedClickable(enabled = code.isNotEmpty(), onClickLabel = "Copy connection ID", onLongClickLabel = "Copy connection ID",
+                onClick = copy, onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); copy() })
+                .padding(vertical = 18.dp, horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(code, style = OneTextStyles.connectionId, color = OneTheme.colors.text, textAlign = TextAlign.Center, maxLines = 1)
+                Text(if (copied) "Copied" else "Tap or hold to copy", style = OneTextStyles.cardHint.copy(fontSize = 12.sp),
+                    color = if (copied) OneTheme.colors.accentYou else OneTheme.colors.muted,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SecondaryButton("Copy", onClick = copy, modifier = Modifier.weight(1f), enabled = !busy && code.isNotEmpty())
+            SecondaryButton("New ID", onClick = onRegenerate, modifier = Modifier.weight(1f), enabled = !busy)
+        }
+    }
+}
+
+@Composable
+private fun EnterTheirId(busy: Boolean, onRequest: (String) -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    var code by rememberSaveable { mutableStateOf("") }
+    val accept = { text: String -> code = text.filter(Char::isLetterOrDigit).uppercase().take(8) }
+    Title("Enter their ID")
+    ScreenSubtitle("Paste the ID they shared with you.")
+    OneTextField(code, accept, placeholder = "8-character ID",
+        modifier = BlockWidth.semantics { contentDescription = "Their connection ID" },
+        textStyle = OneTextStyles.connectionId.copy(fontSize = 22.sp, lineHeight = 30.sp, textAlign = TextAlign.Center),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false, imeAction = ImeAction.Go),
+        keyboardActions = KeyboardActions(onGo = { if (!busy && code.length == 8) onRequest(code) }))
+    Row(BlockWidth, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        SecondaryButton("Paste", onClick = {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.let { accept(it.toString()) }
+        }, modifier = Modifier.weight(1f), enabled = !busy)
+        PrimaryButton("Connect", onClick = { onRequest(code) }, modifier = Modifier.weight(1f), enabled = !busy && code.length == 8)
+    }
+    TextLink("Back", onBack, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).wrapContentHeight())
+}
+
+/** Pre-chat footer: sign out is one tap; Settings still holds blocks, legal and account deletion. */
+@Composable
+private fun FooterLinks(busy: Boolean, onSettings: () -> Unit, onSignOut: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8), verticalAlignment = Alignment.CenterVertically) {
+        TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).wrapContentHeight())
+        Text("·", color = OneTheme.colors.muted, style = OneTextStyles.cardHint)
+        TextLink("Sign out", { if (!busy) onSignOut() }, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).wrapContentHeight())
     }
 }
 
@@ -276,37 +348,111 @@ private fun LegalLinks() {
 @Composable
 private fun AgeScreen(busy: Boolean, onVerify: (LocalDate) -> Unit) {
     Title("What's your date of birth?")
-    ScreenSubtitle("One on One is for adults only. Your date of birth stays on this device.")
-    val context = LocalContext.current
-    var selected by rememberSaveable { mutableStateOf<String?>(null) }
-    SecondaryButton(selected ?: "Choose date of birth", onClick = {
-        val today = LocalDate.now()
-        val initial = selected?.let(LocalDate::parse) ?: today
-        DatePickerDialog(context, { _, year, month, day ->
-            selected = LocalDate.of(year, month + 1, day).toString()
-        }, initial.year, initial.monthValue - 1, initial.dayOfMonth).apply {
-            datePicker.maxDate = System.currentTimeMillis()
-            show()
+    ScreenSubtitle("18+ only. It stays on this device.")
+    // Neutral age screen: starts on today, and Continue waits until the wheels have been moved.
+    val today = remember { LocalDate.now() }
+    var year by rememberSaveable { mutableIntStateOf(today.year) }
+    var month by rememberSaveable { mutableIntStateOf(today.monthValue) }
+    var day by rememberSaveable { mutableIntStateOf(today.dayOfMonth) }
+    var touched by rememberSaveable { mutableStateOf(false) }
+    val days = YearMonth.of(year, month).lengthOfMonth()
+    val safeDay = day.coerceAtMost(days)
+    val months = remember { Month.entries.map { it.getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault()) } }
+    val years = remember { (1900..today.year).map(Int::toString) }
+    Box(BlockWidth, contentAlignment = Alignment.Center) {
+        // One selection band across all three wheels, like iOS.
+        Box(Modifier.fillMaxWidth().height(WheelRow).background(OneTheme.colors.border, RoundedCornerShape(percent = 50)))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
+            Wheel((1..days).map(Int::toString), safeDay - 1, "Day", Modifier.weight(1f)) { day = it + 1; touched = true }
+            Wheel(months, month - 1, "Month", Modifier.weight(1.3f)) { month = it + 1; touched = true }
+            Wheel(years, year - 1900, "Year", Modifier.weight(1.3f)) { year = it + 1900; touched = true }
         }
-    }, enabled = !busy)
-    PrimaryButton("Continue", onClick = { selected?.let { onVerify(LocalDate.parse(it)) } }, enabled = !busy && selected != null)
+    }
+    PrimaryButton("Continue", onClick = { onVerify(LocalDate.of(year, month, safeDay)) }, enabled = !busy && touched)
+}
+
+private val WheelRow = 38.dp
+private const val WheelRows = 7
+private const val WheelStepDeg = 20f
+
+/** iOS-style drum wheel (look after ty0x2333/WheelPicker): rows sit on a cylinder, squeeze and fade toward the edges, tick on each step, snap to centre. */
+@Composable
+private fun Wheel(items: List<String>, index: Int, label: String, modifier: Modifier = Modifier, onIndex: (Int) -> Unit) {
+    val c = OneTheme.colors
+    val state = rememberLazyListState(index)
+    val scope = rememberCoroutineScope()
+    val rowPx = with(LocalDensity.current) { WheelRow.toPx() }
+    val centre by remember(items.size) { derivedStateOf {
+        (state.firstVisibleItemIndex + if (state.firstVisibleItemScrollOffset > rowPx / 2) 1 else 0).coerceIn(0, items.lastIndex)
+    } }
+    val latest by rememberUpdatedState(onIndex)
+    LaunchedEffect(state) { snapshotFlow { state.isScrollInProgress }.drop(1).filter { !it }.collect { latest(centre) } }
+    // Tick per row: CLOCK_TICK haptic plus the system click (silent when the phone's touch sounds are off).
+    val view = LocalView.current
+    LaunchedEffect(state) { snapshotFlow { centre }.drop(1).collect {
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        view.playSoundEffect(SoundEffectConstants.CLICK)
+    } }
+    val radius = rowPx / Math.toRadians(WheelStepDeg.toDouble()).toFloat()
+    // A shorter month can push the day off the end; keep the wheel on the clamped value.
+    LaunchedEffect(index, items.size) { if (!state.isScrollInProgress && centre != index) state.scrollToItem(index) }
+    Box(modifier.height(WheelRow * WheelRows), contentAlignment = Alignment.Center) {
+        LazyColumn(Modifier.fillMaxSize().semantics { contentDescription = "$label, ${items.getOrNull(centre).orEmpty()}" },
+            state = state, flingBehavior = rememberSnapFlingBehavior(state),
+            contentPadding = PaddingValues(vertical = WheelRow * (WheelRows / 2))) {
+            itemsIndexed(items) { i, text ->
+                Text(text, Modifier.fillMaxWidth().height(WheelRow).clickable { scope.launch { state.animateScrollToItem(i) } }
+                    .wrapContentHeight().graphicsLayer {
+                        // Project the row onto a cylinder: angle from centre → squeezed spacing (sin) and height (cos).
+                        val f = i - (state.firstVisibleItemIndex + state.firstVisibleItemScrollOffset / rowPx)
+                        val angle = Math.toRadians((f * WheelStepDeg).coerceIn(-90f, 90f).toDouble())
+                        val depth = cos(angle).toFloat()
+                        translationY = radius * sin(angle).toFloat() - f * rowPx
+                        scaleY = depth
+                        scaleX = .92f + .08f * depth
+                        alpha = depth * depth
+                    },
+                    // Style is constant so scrolling only redraws (graphicsLayer), never recomposes or relayouts rows.
+                    style = OneTextStyles.subtitle.copy(fontSize = 20.sp, lineHeight = 24.sp), color = c.text, textAlign = TextAlign.Center, maxLines = 1)
+            }
+        }
+    }
 }
 
 @Composable
 private fun ConsentScreen(busy: Boolean, onAccept: () -> Unit) {
-    Eyebrow("BEFORE YOU START")
+    val c = OneTheme.colors
     Title("A few ground rules.")
-    ScreenSubtitle("One on One is a private space for two people. Harassment, hate, and any sexual content involving minors are not allowed and will be acted on.")
-    var agreed by rememberSaveable { mutableStateOf(false) }
-    Row(Modifier.widthIn(max = 320.dp).fillMaxWidth().toggleable(agreed, role = Role.Checkbox, onValueChange = { agreed = it }).padding(OneTheme.spacing.sm8),
-        verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = agreed, onCheckedChange = null, colors = CheckboxDefaults.colors(
-            checkedColor = OneTheme.colors.accentYou, uncheckedColor = OneTheme.colors.border, checkmarkColor = OneTheme.colors.onPrimary))
-        Text("I am 18 or older and I agree to the Terms and Privacy Policy.", Modifier.padding(start = OneTheme.spacing.sm8),
-            style = OneTextStyles.subtitle, color = OneTheme.colors.text)
+    ScreenSubtitle("A private space for two people.")
+    // Rules and the agreement share one left edge and width so the block reads as a single unit.
+    Column(BlockWidth, verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.md12)) {
+        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(OneTheme.radii.md10), color = c.bgRaised, border = BorderStroke(1.dp, c.border)) {
+            Column(Modifier.padding(horizontal = OneTheme.spacing.lg16, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf("No harassment or hate.", "No sexual content involving minors.", "Breaking these rules will be acted on.").forEach { rule ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).background(c.accentYou, CircleShape))
+                        Text(rule, Modifier.padding(start = OneTheme.spacing.md12), style = OneTextStyles.subtitle, color = c.text)
+                    }
+                }
+            }
+        }
+        var agreed by rememberSaveable { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(OneTheme.radii.md10))
+            .toggleable(agreed, role = Role.Checkbox, onValueChange = { agreed = it }).padding(vertical = OneTheme.spacing.sm8),
+            verticalAlignment = Alignment.CenterVertically) {
+            // Checkbox already reserves a 48dp touch target, so its box sits flush with the card edge only after a small nudge.
+            Checkbox(checked = agreed, onCheckedChange = null, modifier = Modifier.padding(start = 4.dp), colors = CheckboxDefaults.colors(
+                checkedColor = c.accentYou, uncheckedColor = c.textDim, checkmarkColor = c.onPrimary))
+            Text("I am 18 or older and I agree to the Terms and Privacy Policy.", Modifier.padding(start = OneTheme.spacing.md12),
+                style = OneTextStyles.subtitle, color = c.text)
+        }
+        // The button spans exactly the legal links row beneath it, as on sign-in.
+        Column(Modifier.align(Alignment.CenterHorizontally).width(IntrinsicSize.Max), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            PrimaryButton("Agree and continue", onAccept, modifier = Modifier.fillMaxWidth(), enabled = agreed && !busy)
+            LegalLinks()
+        }
     }
-    LegalLinks()
-    PrimaryButton("Agree and continue", onAccept, enabled = agreed && !busy)
 }
 
 @Composable

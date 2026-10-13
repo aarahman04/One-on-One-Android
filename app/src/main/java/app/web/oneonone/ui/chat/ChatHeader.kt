@@ -1,8 +1,13 @@
 package app.web.oneonone.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,8 +19,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
@@ -29,8 +36,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -171,8 +182,19 @@ internal fun LeaveBanner(text: String) {
     HorizontalDivider(color = c.border)
 }
 
-/** Inline error line (chat / account / feature errors). */
+/** Floating pill over the message list: connection status or a short-lived notice. */
 @Composable
-internal fun ErrorLine(text: String) {
-    Text(text, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), color = OneTheme.colors.danger, style = OneTextStyles.cardHint)
+internal fun ChatNotice(text: String?, modifier: Modifier = Modifier, warning: Boolean = false) {
+    val c = OneTheme.colors
+    var last by remember { mutableStateOf(text) }
+    if (text != null) last = text
+    AnimatedVisibility(text != null, modifier, enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
+        Text(last.orEmpty(),
+            Modifier.widthIn(max = 340.dp).padding(horizontal = 16.dp, vertical = 8.dp)
+                .shadow(4.dp, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))
+                .background(c.bgRaised).border(1.dp, if (warning) c.danger.copy(alpha = .5f) else c.border, RoundedCornerShape(20.dp))
+                .padding(horizontal = 16.dp, vertical = 9.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+            color = if (warning) c.danger else c.text, style = OneTextStyles.cardHint, textAlign = TextAlign.Center)
+    }
 }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vector of the web icon.svg circles (192 viewBox, scaled 0.45 about the 108dp adaptive-icon centre) so the launcher icon is sharp at every density. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.45" android:scaleY="0.45" android:translateX="10.8" android:translateY="10.8">
+        <path android:fillColor="#7ee787" android:pathData="M36,96a40,40 0,1 0,80 0a40,40 0,1 0,-80 0z" />
+        <path android:fillColor="#79c0ff" android:fillAlpha="0.85" android:pathData="M76,96a40,40 0,1 0,80 0a40,40 0,1 0,-80 0z" />
+    </group>
+</vector>

@@ -46,6 +46,7 @@ class MemoryMessageStore : MessageStore {
     override suspend fun fail(entity: MessageEntity, status: String, error: String) {
         rows.value.find { it.key == entity.key }?.let { put(it.copy(status = status, error = error)) }
     }
+    override suspend fun discard(entity: MessageEntity) { rows.value = rows.value.filterNot { it.key == entity.key } }
     override suspend fun reconcile(owner: String, connection: String, message: ChatMessage) {
         val pendingKey = resolvedPendingKey(owner, message)
         rows.value = rows.value.filterNot { it.ownerId == owner && it.connectionId == connection && it.key == pendingKey }
@@ -80,6 +81,7 @@ class FakeTransport : Transport {
     val canonical = mutableMapOf<String, ChatMessage>()
     val historyCalls = mutableListOf<Pair<String?, String?>>()
     var loseAckOnce = false
+    var reject: String? = null
     var echoFirst = false
     val readCalls = mutableListOf<String>()
     var read: suspend () -> Unit = { }
@@ -88,6 +90,7 @@ class FakeTransport : Transport {
     override suspend fun stop() { state.value = ConnectionState.Offline }
     override suspend fun send(message: SendMessage): ChatMessage {
         sends += message
+        reject?.let { error(it) }
         val saved = canonical.getOrPut(message.tempId) { ChatMessage(id = "server-${message.tempId}", senderId = "me",
             content = message.content.trim(), type = message.type, payload = message.payload, replyTo = message.replyTo,
             createdAt = "2026-10-07T00:10:00Z", tempId = message.tempId) }
@@ -140,7 +143,7 @@ class MessageServiceTest {
         service.readTimeSource = testScheduler.timeSource
         service.activate(connection("active", true)); runCurrent()
         service.visible(true); runCurrent()
-        assertEquals("offline", service.error.value)
+        assertEquals("Connection problem. Reconnecting…", service.error.value)
         transport.read = { awaitCancellation() }
         advanceTimeBy(10_000); runCurrent()
         assertEquals(2, transport.readCalls.size)
@@ -164,6 +167,29 @@ class MessageServiceTest {
         advanceTimeBy(10_000); runCurrent()
         assertEquals(initialReads + 1, transport.readCalls.size)
         service.deactivate()
+    }
+
+    @Test fun alarmRaiseIsRefusedLocallyWithinThreeMinutes() = runTest {
+        val store = MemoryMessageStore()
+        val transport = FakeTransport()
+        val service = MessageService(transport, store, FakeSession(), testJson, backgroundScope)
+        service.activate(connection("active", true)); runCurrent()
+        transport.state.value = ConnectionState.Offline // keep the raise queued with its local time
+        service.send("", "alarm"); runCurrent()
+        assertTrue(runCatching { service.send("", "alarm") }.isFailure)
+        assertEquals(1, store.rows.value.size)
+    }
+
+    @Test fun serverRejectedAlarmIsDroppedNotLeftFailed() = runTest {
+        val transport = FakeTransport().apply { reject = "wait a bit before sending another alarm" }
+        val store = MemoryMessageStore()
+        val service = MessageService(transport, store, FakeSession(), testJson, backgroundScope)
+        service.activate(connection("active", true)); runCurrent()
+        service.send("", "alarm"); runCurrent()
+        assertTrue(store.rows.value.isEmpty())
+        assertTrue(service.error.value!!.startsWith("You just sent an alarm"))
+        service.send("hi"); runCurrent()
+        assertEquals("Wait a bit before sending another alarm", store.rows.value.single().error)
     }
 
     @Test fun connectionEndedPurgesCacheAndPendingSends() = runTest {

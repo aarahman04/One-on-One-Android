@@ -186,9 +186,6 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         if (connection.myLeaveStep > 0 || connection.otherLeaveStep > 0) {
             LeaveBanner("Leave countdown: you ${connection.myLeaveStep}/5, them ${connection.otherLeaveStep}/5")
         }
-        error?.let { ErrorLine(it) }
-        accountError?.let { ErrorLine(it) }
-        featureError?.let { ErrorLine(it) }
         if (featureBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val wallpaper = when (connection.wallpaper) { "love" -> R.drawable.wallpaper_love; "samurai" -> R.drawable.wallpaper_samurai; else -> null }
@@ -245,6 +242,14 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                     }
                 }
             }
+            // Offline: one calm status pill (debounced so brief reconnects don't flash). Otherwise errors show for a few seconds.
+            var offline by remember { mutableStateOf(false) }
+            LaunchedEffect(state) { if (state == ConnectionState.Connected) offline = false else { delay(2_000); offline = true } }
+            val notice = error ?: featureError ?: accountError
+            var shown by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(notice) { shown = notice; if (notice != null) { delay(4_000); shown = null } }
+            ChatNotice(if (offline) "No connection · Reconnecting…" else null, Modifier.align(Alignment.TopCenter))
+            ChatNotice(shown.takeIf { !offline }, Modifier.align(Alignment.BottomCenter), warning = true)
             if (attachmentOpen) Box(Modifier.matchParentSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { attachmentOpen = false })
             AttachSheet(attachmentOpen, Modifier.align(Alignment.BottomCenter).widthIn(max = OneTheme.sizes.chatMax720).padding(bottom = 6.dp),
                 onPhoto = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },

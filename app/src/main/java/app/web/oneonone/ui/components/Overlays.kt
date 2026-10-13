@@ -10,11 +10,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -43,14 +45,15 @@ import app.web.oneonone.R
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 
-enum class ModalPlacement { Top, Bottom }
+enum class ModalPlacement { Center, Bottom }
 
 /**
  * .modal-overlay + .modal-panel: scrim, bg-raised panel, radius 10, padding 46/22/22/22, max 620, X at top-right 12dp.
+ * [ModalPlacement.Center] centres the panel vertically and scrolls when it is taller than the window.
  * [ModalPlacement.Bottom] is a full-width sheet: top corners rounded, flush with the bottom edge, sliding up.
  */
 @Composable
-fun OneModal(onDismiss: () -> Unit, modifier: Modifier = Modifier, placement: ModalPlacement = ModalPlacement.Top, content: @Composable () -> Unit) {
+fun OneModal(onDismiss: () -> Unit, modifier: Modifier = Modifier, placement: ModalPlacement = ModalPlacement.Center, content: @Composable () -> Unit) {
     val c = OneTheme.colors
     val bottom = placement == ModalPlacement.Bottom
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -94,7 +97,9 @@ fun OneModal(onDismiss: () -> Unit, modifier: Modifier = Modifier, placement: Mo
             }
         }
         if (bottom) Box(scrim.imePadding(), contentAlignment = Alignment.BottomCenter) { panel() }
-        else Box(scrim.safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(20.dp), contentAlignment = Alignment.TopCenter) { panel() }
+        else BoxWithConstraints(scrim.safeDrawingPadding().imePadding()) {
+            Box(Modifier.verticalScroll(rememberScrollState()).heightIn(min = maxHeight).fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { panel() }
+        }
     }
 }
 

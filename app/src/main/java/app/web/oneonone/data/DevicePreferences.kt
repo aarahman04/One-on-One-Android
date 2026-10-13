@@ -19,6 +19,7 @@ interface DeviceStore {
     suspend fun gates(): Gates
     suspend fun verifyAge()
     suspend fun acceptTerms()
+    suspend fun resetGates()
     suspend fun pushToken(): String?
     suspend fun savePushToken(token: String?)
     suspend fun onboardingSeen(): Boolean
@@ -50,6 +51,7 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     override suspend fun gates() = store.data.first().let { Gates(it[age] == true, it[consent] != null) }
     override suspend fun verifyAge() { store.edit { it[age] = true } }
     override suspend fun acceptTerms() { store.edit { it[consent] = Instant.now().toString() } }
+    override suspend fun resetGates() { store.edit { it.remove(age); it.remove(consent) } }
     override suspend fun pushToken(): String? = store.data.first()[pushToken]
     override suspend fun savePushToken(token: String?) { store.edit {
         if (token == null) it.remove(pushToken) else it[pushToken] = token

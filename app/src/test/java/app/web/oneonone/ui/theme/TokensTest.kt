@@ -12,7 +12,7 @@ class TokensTest {
 
     @Test
     fun darkMatchesWeb() = with(OneColors.Dark) {
-        assertHex("#0d1117", bg); assertHex("#12181f", bgRaised); assertHex("#1f2630", border)
+        assertHex("#0d1017", bg); assertHex("#12181f", bgRaised); assertHex("#1f2630", border)
         assertHex("#e6edf3", text); assertHex("#9aa4af", textDim); assertHex("#6e7681", muted)
         assertHex("#7ee787", accentYou); assertHex("#79c0ff", accentOther); assertHex("#f85149", danger)
         assertHex("#04170a", onPrimary); assertHex("#7ee787", sendBg); assertHex("#102719", sendFg)

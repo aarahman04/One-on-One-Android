@@ -171,10 +171,12 @@ internal fun userError(error: Exception): String {
                 Json.parseToJsonElement(it).jsonObject["error"]?.jsonPrimitive?.content
             }
         } catch (_: Exception) { null }
-        return serverMessage ?: "Request failed (${error.code()}). Try again."
+        // Server errors are plain sentences; status codes never reach the screen.
+        return serverMessage?.replaceFirstChar { it.uppercase() }
+            ?: if (error.code() == 429) "Too many tries. Try again soon." else "Something went wrong. Try again."
     }
     return when (error) {
         is IllegalArgumentException, is IllegalStateException -> error.message ?: "Couldn't complete that action."
-        else -> "Couldn't connect. Check your internet connection and try again."
+        else -> "No connection. Try again."
     }
 }
