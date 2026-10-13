@@ -908,7 +908,7 @@ backend calls and chat changes are **not** device-tested. No backend or endpoint
   "I have their ID" opens a separate step (paste button, uppercase 8-char field,
   IME Go, Back + system back). Footer is Settings · Sign out (Settings keeps blocks,
   legal and account deletion, which Play requires to stay reachable).
-- Sign-in: "ONE" eyebrow removed, tagline now "It's just you and me.", and Continue with
+- Sign-in: "ONE" eyebrow and tagline removed (logo, name, button only); Continue with
   Google spans exactly the Privacy Policy · Terms · Child Safety row.
 - Waiting / Request: duplicate eyebrows removed, full-width buttons, same footer.
 - Age and Terms gates are cleared on sign-out and account deletion, so every sign-in

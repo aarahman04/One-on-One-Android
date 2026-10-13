@@ -41,7 +41,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -192,7 +191,6 @@ private fun HomeScreen(
                 // The splash vector has empty space above and below the circles; crop it so the stack stays tight.
                 Image(painterResource(R.drawable.splash_logo), null, Modifier.size(width = 128.dp, height = 64.dp), contentScale = ContentScale.Crop)
                 Title("One on One")
-                ScreenSubtitle(stringResource(R.string.tagline))
                 // The button spans exactly the legal links row beneath it.
                 Column(Modifier.width(IntrinsicSize.Max), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(20.dp)) {
