@@ -903,15 +903,19 @@ request, account delete dialog. No Google account on the emulator, so the real s
 backend calls and chat changes are **not** device-tested. No backend or endpoint changes.
 
 - Connect: one title (duplicate eyebrow removed), short subtitle, full-width ID card
-  (tap or hold copies, haptic + "Copied"), equal Copy / New ID buttons, primary
+  (green primary buttons keep their natural width so they don't dominate the navy screen)
+  — tap or hold copies, haptic + "Copied" — equal Copy / New ID buttons, primary
   "I have their ID" opens a separate step (paste button, uppercase 8-char field,
   IME Go, Back + system back). Footer is Settings · Sign out (Settings keeps blocks,
   legal and account deletion, which Play requires to stay reachable).
 - Waiting / Request: duplicate eyebrows removed, full-width buttons, same footer.
 - Age and Terms gates are cleared on sign-out and account deletion, so every sign-in
   (new, re-created or another account) asks again. Still per-device, as on web.
-- Date of birth uses a Material 3 picker in app colours (opens on 18 years ago,
-  future dates disabled); the button shows the chosen date as "15 October 2008".
+- Date of birth is an inline iOS-style wheel (day / month / year; look after
+  ty0x2333/WheelPicker, built in Compose): one navy selection band, rows curve and
+  fade, snap, tick haptic per step, tap a row to jump. Starts on today (neutral age
+  screen) and Continue stays disabled until a wheel is moved, so a stray tap can't
+  land on the under-18 dead end. Scrolling only redraws (graphicsLayer).
 - Notification prompt now appears when the chat first opens, not after Terms.
 - Every centred modal (alarm, delete account, reports…) is vertically centred.
 - Chat links: bare domains (`google.com`, `www.…`) open with https, phone numbers

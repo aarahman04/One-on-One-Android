@@ -447,7 +447,7 @@ Search is client-side over loaded messages only; the full log stays visible.
 
 ```mermaid
 flowchart TD
-  SignIn["Continue with Google"] --> Age["Date of birth (M3 picker)"] --> Consent["Terms"] --> Connect
+  SignIn["Continue with Google"] --> Age["Date of birth (inline wheel)"] --> Consent["Terms"] --> Connect
   Connect["Your connection ID: copy / new ID"] -->|I have their ID| Enter["Enter their ID: paste, connect"]
   Enter -->|Back| Connect
   Enter -->|request| Waiting["Request sent"]

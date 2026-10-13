@@ -10,7 +10,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -71,10 +77,14 @@ import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.push.PushRegistration
 import kotlinx.coroutines.delay
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
+import java.time.Month
+import java.time.YearMonth
+import java.util.Locale
+import kotlin.math.abs
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 
 internal const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
@@ -180,7 +190,7 @@ private fun HomeScreen(
                 Eyebrow("ONE")
                 Title("One on One")
                 ScreenSubtitle(stringResource(R.string.tagline))
-                PrimaryButton("Continue with Google", onSignIn, modifier = BlockWidth, enabled = !state.busy)
+                PrimaryButton("Continue with Google", onSignIn, enabled = !state.busy)
                 LegalLinks()
             }
             BootRoute.Age -> AgeScreen(state.busy, onVerify)
@@ -196,7 +206,7 @@ private fun HomeScreen(
                 Title("Your connection ID")
                 ScreenSubtitle("Share this ID to connect.")
                 ConnectionId(state.me?.connectionCode.orEmpty(), state.busy, onRegenerate)
-                PrimaryButton("I have their ID", onClick = { entering = true }, modifier = BlockWidth, enabled = !state.busy)
+                PrimaryButton("I have their ID", onClick = { entering = true }, enabled = !state.busy)
                 FooterLinks(state.busy, onSettings, onSignOut)
             }
             BootRoute.Waiting -> {
@@ -332,53 +342,67 @@ private fun LegalLinks() {
 private fun AgeScreen(busy: Boolean, onVerify: (LocalDate) -> Unit) {
     Title("What's your date of birth?")
     ScreenSubtitle("One on One is for adults only. Your date of birth stays on this device.")
-    var selected by rememberSaveable { mutableStateOf<String?>(null) }
-    var picking by rememberSaveable { mutableStateOf(false) }
-    SecondaryButton(selected?.let { LocalDate.parse(it).format(DateTimeFormatter.ofPattern("d MMMM yyyy")) } ?: "Choose date of birth",
-        onClick = { picking = true }, modifier = BlockWidth, enabled = !busy)
-    PrimaryButton("Continue", onClick = { selected?.let { onVerify(LocalDate.parse(it)) } }, modifier = BlockWidth, enabled = !busy && selected != null)
-    if (picking) BirthDatePicker(selected?.let(LocalDate::parse), onPick = { selected = it.toString(); picking = false }, onDismiss = { picking = false })
+    // Neutral age screen: starts on today, and Continue waits until the wheels have been moved.
+    val today = remember { LocalDate.now() }
+    var year by rememberSaveable { mutableIntStateOf(today.year) }
+    var month by rememberSaveable { mutableIntStateOf(today.monthValue) }
+    var day by rememberSaveable { mutableIntStateOf(today.dayOfMonth) }
+    var touched by rememberSaveable { mutableStateOf(false) }
+    val days = YearMonth.of(year, month).lengthOfMonth()
+    val safeDay = day.coerceAtMost(days)
+    val months = remember { Month.entries.map { it.getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault()) } }
+    val years = remember { (1900..today.year).map(Int::toString) }
+    Box(BlockWidth, contentAlignment = Alignment.Center) {
+        // One selection band across all three wheels, like iOS.
+        Box(Modifier.fillMaxWidth().height(WheelRow).background(OneTheme.colors.bgRaised, RoundedCornerShape(OneTheme.radii.md10))
+            .border(1.dp, OneTheme.colors.border, RoundedCornerShape(OneTheme.radii.md10)))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
+            Wheel((1..days).map(Int::toString), safeDay - 1, "Day", Modifier.weight(1f)) { day = it + 1; touched = true }
+            Wheel(months, month - 1, "Month", Modifier.weight(1.3f)) { month = it + 1; touched = true }
+            Wheel(years, year - 1900, "Year", Modifier.weight(1.3f)) { year = it + 1900; touched = true }
+        }
+    }
+    PrimaryButton("Continue", onClick = { onVerify(LocalDate.of(year, month, safeDay)) }, enabled = !busy && touched)
 }
 
-private fun LocalDate.utcMillis() = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+private val WheelRow = 40.dp
+private const val WheelRows = 5
 
-/** Material 3 date picker painted with the app's tokens instead of the platform dialog theme. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** iOS-style scroll wheel (look after ty0x2333/WheelPicker): rows curve away and fade, a tick on each step, snaps to the centre row. */
 @Composable
-private fun BirthDatePicker(initial: LocalDate?, onPick: (LocalDate) -> Unit, onDismiss: () -> Unit) {
+private fun Wheel(items: List<String>, index: Int, label: String, modifier: Modifier = Modifier, onIndex: (Int) -> Unit) {
     val c = OneTheme.colors
-    val today = remember { LocalDate.now() }
-    val state = rememberDatePickerState(
-        initialSelectedDateMillis = initial?.utcMillis(),
-        initialDisplayedMonthMillis = (initial ?: today.minusYears(18)).utcMillis(),
-        yearRange = 1900..today.year,
-        selectableDates = object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= today.utcMillis()
-            override fun isSelectableYear(year: Int) = year <= today.year
-        },
-    )
-    val colors = DatePickerDefaults.colors(
-        containerColor = c.bgRaised, titleContentColor = c.textDim, headlineContentColor = c.text,
-        weekdayContentColor = c.textDim, subheadContentColor = c.textDim, navigationContentColor = c.text,
-        yearContentColor = c.text, disabledYearContentColor = c.muted, currentYearContentColor = c.accentOther,
-        selectedYearContentColor = c.onPrimary, selectedYearContainerColor = c.accentYou,
-        dayContentColor = c.text, disabledDayContentColor = c.muted, selectedDayContentColor = c.onPrimary,
-        selectedDayContainerColor = c.accentYou, todayContentColor = c.accentOther, todayDateBorderColor = c.accentOther,
-        dividerColor = c.border,
-    )
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(OneTheme.radii.md10),
-        colors = colors,
-        confirmButton = {
-            PrimaryButton("Done", onClick = {
-                state.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
-            }, modifier = Modifier.padding(end = OneTheme.spacing.sm8, bottom = OneTheme.spacing.sm8), enabled = state.selectedDateMillis != null)
-        },
-        dismissButton = { TextLink("Cancel", onDismiss, Modifier.padding(end = OneTheme.spacing.sm8, bottom = OneTheme.spacing.sm8)) },
-    ) {
-        DatePicker(state, colors = colors,
-            title = { Text("Date of birth", Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp), style = OneTextStyles.cardHint, color = c.textDim) })
+    val state = rememberLazyListState(index)
+    val scope = rememberCoroutineScope()
+    val rowPx = with(LocalDensity.current) { WheelRow.toPx() }
+    val centre by remember(items.size) { derivedStateOf {
+        (state.firstVisibleItemIndex + if (state.firstVisibleItemScrollOffset > rowPx / 2) 1 else 0).coerceIn(0, items.lastIndex)
+    } }
+    val latest by rememberUpdatedState(onIndex)
+    LaunchedEffect(state) { snapshotFlow { state.isScrollInProgress }.drop(1).filter { !it }.collect { latest(centre) } }
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(state) { snapshotFlow { centre }.drop(1).collect { haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick) } }
+    // A shorter month can push the day off the end; keep the wheel on the clamped value.
+    LaunchedEffect(index, items.size) { if (!state.isScrollInProgress && centre != index) state.scrollToItem(index) }
+    Box(modifier.height(WheelRow * WheelRows), contentAlignment = Alignment.Center) {
+        LazyColumn(Modifier.fillMaxSize().semantics { contentDescription = "$label, ${items.getOrNull(centre).orEmpty()}" },
+            state = state, flingBehavior = rememberSnapFlingBehavior(state),
+            contentPadding = PaddingValues(vertical = WheelRow * (WheelRows / 2))) {
+            itemsIndexed(items) { i, text ->
+                Text(text, Modifier.fillMaxWidth().height(WheelRow).clickable { scope.launch { state.animateScrollToItem(i) } }
+                    .wrapContentHeight().graphicsLayer {
+                        // Continuous distance from the centre row drives the drum curve and fade.
+                        val f = i - (state.firstVisibleItemIndex + state.firstVisibleItemScrollOffset / rowPx)
+                        rotationX = (-f * 22f).coerceIn(-75f, 75f)
+                        alpha = (1f - abs(f) * .3f).coerceAtLeast(.15f)
+                        val scale = 1f + (1f - abs(f)).coerceAtLeast(0f) * .12f
+                        scaleX = scale; scaleY = scale
+                        cameraDistance = 12f * density
+                    },
+                    // Style is constant so scrolling only redraws (graphicsLayer), never recomposes or relayouts rows.
+                    style = OneTextStyles.subtitle.copy(fontSize = 17.sp), color = c.text, textAlign = TextAlign.Center, maxLines = 1)
+            }
+        }
     }
 }
 
@@ -396,7 +420,7 @@ private fun ConsentScreen(busy: Boolean, onAccept: () -> Unit) {
             style = OneTextStyles.subtitle, color = OneTheme.colors.text)
     }
     LegalLinks()
-    PrimaryButton("Agree and continue", onAccept, modifier = BlockWidth, enabled = agreed && !busy)
+    PrimaryButton("Agree and continue", onAccept, enabled = agreed && !busy)
 }
 
 @Composable
