@@ -1,6 +1,8 @@
 package app.web.oneonone.ui.chat
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -40,6 +42,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
@@ -108,6 +111,39 @@ internal fun ChatHeader(
                 OneIconButton(R.drawable.ic_more_vertical, "More options", onMore)
                 menu()
             }
+        }
+    }
+    HorizontalDivider(color = c.border)
+}
+
+/**
+ * Replaces the header while messages are selected (long press): close, count, then reply (one message),
+ * copy and a More menu. Same height and colours as [ChatHeader] so the swap doesn't shift the list.
+ */
+@Composable
+internal fun SelectionBar(count: Int, onClose: () -> Unit, onReply: (() -> Unit)?, onCopy: () -> Unit, onMore: () -> Unit, menu: @Composable () -> Unit) {
+    val c = OneTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(c.bgRaised)
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .heightIn(min = OneTheme.sizes.header56)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        OneIconButton(R.drawable.ic_x, "Clear selection", onClose)
+        AnimatedContent(count, transitionSpec = { (fadeIn(tween(160)) + slideInVertically { -it / 2 }) togetherWith fadeOut(tween(120)) }, label = "Selected count",
+            modifier = Modifier.weight(1f).padding(start = 8.dp)) { n ->
+            Text("$n", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite; contentDescription = if (n == 1) "1 message selected" else "$n messages selected" })
+        }
+        if (onReply != null) OneIconButton(R.drawable.ic_reply, "Reply", onReply)
+        OneIconButton(R.drawable.ic_copy, "Copy", onCopy)
+        Box {
+            OneIconButton(R.drawable.ic_more_vertical, "More options", onMore)
+            menu()
         }
     }
     HorizontalDivider(color = c.border)

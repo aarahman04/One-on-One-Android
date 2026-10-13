@@ -140,6 +140,14 @@ class AppViewModel @Inject constructor(
     }
     fun signOut() = action { account.signOut() }
     fun deleteAccount() = action { account.deleteAccount() }
+    private val mutableReminder = MutableStateFlow(false)
+    /** "Turn on notifications" popup: notifications are off and the last ask was 3+ days ago. */
+    val notificationReminder = mutableReminder.asStateFlow()
+    fun checkNotificationReminder(allowed: Boolean) {
+        if (allowed || state.value.needsNotificationOnboarding) return
+        viewModelScope.launch { if (preferences.claimNotificationReminder(System.currentTimeMillis())) mutableReminder.value = true }
+    }
+    fun dismissNotificationReminder() { mutableReminder.value = false }
     fun onboardingShown() = action {
         preferences.markOnboardingSeen()
         mutable.update { it.copy(needsNotificationOnboarding = false) }

@@ -954,3 +954,61 @@ Xiaomi checklist:
 - [ ] Background is navy #0D1017 on every intro screen (not teal/green).
 - [ ] Date-of-birth wheel: smooth fling, tick vibration (and click if touch sounds on) per row;
   Continue disabled until a wheel moves.
+
+## Chat polish from owner feedback (2026-10-14, branch `fix/chat-polish-1014`)
+
+Client-only; no endpoint, payload or backend rule added. Build-verified, not device-tested.
+
+- Gestures (WhatsApp model): double-tap a message = quick reaction bar (the 6 contract emoji,
+  in the bubble's own wallpaper colours, springs out of the bubble's corner, not focusable so the
+  keyboard stays open; Back or a tap outside closes it). Long press = select; tap more rows to add.
+  The header becomes close · count · reply (one row) · copy · ⋮ (Save a copy, Report message).
+  Copy of several rows joins them oldest first.
+- One gesture detector per bubble routes taps by position: links/numbers open on tap and copy on
+  long press; the reply quote jumps to the original on tap; a reply bubble can now be long-pressed,
+  selected and reacted to like any other.
+- Swipe to reply opens the keyboard on the composer; the swipe shows a round reply-icon chip with a
+  haptic tick at the trigger. The reply preview is a compact docked card.
+- Live messages rise, fade and scale in from their own side over 320 ms (was 160 ms).
+- Read ticks: dark blue `#0B57D0` on light bubbles (Light, Love); on dark bubbles (Dark green,
+  Samurai red) dark blue is invisible, so the deepest blue that clears 3:1 (`#5AB4FF`, `#80C8FF`).
+  `BubbleTokensTest` enforces the contrast.
+- Links: more TLDs (`shirt.online`, `.site`, `.store`, `.xyz`, country codes…); file names stay plain.
+- Search matches word starts: "hey" finds "Hey!" and "heyy", not "they". `ChatSearchTest`.
+- "Load older messages" only when the newest page was full (no button at the start of a short chat).
+- A connection with no nickname asks "What would you like to call this person?" on entering the chat.
+- Notifications off: a centred "Turn on notifications?" popup on entering the chat; "Turn on" opens
+  the app's notification settings. Asked again every 3 days. `NotificationReminderTest`.
+- Message notifications forget lines that were swiped away, read, or seen by opening the chat.
+- Share sheet: One on One accepts text (goes into the draft), photos and the contract's document
+  types (attachment preview; nothing is sent until the user taps send). Only `content://` streams.
+- Calls: speaker button flips instantly (device switch off the main thread); volume keys set call
+  volume during a call; remote audio gain 2.5×; keyboard closes when a call screen opens; the
+  incoming screen rings and vibrates itself while the app is visible (notification posted silent then).
+- Emergency alarm: tapping the alarm notification opens the chat without silencing. While their
+  alarm is live the whole chat glows red with a red "Emergency alarm from X · Acknowledge" banner;
+  acknowledging sends the contract ack, which stops the ring on every device.
+
+Not built (needs backend; the contract has no route or event for it):
+- Typing indicator, edit (30 min), delete for everyone (30 min), shared pinned message.
+- "+" for any emoji: `reaction:add` accepts only ❤️ 👍 😂 😮 😢 🙏.
+- Link preview cards: no server unfurl; fetching from the phone would show every link's site the
+  reader's IP. Owner decision needed.
+
+Xiaomi checklist:
+- [ ] Double-tap a message with the keyboard open: bar pops from the bubble, keyboard stays up.
+- [ ] Bar colours match each wallpaper (off / love / samurai) in light and dark.
+- [ ] Long press selects; tap others to add; count updates; copy, reply, Report work; Back clears.
+- [ ] Long press a link and a phone number: copied, no selection. Tap opens. Double-tap reacts.
+- [ ] Long press a reply bubble: selects. Tap its quote: jumps to the original.
+- [ ] Swipe to reply: keyboard opens with the reply card above the composer.
+- [ ] Read ticks visible on all four palettes.
+- [ ] Send `shirt.online`: link. Search "hey" with a "they" message: not matched.
+- [ ] New connection without nickname: prompt on entering chat.
+- [ ] Notifications off: popup on entering chat, Turn on opens settings; not again for 3 days.
+- [ ] Swipe away a message notification, receive another: only the new line shows.
+- [ ] Share text, a photo and a PDF from Gmail/Chrome/Gallery into One on One.
+- [ ] Call: audible on earpiece and speaker; volume keys change it; speaker toggles at once.
+- [ ] Typing when a call arrives: keyboard closes; ringtone plays inside the app.
+- [ ] Alarm received while in chat: red glow + banner, ring continues until Acknowledge.
+- [ ] Alarm received in background: tap notification, chat opens glowing; Acknowledge stops it.

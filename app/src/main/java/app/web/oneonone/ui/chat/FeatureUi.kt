@@ -579,6 +579,13 @@ internal fun ExportContent(format: String, choose: (String) -> Unit, onSave: () 
         dismissButton = { SecondaryButton("Cancel", onClick = close) })
 }
 
+/** Several selected messages, oldest first, one per line (WhatsApp copies them the same way). */
+fun copyMessages(context: Context, messages: List<ChatMessage>) {
+    if (messages.size == 1) return copyMessage(context, messages[0])
+    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Messages",
+        messages.joinToString("\n") { it.content.ifBlank { messageSummary(it) } }))
+}
+
 fun copyMessage(context: Context, message: ChatMessage) {
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", message.content.ifBlank { messageSummary(message) }))
 }

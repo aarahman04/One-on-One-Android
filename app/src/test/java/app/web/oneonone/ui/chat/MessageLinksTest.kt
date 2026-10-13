@@ -21,4 +21,10 @@ class MessageLinksTest {
 
     @Test fun shortNumbersDatesAndUrlDigitsAreIgnored() =
         assertEquals(listOf("https://x.io/1234567" to "https://x.io/1234567"), targets("on 2026-10-13 bring 12 of https://x.io/1234567"))
+
+    @Test fun newerTopLevelDomainsAreLinks() = assertEquals(
+        listOf("shirt.online" to "https://shirt.online", "open.spotify.com/track/1" to "https://open.spotify.com/track/1"),
+        targets("shop at shirt.online and open.spotify.com/track/1"))
+
+    @Test fun fileNamesAreNotLinks() = assertEquals(emptyList<Pair<String, String>>(), targets("see notes.txt and photo.jpeg"))
 }

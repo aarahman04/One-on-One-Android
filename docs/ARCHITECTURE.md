@@ -468,3 +468,36 @@ flowchart LR
   State["connectionState ≠ Connected for 2s"] --> Pill["top pill: No connection · Reconnecting…"]
   Errors["chat / feature / account error"] --> Toast["bottom pill, 4s"]
 ```
+
+### Message gestures and selection (chat polish, 2026-10-14)
+
+```mermaid
+flowchart LR
+    T[Tap] --> Q{Where?}
+    Q -->|link / number| O[Open]
+    Q -->|reply quote| J[Jump to original]
+    Q -->|selection mode| S[Toggle selection]
+    Q -->|elsewhere| X[Show timestamp]
+    D[Double tap] --> R[ReactionBar popup<br/>not focusable] -->|reaction:add / remove| MS[MessageService]
+    L[Long press] --> LQ{On link?}
+    LQ -->|yes| C[Copy link / number]
+    LQ -->|no| S
+    S --> SB[SelectionBar: reply · copy · save · report]
+```
+
+### Emergency alarm in the open chat (2026-10-14)
+
+```mermaid
+sequenceDiagram
+    participant FCM as FCM / socket
+    participant AC as AlarmCoordinator
+    participant AS as AlarmService
+    participant UI as ChatScreen
+    FCM->>AC: raise
+    AC->>AS: ring (sound + full-screen)
+    Note over UI: notification tap opens chat, ring continues
+    UI->>UI: live raise from them: red glow + banner
+    UI->>FCM: Acknowledge = alarm ack (contract)
+    FCM-->>AC: server-confirmed ack
+    AC->>AS: stop
+```

@@ -127,6 +127,12 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
                 key(connection.myUserId, connection.id) {
                     ChatScreen(connection, chatViewModel, featureViewModel, onSettings = { nav.navigate("settings") }, onAccount = { nav.navigate("account") }, onRefresh = { viewModel.refresh() }, accountError = state.error)
                 }
+                val context = LocalContext.current
+                val reminder by viewModel.notificationReminder.collectAsState()
+                LaunchedEffect(connection.id, state.needsNotificationOnboarding) {
+                    viewModel.checkNotificationReminder(androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled())
+                }
+                if (reminder) NotificationReminderDialog(onDone = viewModel::dismissNotificationReminder)
             } else {
                 val context = LocalContext.current
                 HomeScreen(state, onSignIn = { viewModel.signIn(context) }, onVerify = viewModel::verifyAge,

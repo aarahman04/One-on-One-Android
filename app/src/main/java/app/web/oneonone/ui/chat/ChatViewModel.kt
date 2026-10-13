@@ -17,6 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import javax.inject.Inject
 
+/** From the Android share sheet: text goes to the draft, an image or file ([kind] image|file) to the attachment preview. */
+data class SharedContent(val text: String?, val uri: String?, val kind: String?)
+
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val service: MessageService,
@@ -35,6 +38,11 @@ class ChatViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val mutableBusy = MutableStateFlow(false)
     val busy = mutableBusy.asStateFlow()
+    /** Content another app shared into One on One, waiting for the chat to pick it up. */
+    private val mutableShared = MutableStateFlow<SharedContent?>(null)
+    val shared = mutableShared.asStateFlow()
+    fun share(content: SharedContent) { mutableShared.value = content }
+    fun consumeShared() { mutableShared.value = null }
     private val mutableHasOlder = MutableStateFlow(true)
     val hasOlder = mutableHasOlder.asStateFlow()
 

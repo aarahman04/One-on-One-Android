@@ -12,6 +12,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -40,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -73,20 +78,23 @@ private val CommandDescriptions = mapOf(
 internal fun slashMatches(draft: String): List<String> =
     if (!draft.startsWith("/")) emptyList() else draft.drop(1).lowercase().let { q -> FeatureCommands.filter { it.startsWith(q) } }
 
-/** .chat__reply-bar: 56dp strip above the composer with the quoted author/snippet and a close button. */
+/** Reply preview docked above the composer: a compact card with the accent bar, author and snippet (WhatsApp-style). */
 @Composable
 internal fun ReplyBar(author: String, snippet: String, onCancel: () -> Unit) {
     val c = OneTheme.colors
-    Row(
-        Modifier.fillMaxWidth().height(OneTheme.sizes.header56).background(c.bgRaised).padding(start = 12.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(author, color = c.accentOther, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(snippet, color = c.textDim, style = OneTextStyles.cardHint.copy(fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val shape = RoundedCornerShape(OneTheme.radii.sm6)
+    Box(Modifier.fillMaxWidth().background(c.bg).padding(start = 8.dp, end = 8.dp, top = 6.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clip(shape).background(c.bgRaised).height(IntrinsicSize.Min),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.width(3.dp).fillMaxHeight().background(c.accentOther))
+            Column(Modifier.weight(1f).padding(start = 10.dp, top = 6.dp, bottom = 6.dp)) {
+                Text(author, color = c.accentOther, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(snippet, color = c.textDim, style = OneTextStyles.cardHint.copy(fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OneIconButton(R.drawable.ic_x, "Cancel reply", onCancel)
         }
-        OneIconButton(R.drawable.ic_x, "Cancel reply", onCancel)
     }
 }
 
@@ -135,6 +143,7 @@ internal fun ChatComposer(
     onStop: () -> Unit = {},
     onDiscard: () -> Unit = {},
     onFocus: () -> Unit = {},
+    focusRequester: FocusRequester = remember { FocusRequester() },
 ) {
     val c = OneTheme.colors
     val pillShape = RoundedCornerShape(OneTheme.radii.pill22)
@@ -165,7 +174,7 @@ internal fun ChatComposer(
             BasicTextField(
                 value = draft,
                 onValueChange = onDraft,
-                modifier = Modifier.weight(1f).heightIn(max = 120.dp),
+                modifier = Modifier.weight(1f).heightIn(max = 120.dp).focusRequester(focusRequester),
                 textStyle = textStyle,
                 cursorBrush = SolidColor(c.accentYou),
                 interactionSource = source,

@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.core.net.toUri
 import app.web.oneonone.MainActivity
 import app.web.oneonone.R
@@ -29,6 +30,9 @@ class MessageNotifications @Inject constructor(@ApplicationContext private val c
         val previous = manager.activeNotifications.find { it.tag == tag(push.connectionId) && it.id == MESSAGE_ID }?.notification
         val style = previous?.let(NotificationCompat.MessagingStyle::extractMessagingStyleFromNotification)
             ?: NotificationCompat.MessagingStyle(Person.Builder().setName("You").build())
+        // Lines the user already swiped away or read never come back with the next message.
+        val cleared = clearedAt(context, push.connectionId)
+        style.messages.removeAll { it.timestamp <= cleared }
         style.setConversationTitle(push.senderName.ifBlank { "Your One on One" }).setGroupConversation(false)
         style.addMessage(push.preview, System.currentTimeMillis(), Person.Builder()
             .setName(push.senderName.ifBlank { "Your One on One" }).build())
@@ -45,6 +49,7 @@ class MessageNotifications @Inject constructor(@ApplicationContext private val c
             .setSmallIcon(R.drawable.ic_stat_notify).setStyle(style).setContentIntent(tap)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true).setOnlyAlertOnce(false).setGroup("conversation:${push.connectionId}")
+            .setDeleteIntent(action(push.connectionId, ownerAuthId, "dismiss", mutable = false))
             .addAction(reply).addAction(read).build()
         manager.notify(tag(push.connectionId), MESSAGE_ID, notification)
     }
@@ -66,7 +71,7 @@ class MessageNotifications @Inject constructor(@ApplicationContext private val c
         manager.notify(tag(connectionId), MESSAGE_ID, NotificationCompat.Builder(context, previous)
             .setStyle(style).setOnlyAlertOnce(true).setRemoteInputHistory(arrayOf(content)).build())
     }
-    fun cancel(connectionId: String) { manager.cancel(tag(connectionId), MESSAGE_ID) }
+    fun cancel(connectionId: String) = clear(context, connectionId)
     fun cancelMessages() { manager.activeNotifications.filter { it.notification.channelId == NotificationChannels.MESSAGES }
         .forEach { manager.cancel(it.tag, it.id) } }
     fun generic(title: String, body: String) {
@@ -76,6 +81,18 @@ class MessageNotifications @Inject constructor(@ApplicationContext private val c
             .setSmallIcon(R.drawable.ic_stat_notify).setContentTitle(title).setContentText(body)
             .setContentIntent(tap).setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build())
     }
-    private fun tag(connectionId: String) = "message:$connectionId"
-    companion object { const val MESSAGE_ID = 4101; const val REPLY_KEY = "message_reply" }
+    companion object {
+        const val MESSAGE_ID = 4101; const val REPLY_KEY = "message_reply"
+        private fun tag(connectionId: String) = "message:$connectionId"
+        private fun cleared(context: Context) = context.getSharedPreferences("message_notifications", Context.MODE_PRIVATE)
+        internal fun clearedAt(context: Context, connectionId: String) = cleared(context).getLong(connectionId, 0L)
+        /** Marks everything shown so far as seen (swiped away, read, or the chat was opened). */
+        internal fun markCleared(context: Context, connectionId: String) {
+            cleared(context).edit { putLong(connectionId, System.currentTimeMillis()) }
+        }
+        fun clear(context: Context, connectionId: String) {
+            markCleared(context, connectionId)
+            context.getSystemService(NotificationManager::class.java).cancel(tag(connectionId), MESSAGE_ID)
+        }
+    }
 }

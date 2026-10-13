@@ -1,13 +1,43 @@
 package app.web.oneonone.ui.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.MutableState
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import kotlinx.coroutines.delay
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,10 +97,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -82,8 +110,6 @@ import androidx.compose.ui.unit.sp
 import app.web.oneonone.R
 import app.web.oneonone.data.model.AllowedReactions
 import app.web.oneonone.data.model.ChatMessage
-import app.web.oneonone.ui.components.OneMenu
-import app.web.oneonone.ui.components.OneMenuItem
 import app.web.oneonone.ui.theme.BubbleColors
 import app.web.oneonone.ui.theme.BubblePalette
 import app.web.oneonone.ui.theme.BubbleTokens
@@ -146,7 +172,6 @@ private fun receiptOf(label: String): Receipt = when (label) {
 
 private val TimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MessageBubble(
     message: ChatMessage,
@@ -160,66 +185,115 @@ internal fun MessageBubble(
     onReact: (String) -> Unit,
     onRetry: () -> Unit,
     onQuote: () -> Unit,
-    onReport: () -> Unit,
     card: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     highlight: String = "",
     currentMatch: Boolean = false,
+    selected: Boolean = false,
+    selecting: Boolean = false,
+    onSelect: () -> Unit = {},
+    myReaction: String? = null,
+    saveCopy: MutableState<(() -> Unit)?> = remember { mutableStateOf(null) },
 ) {
     val c = OneTheme.colors
     val motion = OneTheme.motion
     val colors = if (mine) palette.mine else palette.other
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val haptics = LocalHapticFeedback.current
     val time = remember(message.createdAt) { TimeFormat.withZone(ZoneId.systemDefault()).format(Instant.parse(message.createdAt)) }
     val failed = message.id == null && message.deliveryState == "failed"
     val status = if (mine && message.type != "call" && !failed) receiptOf(receipt) else Receipt.None
-    var menu by remember { mutableStateOf(false) }
-    val saveCopy = remember(message.id, message.tempId) { mutableStateOf<(() -> Unit)?>(null) }
+    var reacting by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val canReply = message.id != null && message.type != "call"
     val scope = rememberCoroutineScope()
     val currentOnReply by rememberUpdatedState(onReply)
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    val currentOnQuote by rememberUpdatedState(onQuote)
+    val currentSelecting by rememberUpdatedState(selecting)
     var dragPx by remember { mutableFloatStateOf(0f) }
     val triggerPx = with(LocalDensity.current) { SwipeTriggerDp.dp.toPx() }
     val shape = RoundedCornerShape(OneTheme.radii.bubble8)
     val alarm = message.type == "alarm"
+    BackHandler(reacting) { reacting = false }
+    LaunchedEffect(selecting) { if (selecting) reacting = false }
 
-    // message-enter: live rows fade + rise 8dp over 160ms (history never animates).
+    // One gesture detector per bubble; taps are routed to a link or the quote by where they land.
+    var bubbleBox by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var textBox by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var quoteBox by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val textLayout = remember { TextLayoutHolder() }
+    val links = remember(message.content, message.type) { if (message.type == "text") messageLinks(message.content) else emptyList() }
+    fun local(target: LayoutCoordinates?, position: Offset): Offset? {
+        val bubble = bubbleBox ?: return null
+        if (target == null || !target.isAttached || !bubble.isAttached) return null
+        val point = target.localPositionOf(bubble, position)
+        return point.takeIf { it.x in 0f..target.size.width.toFloat() && it.y in 0f..target.size.height.toFloat() }
+    }
+    fun linkAt(position: Offset): Pair<IntRange, String>? {
+        val point = local(textBox, position) ?: return null
+        val layout = textLayout.result ?: return null
+        val line = layout.getLineForVerticalPosition(point.y)
+        if (point.x < layout.getLineLeft(line) || point.x > layout.getLineRight(line)) return null
+        val offset = layout.getOffsetForPosition(point)
+        return links.firstOrNull { offset in it.first }
+    }
+    fun openLink(target: String) { runCatching { uriHandler.openUri(target) } }
+    fun copyLink(link: Pair<IntRange, String>) {
+        val phone = link.second.startsWith("tel:")
+        val value = if (phone) message.content.substring(link.first) else link.second
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(if (phone) "Phone number" else "Link", value))
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        // Android 13+ shows its own clipboard confirmation.
+        if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, if (phone) "Number copied" else "Link copied", Toast.LENGTH_SHORT).show()
+    }
+
+    // message-enter: live rows rise, fade and settle from their own side over 320ms (history never animates).
     val enter = remember { Animatable(if (animateIn) 0f else 1f) }
-    LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, tween(motion.enter160, easing = motion.standard)) }
+    LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, tween(motion.slow320, easing = motion.standard)) }
+    val selection by animateColorAsState(if (selected) c.accentOther.copy(alpha = .16f) else Color.Transparent, tween(motion.base200), label = "selection")
 
     Box(
         modifier
             .fillMaxWidth()
+            .background(selection)
             .padding(top = if (groupStart) 8.dp else 2.dp)
             .graphicsLayer {
                 alpha = enter.value
-                translationY = (1f - enter.value) * 8.dp.toPx()
+                translationY = (1f - enter.value) * 14.dp.toPx()
+                scaleX = .94f + .06f * enter.value
+                scaleY = scaleX
+                transformOrigin = TransformOrigin(if (mine) 1f else 0f, 1f)
             }
-            .pointerInput(canReply) {
-                if (!canReply) return@pointerInput
+            .pointerInput(canReply, selecting) {
+                if (!canReply || selecting) return@pointerInput
                 val trigger = SwipeTriggerDp.dp.toPx()
                 val limit = SwipeMaxDp.dp.toPx()
                 // Right-swipe = reply (web: 60 trigger / 80 max). Settles back whichever way it ends.
-                fun settle() { scope.launch { animate(dragPx, 0f, animationSpec = tween(motion.enter160, easing = motion.standard)) { v, _ -> dragPx = v } } }
+                fun settle() { scope.launch { animate(dragPx, 0f, animationSpec = tween(motion.base200, easing = motion.standard)) { v, _ -> dragPx = v } } }
                 detectHorizontalDragGestures(
                     onDragEnd = { if (dragPx >= trigger) currentOnReply(); settle() },
                     onDragCancel = { settle() },
                 ) { change, dx ->
                     change.consume()
+                    val before = dragPx
                     dragPx = (dragPx + dx).coerceIn(0f, limit)
+                    if (before < trigger && dragPx >= trigger) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
             },
     ) {
         if (dragPx > 0f) {
+            val progress = (dragPx / triggerPx).coerceIn(0f, 1f)
             val ready = dragPx >= triggerPx
-            Icon(
-                painterResource(R.drawable.ic_reply),
-                contentDescription = null,
-                tint = if (ready) c.accentOther else c.muted,
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = 4.dp).size(18.dp)
-                    .graphicsLayer { alpha = (dragPx / triggerPx).coerceIn(0f, 1f) },
-            )
+            Box(
+                Modifier.align(Alignment.CenterStart).padding(start = 6.dp).size(30.dp)
+                    .graphicsLayer { alpha = progress; scaleX = .6f + .4f * progress; scaleY = scaleX }
+                    .clip(CircleShape).background(if (ready) c.accentOther else c.bgRaised),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(R.drawable.ic_reply), null, tint = if (ready) c.bg else c.textDim, modifier = Modifier.size(16.dp))
+            }
         }
         Column(
             Modifier
@@ -257,7 +331,41 @@ internal fun MessageBubble(
                         .then(if (currentMatch) Modifier.border(2.dp, c.accentOther, shape) else Modifier.border(1.dp, colors.edge, shape))
                         // .chat__message[data-type='alarm'] .chat__message-body { border-left: 4px solid var(--danger) }
                         .then(if (alarm) Modifier.drawBehind { drawRect(c.danger, size = Size(4.dp.toPx(), size.height)) } else Modifier)
-                        .combinedClickable(onClick = { expanded = !expanded }, onLongClick = { menu = true })
+                        .onGloballyPositioned { bubbleBox = it }
+                        .pointerInput(canReply, links) {
+                            detectTapGestures(
+                                onTap = { position ->
+                                    val link = linkAt(position)
+                                    when {
+                                        currentSelecting -> currentOnSelect()
+                                        link != null -> openLink(link.second)
+                                        local(quoteBox, position) != null -> currentOnQuote()
+                                        else -> expanded = !expanded
+                                    }
+                                },
+                                // WhatsApp: double tap = quick reaction bar, long press = select.
+                                onDoubleTap = {
+                                    if (canReply && !currentSelecting) { haptics.performHapticFeedback(HapticFeedbackType.LongPress); reacting = true }
+                                    else if (currentSelecting) currentOnSelect()
+                                },
+                                onLongPress = { position ->
+                                    val link = linkAt(position).takeIf { !currentSelecting }
+                                    if (link != null) copyLink(link)
+                                    else { haptics.performHapticFeedback(HapticFeedbackType.LongPress); currentOnSelect() }
+                                },
+                            )
+                        }
+                        .semantics {
+                            onLongClick("Select message") { currentOnSelect(); true }
+                            customActions = buildList {
+                                if (canReply) {
+                                    add(CustomAccessibilityAction("React") { reacting = true; true })
+                                    add(CustomAccessibilityAction("Reply") { currentOnReply(); true })
+                                }
+                                if (quote != null) add(CustomAccessibilityAction("Go to original message") { currentOnQuote(); true })
+                                links.firstOrNull()?.let { add(CustomAccessibilityAction("Open link") { openLink(it.second); true }) }
+                            }
+                        }
                         // Text bubbles shrink-wrap to their widest child so the quote can stretch to the same width.
                         // Cards (S4) keep their own sizing: they may contain subcomposition that has no intrinsics.
                         .then(if (message.type == "text") Modifier.width(IntrinsicSize.Max) else Modifier)
@@ -265,7 +373,7 @@ internal fun MessageBubble(
                 ) {
                     CompositionLocalProvider(LocalContentColor provides colors.text, LocalBubbleColors provides colors,
                         LocalMessageSaveAction provides saveCopy) {
-                        if (quote != null) QuoteBlock(quote, colors, onQuote)
+                        if (quote != null) QuoteBlock(quote, colors, Modifier.onGloballyPositioned { quoteBox = it })
                         when (message.type) {
                             "text" -> {
                                 // web: mark = accent-you, current row's marks = accent-other, dark text
@@ -275,6 +383,8 @@ internal fun MessageBubble(
                                     text = text,
                                     textColor = colors.text,
                                     description = "${message.content}, $time${if (mine) ", $receipt" else ""}",
+                                    holder = textLayout,
+                                    onTextPositioned = { textBox = it },
                                 ) { MetaRow(time, status, colors, palette, receipt = null) }
                             }
                             // Voice notes keep the time beside the duration line instead of on a row of its own.
@@ -290,24 +400,7 @@ internal fun MessageBubble(
                         if (expanded) Text(message.createdAt, color = colors.meta, style = OneTextStyles.bubbleMeta)
                     }
                 }
-                OneMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (canReply) {
-                        Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
-                            AllowedReactions.forEach { emoji ->
-                                Box(
-                                    Modifier.size(40.dp).clip(CircleShape)
-                                        .clickable(role = Role.Button) { onReact(emoji); menu = false }
-                                        .semantics { contentDescription = "React $emoji" },
-                                    contentAlignment = Alignment.Center,
-                                ) { Text(emoji, fontSize = 20.sp) }
-                            }
-                        }
-                        OneMenuItem("Reply", onClick = { onReply(); menu = false })
-                    }
-                    OneMenuItem("Copy", onClick = { copyMessage(context, message); menu = false })
-                    saveCopy.value?.let { save -> OneMenuItem("Save a copy", onClick = { save(); menu = false }) }
-                    if (message.id != null && !mine) OneMenuItem("Report message", onClick = { onReport(); menu = false })
-                }
+                if (reacting) ReactionBar(colors, mine, myReaction, onPick = { onReact(it); reacting = false }, onDismiss = { reacting = false })
             }
             if (message.reactions.isNotEmpty()) {
                 // Plain emoji tucked 3dp under the bubble, inset 10dp from its outer edge (L955-985).
@@ -337,17 +430,60 @@ internal fun MessageBubble(
     }
 }
 
+/** Opens above the bubble (below when there is no room), on the bubble's own side, so it reads as attached to it. */
+private class AboveAnchor(private val alignEnd: Boolean, private val gap: Int) : PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+        val x = (if (alignEnd) anchorBounds.right - popupContentSize.width else anchorBounds.left)
+            .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
+        val above = anchorBounds.top - popupContentSize.height - gap
+        return IntOffset(x, if (above >= 0) above else anchorBounds.bottom + gap)
+    }
+}
+
+/** Quick reactions in the bubble's own colours. Not focusable, so an open keyboard and the draft stay as they are. */
+@Composable
+private fun ReactionBar(colors: BubbleColors, mine: Boolean, current: String?, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    val gap = with(LocalDensity.current) { 6.dp.roundToPx() }
+    val shown = remember { MutableTransitionState(false) }.apply { targetState = true }
+    Popup(popupPositionProvider = remember(mine, gap) { AboveAnchor(mine, gap) }, onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = false)) {
+        AnimatedVisibility(shown,
+            enter = fadeIn(tween(140)) + scaleIn(spring(dampingRatio = .72f, stiffness = Spring.StiffnessMediumLow), initialScale = .7f,
+                transformOrigin = TransformOrigin(if (mine) 1f else 0f, 1f))) {
+            Row(
+                Modifier.padding(6.dp).shadow(10.dp, CircleShape).clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(colors.backgroundStart, colors.backgroundEnd)))
+                    .border(1.dp, colors.edge, CircleShape).padding(horizontal = 6.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AllowedReactions.forEachIndexed { index, emoji ->
+                    val pop = remember { Animatable(.4f) }
+                    LaunchedEffect(Unit) { delay(index * 28L); pop.animateTo(1f, spring(dampingRatio = .5f, stiffness = Spring.StiffnessMedium)) }
+                    Box(
+                        Modifier.size(42.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }.clip(CircleShape)
+                            .background(if (emoji == current) colors.text.copy(alpha = .18f) else Color.Transparent)
+                            .clickable(role = Role.Button) { onPick(emoji) }
+                            .semantics { contentDescription = if (emoji == current) "Remove reaction $emoji" else "React $emoji" },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(emoji, fontSize = 22.sp) }
+                }
+            }
+        }
+    }
+}
+
 private fun bubbleText(content: String, failed: Boolean, danger: Color, highlight: String, mark: Color): AnnotatedString = buildAnnotatedString {
     append(content)
     matchRanges(content, highlight).forEach { addStyle(SpanStyle(background = mark, color = Color(0xFF04170A)), it.first, it.last + 1) }
-    messageLinks(content).forEach { (range, url) ->
-        addLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))), range.first, range.last + 1)
+    messageLinks(content).forEach { (range, _) ->
+        addStyle(SpanStyle(textDecoration = TextDecoration.Underline), range.first, range.last + 1)
     }
     // .chat__message--failed .chat__message-text::after
     if (failed) withStyle(SpanStyle(color = danger, fontSize = 11.sp)) { append(" · not sent") }
 }
 
-private val UrlPattern = Regex("""(?i)\b(?:https?://|www\.)[^\s<>]+|(?<![@\w.-])(?:[a-z0-9-]+\.)+(?:com|net|org|io|app|dev|co|in|me|info|edu|gov|ai|uk|us|gg|tv|ly)\b(?:/[^\s<>]*)?""")
+private val UrlPattern = Regex("""(?i)\b(?:https?://|www\.)[^\s<>]+|(?<![@\w.-])(?:[a-z0-9-]+\.)+(?:online|site|store|shop|website|tech|space|xyz|live|link|page|blog|club|cloud|digital|world|news|life|fun|art|design|studio|media|today|email|network|agency|company|global|solutions|team|top|pro|biz|com|net|org|io|app|dev|co|in|me|info|edu|gov|ai|uk|us|gg|tv|ly|fm|to|so|sh|am|de|fr|es|it|nl|eu|ca|au|nz|jp|kr|cn|ru|br|mx|pk|bd|lk|np|ae|sa|qa|sg|my|id|ph|za|ng|ke)\b(?:/[^\s<>]*)?""")
 private val PhonePattern = Regex("""(?<![\w+(])[+(]?\d[\d ()-]{5,}\d(?!\w)""")
 private val DatePattern = Regex("""\d{1,4}[-/]\d{1,2}[-/]\d{1,4}""")
 
@@ -366,16 +502,16 @@ internal fun messageLinks(text: String): List<Pair<IntRange, String>> {
 }
 
 @Composable
-private fun QuoteBlock(quote: BubbleQuote, colors: BubbleColors, onClick: () -> Unit) {
+private fun QuoteBlock(quote: BubbleQuote, colors: BubbleColors, modifier: Modifier) {
     val c = OneTheme.colors
     val shape = RoundedCornerShape(OneTheme.radii.xs4)
+    // Taps and long presses are handled by the bubble, so a reply can be selected and reacted to like any message.
     Row(
-        Modifier
+        modifier
             .padding(bottom = 3.dp)
             .fillMaxWidth()
             .clip(shape)
             .background(c.quoteBg)
-            .clickable(role = Role.Button, onClick = onClick)
             .height(IntrinsicSize.Min),
     ) {
         Box(Modifier.width(3.dp).fillMaxHeight().background(colors.text))
@@ -411,13 +547,13 @@ private class TextLayoutHolder { var result: TextLayoutResult? = null }
  * otherwise it gets its own row under the text. Children: [0] the Text, [1] the meta.
  */
 @Composable
-private fun TextWithMeta(text: AnnotatedString, textColor: Color, description: String, meta: @Composable () -> Unit) {
-    val holder = remember { TextLayoutHolder() }
+private fun TextWithMeta(text: AnnotatedString, textColor: Color, description: String, holder: TextLayoutHolder,
+                         onTextPositioned: (LayoutCoordinates) -> Unit = {}, meta: @Composable () -> Unit) {
     val policy = remember(holder) { TextWithMetaPolicy(holder) }
     Layout(
         content = {
             Text(text, color = textColor, style = OneTextStyles.bubbleText, onTextLayout = { holder.result = it },
-                modifier = Modifier.semantics { contentDescription = description })
+                modifier = Modifier.onGloballyPositioned(onTextPositioned).semantics { contentDescription = description })
             meta()
         },
         measurePolicy = policy,

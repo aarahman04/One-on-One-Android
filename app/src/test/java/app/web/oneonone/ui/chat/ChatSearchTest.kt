@@ -14,7 +14,9 @@ class ChatSearchTest {
     @Test fun queryIsTrimmed() = assertEquals(listOf(0, 3), searchMatches(log, "  hello "))
     @Test fun matchesCardSummary() = assertEquals(listOf(2), searchMatches(log, "photo"))
     @Test fun blankQueryMatchesNothing() = assertEquals(emptyList<Int>(), searchMatches(log, "  "))
-    @Test fun rangesFindEveryHitWithoutOverlap() = assertEquals(listOf(0..1, 3..4), matchRanges("aAxaa", "aa"))
+    @Test fun rangesMatchWordStartsOnly() = assertEquals(listOf(0..1, 6..7), matchRanges("aAxaa aa", "aa"))
+    @Test fun heyDoesNotMatchThey() = assertEquals(listOf(1), searchMatches(listOf(msg("they said"), msg("Hey!"), msg("okay")), "hey"))
+    @Test fun regexCharactersAreLiteral() = assertEquals(listOf(4..5), matchRanges("why ?? ok", "??"))
     @Test fun rangesIgnoreCaseAndTrim() = assertEquals(listOf(4..8), matchRanges("say HELLO", " hello "))
     @Test fun rangesEmptyForBlankOrMissing() {
         assertEquals(emptyList<IntRange>(), matchRanges("text", ""))
