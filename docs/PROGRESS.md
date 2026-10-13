@@ -930,6 +930,12 @@ backend calls and chat changes are **not** device-tested. No backend or endpoint
   use the splash vector. Disabled buttons use the neutral surface, border and muted text
   (no faded green). Pre-chat errors are one short line ("No connection. Try again.").
 
+Emulator colour note: on this Windows host the OneOnOne_D3 window shows the app
+background `#0D1017` as `#001515` (teal). `adb screencap` and SurfaceFlinger (identity
+colour matrix, NATIVE mode) confirm the app renders `#0D1017`; every other colour passes
+through unchanged, with software or host GPU. Judge background colour from device
+screenshots or a real phone, not the emulator window.
+
 Xiaomi checklist:
 - [ ] Launcher icon, splash, loading and sign-in logo are sharp.
 - [ ] Sign out from Connect, sign in again: date of birth and Terms are asked again.
@@ -941,3 +947,6 @@ Xiaomi checklist:
 - [ ] Alarm twice within 3 minutes: second shows the wait pill, no failed bubble.
 - [ ] Airplane mode in chat: pill "No connection · Reconnecting…", no port/host text.
 - [ ] Delete account and alarm dialogs open in the middle of the screen.
+- [ ] Background is navy #0D1017 on every intro screen (not teal/green).
+- [ ] Date-of-birth wheel: smooth fling, tick vibration (and click if touch sounds on) per row;
+  Continue disabled until a wheel moves.
