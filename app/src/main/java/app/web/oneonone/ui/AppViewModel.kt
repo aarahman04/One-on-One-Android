@@ -173,10 +173,10 @@ internal fun userError(error: Exception): String {
         } catch (_: Exception) { null }
         // Server errors are plain sentences; status codes never reach the screen.
         return serverMessage?.replaceFirstChar { it.uppercase() }
-            ?: if (error.code() == 429) "Too many tries. Wait a moment and try again." else "Something went wrong. Try again."
+            ?: if (error.code() == 429) "Too many tries. Try again soon." else "Something went wrong. Try again."
     }
     return when (error) {
         is IllegalArgumentException, is IllegalStateException -> error.message ?: "Couldn't complete that action."
-        else -> "Connection problem. Check your internet and try again."
+        else -> "No connection. Try again."
     }
 }

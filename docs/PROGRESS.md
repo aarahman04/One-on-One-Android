@@ -922,7 +922,8 @@ backend calls and chat changes are **not** device-tested. No backend or endpoint
   server-rejected raise is removed instead of left as a failed bubble; both show
   "You just sent an alarm. Please wait a few minutes…". Tests in `MessageServiceTest`.
 - Launcher icon is an adaptive vector (PNG mipmaps deleted); loading and sign-in logos
-  use the splash vector. Disabled buttons now dim their fill and border.
+  use the splash vector. Disabled buttons use the neutral surface, border and muted text
+  (no faded green). Pre-chat errors are one short line ("No connection. Try again.").
 
 Xiaomi checklist:
 - [ ] Launcher icon, splash, loading and sign-in logo are sharp.
