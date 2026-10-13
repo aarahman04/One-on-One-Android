@@ -78,9 +78,7 @@ internal fun LinkPreviewCard(url: String, load: suspend (String) -> LinkPreview?
     val loaded by produceState<LoadedPreview?>(null, url) {
         val preview = load(url) ?: return@produceState
         value = withContext(Dispatchers.Default) {
-            val image = preview.image?.let { encoded ->
-                runCatching { Base64.decode(encoded, Base64.DEFAULT).let { BitmapFactory.decodeByteArray(it, 0, it.size) }?.asImageBitmap() }.getOrNull()
-            }
+            val image = preview.image?.let { encoded -> runCatching { decodeBounded(Base64.decode(encoded, Base64.DEFAULT)) }.getOrNull() }
             LoadedPreview(preview, image)
         }
     }
@@ -96,7 +94,8 @@ internal fun LinkPreviewCard(url: String, load: suspend (String) -> LinkPreview?
         Column(
             Modifier.padding(bottom = 4.dp).width(264.dp).clip(RoundedCornerShape(OneTheme.radii.sm6))
                 .background(colors.text.copy(alpha = .08f))
-                .clickable(role = Role.Button, onClickLabel = "Open link") { runCatching { uriHandler.openUri(p.url) } }
+                // The server's final URL (after redirects) is untrusted: only ever open http(s), else the link as sent.
+                .clickable(role = Role.Button, onClickLabel = "Open link") { runCatching { uriHandler.openUri(safeWebUrl(p.url) ?: url) } }
                 .semantics(mergeDescendants = true) { contentDescription = listOfNotNull(p.siteName, p.title).joinToString(", ") },
         ) {
             if (cover != null) Image(cover, null, Modifier.fillMaxWidth().aspectRatio((cover.width.toFloat() / cover.height).coerceIn(1.4f, 2f)),
@@ -122,6 +121,19 @@ internal fun Reveal(visible: Boolean, content: @Composable () -> Unit) {
         enter = fadeIn(tween(motion.base200)) + expandVertically(tween(240, easing = motion.standard)),
         exit = fadeOut(tween(motion.enter160)) + shrinkVertically(tween(motion.base200, easing = motion.standard))) { content() }
 }
+
+/** Untrusted server data: a small file can still claim huge dimensions, so sample down to at most ~720 px first. */
+private fun decodeBounded(bytes: ByteArray, maxSide: Int = 720): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+}
+
+internal fun safeWebUrl(value: String): String? =
+    runCatching { java.net.URI(value) }.getOrNull()?.takeIf { it.scheme?.lowercase() in setOf("http", "https") && !it.host.isNullOrBlank() }?.toString()
 
 /** WhatsApp's "+": every emoji, by category, with recents (androidx EmojiPickerView). */
 @OptIn(ExperimentalMaterial3Api::class)
