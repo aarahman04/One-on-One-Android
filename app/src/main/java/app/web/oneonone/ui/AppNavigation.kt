@@ -1,6 +1,5 @@
 package app.web.oneonone.ui
 
-import android.app.DatePickerDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -9,7 +8,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -21,11 +25,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -62,7 +70,11 @@ import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.push.PushRegistration
+import kotlinx.coroutines.delay
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 internal const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
@@ -88,7 +100,7 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
         if (state.route != BootRoute.Chat) chatViewModel.close(clear = state.route == BootRoute.Connect)
     }
     LaunchedEffect(state.route, state.needsNotificationOnboarding) {
-        if (state.needsNotificationOnboarding && state.route in setOf(BootRoute.Connect, BootRoute.Waiting, BootRoute.Request, BootRoute.Chat)) {
+        if (state.needsNotificationOnboarding && state.route == BootRoute.Chat) {
             nav.navigate("notifications?first=true") { launchSingleTop = true }
             viewModel.onboardingShown()
         }
@@ -151,20 +163,24 @@ private fun HomeScreen(
 ) {
     if (state.route == BootRoute.Loading) {
         Box(Modifier.fillMaxSize().background(OneColors.Dark.bg), contentAlignment = Alignment.Center) {
-            Image(painterResource(R.mipmap.ic_launcher_foreground), null,
-                Modifier.size(dimensionResource(R.dimen.splash_icon_size)).padding(dimensionResource(R.dimen.splash_icon_inset)))
+            // Same vector at the system splash icon's 240dp, so the hand-off doesn't jump.
+            Image(painterResource(R.drawable.splash_logo), null, Modifier.size(240.dp))
         }
         return
     }
-    ScreenFrame(state) { narrow ->
+    // Connect has two steps: share your ID, or enter theirs. Resets whenever the route changes.
+    var entering by rememberSaveable(state.route) { mutableStateOf(false) }
+    BackHandler(entering) { entering = false }
+    ScreenFrame(state, screenKey = state.route to entering) { _ ->
         when (state.route) {
             BootRoute.Loading -> Unit
             BootRoute.SignIn -> {
-                Image(painterResource(R.mipmap.ic_launcher_foreground), null, Modifier.size(96.dp))
+                // The splash vector has empty space above and below the circles; crop it so the stack stays tight.
+                Image(painterResource(R.drawable.splash_logo), null, Modifier.size(width = 128.dp, height = 64.dp), contentScale = ContentScale.Crop)
                 Eyebrow("ONE")
                 Title("One on One")
                 ScreenSubtitle(stringResource(R.string.tagline))
-                PrimaryButton("Continue with Google", onSignIn, enabled = !state.busy)
+                PrimaryButton("Continue with Google", onSignIn, modifier = BlockWidth, enabled = !state.busy)
                 LegalLinks()
             }
             BootRoute.Age -> AgeScreen(state.busy, onVerify)
@@ -174,48 +190,29 @@ private fun HomeScreen(
                 SecondaryButton("Sign out", onSignOut, enabled = !state.busy)
             }
             BootRoute.Consent -> ConsentScreen(state.busy, onAcceptTerms)
-            BootRoute.Connect -> {
-                Eyebrow("YOUR CONNECTION ID")
+            BootRoute.Connect -> if (entering) {
+                EnterTheirId(state.busy, onRequest, onBack = { entering = false })
+            } else {
                 Title("Your connection ID")
-                ConnectionId(state.me?.connectionCode.orEmpty(), narrow)
-                ScreenSubtitle("Give this ID to the person you want to connect with.")
-                val context = LocalContext.current
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SecondaryButton("Copy", onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Connection ID", state.me?.connectionCode))
-                    }, enabled = !state.busy && state.me != null)
-                    SecondaryButton("Get a new ID", onRegenerate, enabled = !state.busy)
-                }
-                var code by rememberSaveable { mutableStateOf("") }
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
-                    Text("Their connection ID", style = OneTextStyles.cardHint, color = OneTheme.colors.textDim)
-                    OneTextField(code, { code = it.take(8) },
-                        modifier = Modifier.widthIn(max = 240.dp).fillMaxWidth().semantics { contentDescription = "Their connection ID" },
-                        textStyle = (if (narrow) MaterialTheme.typography.bodyLarge else OneTextStyles.subtitle)
-                            .copy(textAlign = TextAlign.Center, letterSpacing = .08.em))
-                }
-                PrimaryButton("Connect", onClick = { onRequest(code) }, enabled = !state.busy)
-                TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
+                ScreenSubtitle("Share this ID to connect.")
+                ConnectionId(state.me?.connectionCode.orEmpty(), state.busy, onRegenerate)
+                PrimaryButton("I have their ID", onClick = { entering = true }, modifier = BlockWidth, enabled = !state.busy)
+                FooterLinks(state.busy, onSettings, onSignOut)
             }
             BootRoute.Waiting -> {
-                Eyebrow("CONNECTION REQUEST SENT")
-                Title("Connection request sent")
+                Title("Request sent")
                 ScreenSubtitle("Waiting for ${state.connection?.otherConnectionCode.orEmpty()} to accept.")
-                SecondaryButton("Cancel request", onClick = { onConnectionAction("cancel") }, enabled = !state.busy)
-                TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
+                SecondaryButton("Cancel request", onClick = { onConnectionAction("cancel") }, modifier = BlockWidth, enabled = !state.busy)
+                FooterLinks(state.busy, onSettings, onSignOut)
             }
             BootRoute.Request -> {
-                Eyebrow("CONNECTION REQUEST")
                 Title("Connection request")
                 ScreenSubtitle("${state.connection?.otherConnectionCode.orEmpty()} wants to connect with you.")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PrimaryButton("Accept", onClick = { onConnectionAction("accept") }, enabled = !state.busy)
-                    DangerButton("Decline", onClick = { onConnectionAction("decline") }, enabled = !state.busy)
+                Row(BlockWidth, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DangerButton("Decline", onClick = { onConnectionAction("decline") }, modifier = Modifier.weight(1f), enabled = !state.busy)
+                    PrimaryButton("Accept", onClick = { onConnectionAction("accept") }, modifier = Modifier.weight(1f), enabled = !state.busy)
                 }
-                TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40))
+                FooterLinks(state.busy, onSettings, onSignOut)
             }
             BootRoute.Chat -> Unit
         }
@@ -249,13 +246,71 @@ internal fun ScreenFrame(state: AppState, screenKey: Any = state.route, content:
 
 @Composable private fun ScreenSubtitle(text: String) { Subtitle(text, Modifier.widthIn(max = 320.dp)) }
 
+/** Shared width for pre-chat cards and buttons so every block lines up. */
+private val BlockWidth = Modifier.widthIn(max = 340.dp).fillMaxWidth()
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConnectionId(code: String, narrow: Boolean) {
-    Surface(shape = RoundedCornerShape(OneTheme.radii.md10), color = OneTheme.colors.bgRaised,
-        border = BorderStroke(1.dp, OneTheme.colors.border), shadowElevation = OneTheme.elevation.e1) {
-        Text(code, Modifier.padding(horizontal = if (narrow) 18.dp else 28.dp, vertical = if (narrow) 12.dp else 16.dp),
-            style = if (narrow) OneTextStyles.connectionId.copy(fontSize = 24.sp, lineHeight = 36.sp) else OneTextStyles.connectionId,
-            color = OneTheme.colors.text, textAlign = TextAlign.Center)
+private fun ConnectionId(code: String, busy: Boolean, onRegenerate: () -> Unit) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) { if (copied) { delay(1_500); copied = false } }
+    val copy = {
+        if (code.isNotEmpty()) {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Connection ID", code))
+            copied = true
+        }
+    }
+    Column(BlockWidth, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(OneTheme.radii.md10), color = OneTheme.colors.bgRaised,
+            border = BorderStroke(1.dp, OneTheme.colors.border), shadowElevation = OneTheme.elevation.e1) {
+            Column(Modifier.combinedClickable(enabled = code.isNotEmpty(), onClickLabel = "Copy connection ID", onLongClickLabel = "Copy connection ID",
+                onClick = copy, onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); copy() })
+                .padding(vertical = 18.dp, horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(code, style = OneTextStyles.connectionId, color = OneTheme.colors.text, textAlign = TextAlign.Center, maxLines = 1)
+                Text(if (copied) "Copied" else "Tap or hold to copy", style = OneTextStyles.cardHint.copy(fontSize = 12.sp),
+                    color = if (copied) OneTheme.colors.accentYou else OneTheme.colors.muted,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SecondaryButton("Copy", onClick = copy, modifier = Modifier.weight(1f), enabled = !busy && code.isNotEmpty())
+            SecondaryButton("New ID", onClick = onRegenerate, modifier = Modifier.weight(1f), enabled = !busy)
+        }
+    }
+}
+
+@Composable
+private fun EnterTheirId(busy: Boolean, onRequest: (String) -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    var code by rememberSaveable { mutableStateOf("") }
+    val accept = { text: String -> code = text.filter(Char::isLetterOrDigit).uppercase().take(8) }
+    Title("Enter their ID")
+    ScreenSubtitle("Paste the ID they shared with you.")
+    OneTextField(code, accept, placeholder = "8-character ID",
+        modifier = BlockWidth.semantics { contentDescription = "Their connection ID" },
+        textStyle = OneTextStyles.connectionId.copy(fontSize = 22.sp, lineHeight = 30.sp, textAlign = TextAlign.Center),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false, imeAction = ImeAction.Go),
+        keyboardActions = KeyboardActions(onGo = { if (!busy && code.length == 8) onRequest(code) }))
+    Row(BlockWidth, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        SecondaryButton("Paste", onClick = {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.let { accept(it.toString()) }
+        }, modifier = Modifier.weight(1f), enabled = !busy)
+        PrimaryButton("Connect", onClick = { onRequest(code) }, modifier = Modifier.weight(1f), enabled = !busy && code.length == 8)
+    }
+    TextLink("Back", onBack, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).wrapContentHeight())
+}
+
+/** Pre-chat footer: sign out is one tap; Settings still holds blocks, legal and account deletion. */
+@Composable
+private fun FooterLinks(busy: Boolean, onSettings: () -> Unit, onSignOut: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8), verticalAlignment = Alignment.CenterVertically) {
+        TextLink("Settings", onSettings, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).wrapContentHeight())
+        Text("·", color = OneTheme.colors.muted, style = OneTextStyles.cardHint)
+        TextLink("Sign out", { if (!busy) onSignOut() }, Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).wrapContentHeight())
     }
 }
 
@@ -277,19 +332,54 @@ private fun LegalLinks() {
 private fun AgeScreen(busy: Boolean, onVerify: (LocalDate) -> Unit) {
     Title("What's your date of birth?")
     ScreenSubtitle("One on One is for adults only. Your date of birth stays on this device.")
-    val context = LocalContext.current
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
-    SecondaryButton(selected ?: "Choose date of birth", onClick = {
-        val today = LocalDate.now()
-        val initial = selected?.let(LocalDate::parse) ?: today
-        DatePickerDialog(context, { _, year, month, day ->
-            selected = LocalDate.of(year, month + 1, day).toString()
-        }, initial.year, initial.monthValue - 1, initial.dayOfMonth).apply {
-            datePicker.maxDate = System.currentTimeMillis()
-            show()
-        }
-    }, enabled = !busy)
-    PrimaryButton("Continue", onClick = { selected?.let { onVerify(LocalDate.parse(it)) } }, enabled = !busy && selected != null)
+    var picking by rememberSaveable { mutableStateOf(false) }
+    SecondaryButton(selected?.let { LocalDate.parse(it).format(DateTimeFormatter.ofPattern("d MMMM yyyy")) } ?: "Choose date of birth",
+        onClick = { picking = true }, modifier = BlockWidth, enabled = !busy)
+    PrimaryButton("Continue", onClick = { selected?.let { onVerify(LocalDate.parse(it)) } }, modifier = BlockWidth, enabled = !busy && selected != null)
+    if (picking) BirthDatePicker(selected?.let(LocalDate::parse), onPick = { selected = it.toString(); picking = false }, onDismiss = { picking = false })
+}
+
+private fun LocalDate.utcMillis() = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+/** Material 3 date picker painted with the app's tokens instead of the platform dialog theme. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BirthDatePicker(initial: LocalDate?, onPick: (LocalDate) -> Unit, onDismiss: () -> Unit) {
+    val c = OneTheme.colors
+    val today = remember { LocalDate.now() }
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = initial?.utcMillis(),
+        initialDisplayedMonthMillis = (initial ?: today.minusYears(18)).utcMillis(),
+        yearRange = 1900..today.year,
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= today.utcMillis()
+            override fun isSelectableYear(year: Int) = year <= today.year
+        },
+    )
+    val colors = DatePickerDefaults.colors(
+        containerColor = c.bgRaised, titleContentColor = c.textDim, headlineContentColor = c.text,
+        weekdayContentColor = c.textDim, subheadContentColor = c.textDim, navigationContentColor = c.text,
+        yearContentColor = c.text, disabledYearContentColor = c.muted, currentYearContentColor = c.accentOther,
+        selectedYearContentColor = c.onPrimary, selectedYearContainerColor = c.accentYou,
+        dayContentColor = c.text, disabledDayContentColor = c.muted, selectedDayContentColor = c.onPrimary,
+        selectedDayContainerColor = c.accentYou, todayContentColor = c.accentOther, todayDateBorderColor = c.accentOther,
+        dividerColor = c.border,
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(OneTheme.radii.md10),
+        colors = colors,
+        confirmButton = {
+            PrimaryButton("Done", onClick = {
+                state.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
+            }, modifier = Modifier.padding(end = OneTheme.spacing.sm8, bottom = OneTheme.spacing.sm8), enabled = state.selectedDateMillis != null)
+        },
+        dismissButton = { TextLink("Cancel", onDismiss, Modifier.padding(end = OneTheme.spacing.sm8, bottom = OneTheme.spacing.sm8)) },
+    ) {
+        DatePicker(state, colors = colors,
+            title = { Text("Date of birth", Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp), style = OneTextStyles.cardHint, color = c.textDim) })
+    }
 }
 
 @Composable
@@ -306,7 +396,7 @@ private fun ConsentScreen(busy: Boolean, onAccept: () -> Unit) {
             style = OneTextStyles.subtitle, color = OneTheme.colors.text)
     }
     LegalLinks()
-    PrimaryButton("Agree and continue", onAccept, enabled = agreed && !busy)
+    PrimaryButton("Agree and continue", onAccept, modifier = BlockWidth, enabled = agreed && !busy)
 }
 
 @Composable

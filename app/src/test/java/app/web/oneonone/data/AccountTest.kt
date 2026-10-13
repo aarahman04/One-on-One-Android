@@ -45,6 +45,7 @@ class FakeDeviceStore : DeviceStore {
     override suspend fun gates() = savedGates
     override suspend fun verifyAge() { savedGates = savedGates.copy(ageVerified = true) }
     override suspend fun acceptTerms() { savedGates = savedGates.copy(termsAccepted = true) }
+    override suspend fun resetGates() { savedGates = Gates() }
     override suspend fun pushToken() = token
     override suspend fun savePushToken(token: String?) { this.token = token }
     override suspend fun onboardingSeen() = seenOnboarding
@@ -151,6 +152,7 @@ class AccountTest {
         repository.signOut()
         assertEquals(listOf("unregister", "signout"), session.operations)
         assertNull(preferences.token)
+        assertEquals(Gates(), preferences.savedGates)
     }
 
     @Test fun deletionOnlyClearsSessionAfterServerSuccess() = runTest {
@@ -165,6 +167,7 @@ class AccountTest {
         repository.deleteAccount()
         assertEquals(listOf("delete", "signout"), session.operations)
         assertNull(preferences.token)
+        assertEquals(Gates(), preferences.savedGates)
     }
 
     @Test fun viewModelRoutesGatesPendingActiveAndSignOut() = runTest {

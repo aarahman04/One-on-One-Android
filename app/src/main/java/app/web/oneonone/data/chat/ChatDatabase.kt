@@ -60,6 +60,7 @@ interface MessageStore {
     suspend fun pending(owner: String, connection: String): List<MessageEntity>
     suspend fun attempt(entity: MessageEntity, now: Long)
     suspend fun fail(entity: MessageEntity, status: String, error: String)
+    suspend fun discard(entity: MessageEntity)
     suspend fun reconcile(owner: String, connection: String, message: ChatMessage)
     suspend fun reaction(owner: String, connection: String, update: ReactionUpdate)
     suspend fun watermark(owner: String, connection: String): String?
@@ -111,6 +112,7 @@ class RoomMessageStore @Inject constructor(private val db: ChatDatabase, private
         dao.get(entity.ownerId, entity.connectionId, entity.key)?.let { dao.put(it.copy(status = status, error = error)) }
         Unit
     }
+    override suspend fun discard(entity: MessageEntity) = dao.delete(entity.ownerId, entity.connectionId, entity.key)
     override suspend fun reconcile(owner: String, connection: String, message: ChatMessage) = db.withTransaction {
         val id = checkNotNull(message.id) { "Missing server message ID." }
         resolvedPendingKey(owner, message)?.let { dao.delete(owner, connection, it) }

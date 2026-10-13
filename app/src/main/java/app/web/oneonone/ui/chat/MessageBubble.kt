@@ -340,11 +340,29 @@ internal fun MessageBubble(
 private fun bubbleText(content: String, failed: Boolean, danger: Color, highlight: String, mark: Color): AnnotatedString = buildAnnotatedString {
     append(content)
     matchRanges(content, highlight).forEach { addStyle(SpanStyle(background = mark, color = Color(0xFF04170A)), it.first, it.last + 1) }
-    Regex("https?://[^\\s<>]+").findAll(content).forEach { match ->
-        addLink(LinkAnnotation.Url(match.value, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))), match.range.first, match.range.last + 1)
+    messageLinks(content).forEach { (range, url) ->
+        addLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))), range.first, range.last + 1)
     }
     // .chat__message--failed .chat__message-text::after
     if (failed) withStyle(SpanStyle(color = danger, fontSize = 11.sp)) { append(" · not sent") }
+}
+
+private val UrlPattern = Regex("""(?i)\b(?:https?://|www\.)[^\s<>]+|(?<![@\w.-])(?:[a-z0-9-]+\.)+(?:com|net|org|io|app|dev|co|in|me|info|edu|gov|ai|uk|us|gg|tv|ly)\b(?:/[^\s<>]*)?""")
+private val PhonePattern = Regex("""(?<![\w+(])[+(]?\d[\d ()-]{5,}\d(?!\w)""")
+private val DatePattern = Regex("""\d{1,4}[-/]\d{1,2}[-/]\d{1,4}""")
+
+/** Tappable spans in a text message: web links (https:// added when missing) and phone numbers (7–15 digits) as tel: links. */
+internal fun messageLinks(text: String): List<Pair<IntRange, String>> {
+    val links = UrlPattern.findAll(text).map { match ->
+        val url = match.value.trimEnd('.', ',', '!', '?', ':', ';', ')', '\'', '"')
+        val target = if (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) url else "https://$url"
+        (match.range.first until match.range.first + url.length) to target
+    }.toList()
+    val phones = PhonePattern.findAll(text)
+        .filter { match -> match.value.count(Char::isDigit) in 7..15 && !DatePattern.matches(match.value) &&
+            links.none { (range, _) -> match.range.first <= range.last && range.first <= match.range.last } }
+        .map { match -> match.range to "tel:" + match.value.filter { it.isDigit() || it == '+' } }
+    return (links + phones).sortedBy { it.first.first }
 }
 
 @Composable

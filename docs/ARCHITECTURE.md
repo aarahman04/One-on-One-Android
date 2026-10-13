@@ -442,3 +442,29 @@ flowchart TD
 ```
 
 Search is client-side over loaded messages only; the full log stays visible.
+
+### Pre-chat flow and gates (2.0.2)
+
+```mermaid
+flowchart TD
+  SignIn["Continue with Google"] --> Age["Date of birth (M3 picker)"] --> Consent["Terms"] --> Connect
+  Connect["Your connection ID: copy / new ID"] -->|I have their ID| Enter["Enter their ID: paste, connect"]
+  Enter -->|Back| Connect
+  Enter -->|request| Waiting["Request sent"]
+  Connect & Waiting & Request["Connection request"] -->|Sign out| Out["AccountRepository.signOut / deleteAccount"]
+  Out -->|resetGates| SignIn
+  Request -->|accept| Chat --> Notif["notifications?first=true (first chat open only)"]
+```
+
+### Chat notices and alarm limit (2.0.2)
+
+```mermaid
+flowchart LR
+  Raise["send alarm raise"] --> Recent{"own raise in last 3 min?"}
+  Recent -->|yes| Refuse["IllegalStateException: wait notice"]
+  Recent -->|no| Queue["outbox → InternetTransport"] --> Ack{"server ack"}
+  Ack -->|rejected| Drop["store.discard + wait notice"]
+  Ack -->|IOException| Queued["stays queued"]
+  State["connectionState ≠ Connected for 2s"] --> Pill["top pill: No connection · Reconnecting…"]
+  Errors["chat / feature / account error"] --> Toast["bottom pill, 4s"]
+```

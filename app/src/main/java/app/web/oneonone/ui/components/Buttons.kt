@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import app.web.oneonone.ui.theme.OneTextStyles
@@ -49,15 +50,16 @@ private fun OneButton(
         modifier = modifier.pressScale(source),
         enabled = enabled,
         shape = RoundedCornerShape(OneTheme.radii.xs4),
-        color = container,
+        color = if (enabled) container else container.copy(alpha = .45f),
         contentColor = content,
-        border = BorderStroke(1.dp, border),
+        border = BorderStroke(1.dp, if (enabled) border else border.copy(alpha = .45f)),
         interactionSource = source,
     ) {
         Text(
             text,
             modifier = Modifier.padding(ButtonPadding),
-            style = OneTextStyles.subtitle.copy(fontWeight = weight),
+            // Surface stretches its child to the button's width; centre the label when a caller widens it.
+            style = OneTextStyles.subtitle.copy(fontWeight = weight, textAlign = TextAlign.Center),
             color = if (enabled) content else content.copy(alpha = .5f),
         )
     }

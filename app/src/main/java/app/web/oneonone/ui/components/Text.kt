@@ -74,7 +74,8 @@ fun OneTextField(
                 color = c.bgRaised,
                 border = BorderStroke(1.dp, if (focused) c.accentOther else c.border),
             ) {
-                Box(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                // Stretch the field to the box so a centred textStyle actually centres.
+                Box(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), propagateMinConstraints = true) {
                     if (value.isEmpty() && placeholder != null) {
                         Text(placeholder, style = textStyle, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }

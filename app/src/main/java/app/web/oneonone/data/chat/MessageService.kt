@@ -155,6 +155,14 @@ class MessageService @Inject constructor(
             "Messages must be 1–4000 characters."
         }
         validateFeaturePayload(session.connectionId, type, payload)
+        if (isAlarmRaise(type, payload)) {
+            // Contract: one raise per user per 3 minutes. Refuse locally instead of queueing a send that will bounce.
+            val cutoff = Instant.now().minusSeconds(180)
+            val recent = store.observe(session.ownerId, session.connectionId).first().any {
+                it.senderId == session.ownerId && isAlarmRaise(it.type, it.payload) && Instant.parse(it.createdAt).isAfter(cutoff)
+            }
+            check(!recent) { ALARM_WAIT }
+        }
         val tempId = clientTempId ?: UUID.randomUUID().toString()
         require(tempId.matches(Regex("[A-Za-z0-9-]{1,64}"))) { "Invalid send ID." }
         if (store.byTempId(session.ownerId, session.connectionId, tempId) != null) return@withLock tempId
@@ -199,7 +207,13 @@ class MessageService @Inject constructor(
                 throw cancelled // 'sending' is persisted, so process death still replays the same tempId.
             } catch (error: Exception) {
                 val transient = error is java.io.IOException
-                store.fail(entry, if (transient) "queued" else "failed", error.message ?: "Send failed.")
+                if (!transient && isAlarmRaise(message.type, message.payload)) {
+                    // A rejected alarm is dropped, not left as a failed bubble; the reason shows as a notice.
+                    store.discard(entry)
+                    mutableError.value = if (error.message?.contains("wait", ignoreCase = true) == true) ALARM_WAIT else friendlyError(error)
+                    continue
+                }
+                store.fail(entry, if (transient) "queued" else "failed", if (transient) "Waiting for connection…" else friendlyError(error))
                 if (transient) break
             }
             delay(200) // Stay comfortably below the server's 60-events/10-second flood limit.
@@ -260,6 +274,16 @@ class MessageService @Inject constructor(
 
     private suspend fun guarded(block: suspend () -> Unit) {
         try { block() } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { mutableError.value = error.message ?: "Couldn't sync. Try again." }
+        catch (error: Exception) { mutableError.value = friendlyError(error) }
     }
+}
+
+private const val ALARM_WAIT = "You just sent an alarm. Please wait a few minutes before sending another."
+
+private fun isAlarmRaise(type: String, payload: JsonObject?) = type == "alarm" && payload?.get("ack") == null
+
+/** User-facing text only: network internals (hosts, ports, codes) never reach the screen. */
+internal fun friendlyError(error: Exception): String = when (error) {
+    is java.io.IOException -> "Connection problem. Reconnecting…"
+    else -> error.message?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: "Something went wrong. Try again."
 }

@@ -667,15 +667,16 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | 1.0.4 | 5 | 2026-10-09 | [37893939464](https://github.com/aarahman04/One-on-One-Android/actions/runs/37893939464) | A0–A7 native app |
 | 1.0.5 | 6 | 2026-10-10 | [37998420889](https://github.com/aarahman04/One-on-One-Android/actions/runs/37998420889) | A0–A7 + S1–S5 web-styling restyle |
 | 2.0.0 | 7 | 2026-10-10 | [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794) | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
-| 2.0.1 | 8 | pending dispatch | — | Scroll-to-end, web-parity search, crisp splash logo |
+| 2.0.1 | 8 | 2026-10-13 | [38348089207](https://github.com/aarahman04/One-on-One-Android/actions/runs/38348089207) | Scroll-to-end, web-parity search, crisp splash logo |
+| 2.0.2 | 9 | pending dispatch | — | Onboarding/connect redesign, gates per sign-in, links, friendly errors, vector icons |
 
 - Both built by the `android-build` workflow (manual dispatch on `main`); version
   name/code are workflow inputs, not stored in the repo. Signed with the existing
   Play upload key (SHA-1 check in the release job passed). Use the
   `android-release` artifact (AAB + APK); `android-debug` and
   `android-release-smoke-unsigned` are test-only.
-- Not yet uploaded to Play. 2.0.1 uses versionCode 8 (workflow defaults now 8 / 2.0.1);
-  **the upload after it needs versionCode 9 or higher.**
+- 2.0.2 uses versionCode 9 (workflow defaults now 9 / 2.0.2);
+  **the upload after it needs versionCode 10 or higher.**
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
   S2–S5 device checklists above, then upload the AAB to internal testing.
 
@@ -892,3 +893,45 @@ green); nothing device-tested. No backend, endpoint or cache changes.
   newest; ▲/▼ step and wrap; keyboard Search steps older.
 - [ ] Back button / ✕ closes search and clears highlights; tapping a quote still jumps.
 - [ ] Rotate, dark mode, Love and Samurai wallpapers: highlights readable.
+
+## 2.0.2 — onboarding and connect polish (2026-10-13)
+
+Branch `fix/onboarding-connect`. `assembleDebug lintDebug testDebugUnitTest` green.
+Emulator-checked (OneOnOne_D3, 1080×2400) via a local, uncommitted route harness with a
+dummy ID `K7F29PQ2`: sign-in, age + date picker, consent, connect, enter-their-ID,
+request, account delete dialog. No Google account on the emulator, so the real sign-in,
+backend calls and chat changes are **not** device-tested. No backend or endpoint changes.
+
+- Connect: one title (duplicate eyebrow removed), short subtitle, full-width ID card
+  (tap or hold copies, haptic + "Copied"), equal Copy / New ID buttons, primary
+  "I have their ID" opens a separate step (paste button, uppercase 8-char field,
+  IME Go, Back + system back). Footer is Settings · Sign out (Settings keeps blocks,
+  legal and account deletion, which Play requires to stay reachable).
+- Waiting / Request: duplicate eyebrows removed, full-width buttons, same footer.
+- Age and Terms gates are cleared on sign-out and account deletion, so every sign-in
+  (new, re-created or another account) asks again. Still per-device, as on web.
+- Date of birth uses a Material 3 picker in app colours (opens on 18 years ago,
+  future dates disabled); the button shows the chosen date as "15 October 2008".
+- Notification prompt now appears when the chat first opens, not after Terms.
+- Every centred modal (alarm, delete account, reports…) is vertically centred.
+- Chat links: bare domains (`google.com`, `www.…`) open with https, phone numbers
+  (7–15 digits, not dates) open the dialer. `MessageLinksTest`.
+- Errors never show ports, hosts or HTTP codes. Chat shows a "No connection ·
+  Reconnecting…" pill (after 2s offline) and other errors as a 4-second pill.
+- Alarm raise: refused locally within 3 minutes of your last raise (contract limit) and a
+  server-rejected raise is removed instead of left as a failed bubble; both show
+  "You just sent an alarm. Please wait a few minutes…". Tests in `MessageServiceTest`.
+- Launcher icon is an adaptive vector (PNG mipmaps deleted); loading and sign-in logos
+  use the splash vector. Disabled buttons now dim their fill and border.
+
+Xiaomi checklist:
+- [ ] Launcher icon, splash, loading and sign-in logo are sharp.
+- [ ] Sign out from Connect, sign in again: date of birth and Terms are asked again.
+- [ ] Delete account, sign in with the same Google account: both gates asked again.
+- [ ] Notification prompt appears only once the chat opens.
+- [ ] Hold the ID card: copies with a buzz and "Copied". "I have their ID" → Paste →
+  Connect works; Back returns.
+- [ ] In chat, send `google.com`, `https://x.com` and `+91 98765 43210`: each opens.
+- [ ] Alarm twice within 3 minutes: second shows the wait pill, no failed bubble.
+- [ ] Airplane mode in chat: pill "No connection · Reconnecting…", no port/host text.
+- [ ] Delete account and alarm dialogs open in the middle of the screen.

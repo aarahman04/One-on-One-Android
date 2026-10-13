@@ -174,7 +174,7 @@ class CallManager @Inject constructor(
             if (mutableState.value is CallUi.Outgoing) mutableState.value = CallUi.Outgoing(callId, kind, peer)
             else runCatching { signaling.end(callId) } // hung up while inviting
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { finish(error.message ?: "Call failed") }
+        catch (error: Exception) { finish(callError(error)) }
     }
     private var outgoingIce: List<IceServerSpec> = emptyList()
 
@@ -214,7 +214,7 @@ class CallManager @Inject constructor(
             val ice = signaling.accept(incoming.callId)
             beginMedia(incoming.callId, incoming.kind, incoming.peer, ice, caller = false)
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { finish(error.message ?: "Call failed") }
+        catch (error: Exception) { finish(callError(error)) }
     }
 
     private suspend fun beginMedia(callId: String, kind: CallKind, peer: String, ice: List<IceServerSpec>, caller: Boolean) {
@@ -294,3 +294,7 @@ class CallManager @Inject constructor(
         catch (_: Exception) { /* a bad SDP/candidate must not kill the call loop; the link timer handles failure */ }
     }
 }
+
+/** Signaling errors carry the server's sentence; network internals never reach the call screen. */
+private fun callError(error: Exception): String =
+    if (error is java.io.IOException) "Call failed. Check your connection." else error.message?.replaceFirstChar { it.uppercase() } ?: "Call failed"

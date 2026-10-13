@@ -25,11 +25,14 @@ class AccountRepository @Inject constructor(
         preferences.pushToken()?.let { api.unregister(TokenBody(it)) }
         preferences.savePushToken(null)
         auth.signOut()
+        // Age and Terms gates are re-asked on every sign-in, including a re-created account.
+        preferences.resetGates()
     }
     suspend fun deleteAccount() = mutations.mutex.withLock {
         api.deleteAccount()
         preferences.savePushToken(null)
         auth.signOut()
+        preferences.resetGates()
     }
 }
 
