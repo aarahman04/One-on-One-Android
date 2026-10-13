@@ -38,6 +38,9 @@ import retrofit2.http.Path
     val otherLastDeliveredAt: String?,
     val wallpaper: String,
     val messageStyle: String,
+    val pinnedMessageId: String? = null,
+    val pinnedBy: String? = null,
+    val pinnedAt: String? = null,
 )
 
 interface AccountApi {

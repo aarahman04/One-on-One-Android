@@ -210,34 +210,51 @@ class MediaRepository @Inject constructor(
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         check(fine || coarse) { "Location access was denied." }
         val manager = context.getSystemService(LocationManager::class.java)
-        val provider = if (fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) LocationManager.GPS_PROVIDER
-            else LocationManager.NETWORK_PROVIDER.takeIf { manager.isProviderEnabled(it) }
-        check(provider != null) { "Turn on location in phone settings and try again." }
-        val location = withTimeoutOrNull(10_000) { suspendCancellableCoroutine<Location?> { continuation ->
-            if (Build.VERSION.SDK_INT >= 30) {
-                val cancellation = CancellationSignal()
-                manager.getCurrentLocation(provider, cancellation, context.mainExecutor) { if (continuation.isActive) continuation.resume(it) }
-                continuation.invokeOnCancellation { cancellation.cancel() }
-            } else {
-                val listener = object : LocationListener {
-                    override fun onLocationChanged(location: Location) {
-                        manager.removeUpdates(this)
-                        if (continuation.isActive) continuation.resume(location)
-                    }
-                    override fun onProviderEnabled(provider: String) { }
-                    override fun onProviderDisabled(provider: String) { }
-                    @Deprecated("Required on Android 26–28")
-                    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) { }
-                }
-                @Suppress("DEPRECATION")
-                manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
-                continuation.invokeOnCancellation { manager.removeUpdates(listener) }
-            }
-        } } ?: error("Couldn't get your location. Try again.")
+        val providers = buildList {
+            if (Build.VERSION.SDK_INT >= 31) add(LocationManager.FUSED_PROVIDER)
+            add(LocationManager.NETWORK_PROVIDER)
+            if (fine) add(LocationManager.GPS_PROVIDER)
+        }.filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        check(providers.isNotEmpty()) { "Turn on location in phone settings and try again." }
+        @Suppress("MissingPermission") // checked above
+        fun lastKnown(maxAgeMs: Long) = providers.mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }
+            .filter { SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos <= maxAgeMs * 1_000_000 }
+            .maxByOrNull { it.elapsedRealtimeNanos }
+        // A fix from the last 2 minutes is a fine snapshot. Otherwise ask every enabled provider at once and take the
+        // first answer: GPS alone often never fixes indoors, which used to time out and send nothing.
+        val location = lastKnown(2 * 60_000L) ?: withTimeoutOrNull(20_000) { coroutineScope {
+            val answer = CompletableDeferred<Location>()
+            val requests = providers.map { provider -> launch { currentLocation(manager, provider)?.let { answer.complete(it) } } }
+            launch { requests.joinAll(); answer.completeExceptionally(IllegalStateException("no fix")) }
+            runCatching { answer.await() }.getOrNull().also { coroutineContext.cancelChildren() }
+        } } ?: lastKnown(30 * 60_000L) ?: error("Couldn't get your location. Go near a window or outside and try again.")
         return buildJsonObject {
             put("lat", round(location.latitude * 100_000) / 100_000)
             put("lng", round(location.longitude * 100_000) / 100_000)
             if (location.hasAccuracy()) put("accuracy", round(location.accuracy.toDouble()))
+        }
+    }
+
+    @Suppress("MissingPermission") // callers check the permission first
+    private suspend fun currentLocation(manager: LocationManager, provider: String): Location? = suspendCancellableCoroutine { continuation ->
+        if (Build.VERSION.SDK_INT >= 30) {
+            val cancellation = CancellationSignal()
+            manager.getCurrentLocation(provider, cancellation, context.mainExecutor) { if (continuation.isActive) continuation.resume(it) }
+            continuation.invokeOnCancellation { cancellation.cancel() }
+        } else {
+            val listener = object : LocationListener {
+                override fun onLocationChanged(location: Location) {
+                    manager.removeUpdates(this)
+                    if (continuation.isActive) continuation.resume(location)
+                }
+                override fun onProviderEnabled(provider: String) { }
+                override fun onProviderDisabled(provider: String) { if (continuation.isActive) continuation.resume(null) }
+                @Deprecated("Required on Android 26–28")
+                override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) { }
+            }
+            @Suppress("DEPRECATION")
+            manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+            continuation.invokeOnCancellation { manager.removeUpdates(listener) }
         }
     }
 

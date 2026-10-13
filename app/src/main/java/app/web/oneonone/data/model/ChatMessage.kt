@@ -14,6 +14,9 @@ data class ChatMessage(
     val replyTo: String? = null,
     val reactions: List<ReactionSummary> = emptyList(),
     val tempId: String? = null,
+    // Server-set (migration 036): edited text / deleted for everyone (content then empty, payload null).
+    val editedAt: String? = null,
+    val deletedAt: String? = null,
     // Local presentation only; never sent as part of message:send.
     val deliveryState: String = "sent",
     val error: String? = null,
@@ -38,3 +41,19 @@ data class ChatMessage(
 @Serializable data class ReactionUpdate(val messageId: String, val emoji: String, val userId: String, val op: String)
 
 val AllowedReactions = listOf("❤️", "👍", "😂", "😮", "😢", "🙏")
+@Serializable data class TypingUpdate(val userId: String, val typing: Boolean)
+/** The connection's one shared pin; messageId null = nothing pinned. */
+@Serializable data class PinState(val messageId: String? = null, val pinnedBy: String? = null, val pinnedAt: String? = null)
+@Serializable data class LinkPreview(
+    val url: String,
+    val title: String? = null,
+    val description: String? = null,
+    val siteName: String,
+    val image: String? = null,
+    val imageMime: String? = null,
+    val imageKind: String? = null,
+)
+@Serializable data class LinkPreviewResult(val preview: LinkPreview? = null)
+
+/** Edit and delete-for-everyone window (server: messageService.EDIT_WINDOW_MS). */
+const val EditWindowMs = 30 * 60_000L

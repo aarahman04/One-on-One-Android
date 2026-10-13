@@ -1,0 +1,181 @@
+package app.web.oneonone
+
+import android.content.Context
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.room.Room
+import app.web.oneonone.call.CallLauncher
+import app.web.oneonone.data.DevicePreferences
+import app.web.oneonone.data.api.AccountApi
+import app.web.oneonone.data.api.CurrentConnection
+import app.web.oneonone.data.auth.AccountSession
+import app.web.oneonone.data.chat.ChatDatabase
+import app.web.oneonone.data.chat.MessageService
+import app.web.oneonone.data.chat.RoomMessageStore
+import app.web.oneonone.data.media.AttachmentApi
+import app.web.oneonone.data.media.MediaRepository
+import app.web.oneonone.data.model.*
+import app.web.oneonone.data.realtime.ConnectionState
+import app.web.oneonone.data.transport.Transport
+import app.web.oneonone.ui.chat.ChatScreen
+import app.web.oneonone.ui.chat.ChatViewModel
+import app.web.oneonone.ui.chat.FeatureViewModel
+import app.web.oneonone.ui.theme.OneOnOneTheme
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
+import retrofit2.Retrofit
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.time.Instant
+import java.util.UUID
+
+/**
+ * DEBUG BUILDS ONLY ("1on1 Demo" launcher icon). The real ChatScreen, ViewModels, MessageService and Room store,
+ * wired to [DemoTransport]: a scripted "Alex" who types, replies, reacts and can raise an alarm, with link previews
+ * produced by the real server unfurler (baked into assets/demo_previews.json). No backend, no sign-in.
+ * Send "alarm" to have Alex raise an emergency alarm.
+ */
+class DemoChatActivity : ComponentActivity() {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val transport by lazy { DemoTransport(this, json, scope) }
+    private val service by lazy {
+        val db = Room.inMemoryDatabaseBuilder(applicationContext, ChatDatabase::class.java).build()
+        MessageService(transport, RoomMessageStore(db, json), DemoSession, json, scope)
+    }
+    // Nothing here reaches a server: account/media calls fail with the app's normal "no connection" message.
+    private val retrofit by lazy {
+        Retrofit.Builder().baseUrl("https://demo.invalid/").addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build()
+    }
+    private val account by lazy { retrofit.create(AccountApi::class.java) }
+    private val launcher = object : CallLauncher {
+        override fun start(kind: app.web.oneonone.call.CallKind) {
+            runOnUiThread { Toast.makeText(this@DemoChatActivity, "Calls need the real backend", Toast.LENGTH_SHORT).show() }
+        }
+    }
+    private val chat: ChatViewModel by viewModels { viewModelFactory { initializer { ChatViewModel(service, account, launcher, createSavedStateHandle()) } } }
+    private val features: FeatureViewModel by viewModels { viewModelFactory { initializer {
+        FeatureViewModel(service, account, MediaRepository(applicationContext, retrofit.create(AttachmentApi::class.java), json),
+            DevicePreferences(applicationContext), createSavedStateHandle())
+    } } }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        val connection = CurrentConnection(id = DemoTransport.CONNECTION, status = "active", myUserId = DemoTransport.ME, isRequester = true,
+            otherNickname = "Alex", otherConnectionCode = "", myLeaveStep = 0, otherLeaveStep = 0, daysRemaining = null, bothLeaving = false,
+            canAdvanceLeave = true, otherLastReadAt = null, otherLastDeliveredAt = null, wallpaper = "off", messageStyle = "bubbles")
+        setContent {
+            OneOnOneTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    ChatScreen(connection, chat, features, onSettings = {}, onAccount = {}, onRefresh = {})
+                }
+            }
+        }
+    }
+}
+
+private object DemoSession : AccountSession {
+    override val signedIn = MutableStateFlow(true)
+    override suspend fun signIn(activityContext: Context) {}
+    override suspend fun signOut() {}
+    override suspend fun accessToken() = "demo"
+    override suspend fun refreshToken(rejectedToken: String) = "demo"
+    override suspend fun invalidate(rejectedToken: String) {}
+}
+
+private class DemoTransport(context: Context, private val json: Json, private val scope: CoroutineScope) : Transport {
+    companion object {
+        const val ME = "00000000-0000-4000-8000-000000000001"
+        const val ALEX = "00000000-0000-4000-8000-000000000002"
+        const val CONNECTION = "00000000-0000-4000-8000-0000000000aa"
+    }
+    private val previews: Map<String, LinkPreview?> = runCatching {
+        json.decodeFromString<Map<String, LinkPreview?>>(context.assets.open("demo_previews.json").bufferedReader().readText())
+    }.getOrDefault(emptyMap())
+    override val state = MutableStateFlow(ConnectionState.Connected)
+    override val incoming = MutableSharedFlow<ChatMessage>(extraBufferCapacity = 32)
+    override val receipts = MutableSharedFlow<ReceiptUpdate>(extraBufferCapacity = 32)
+    override val reactions = MutableSharedFlow<ReactionUpdate>(extraBufferCapacity = 32)
+    override val ended = MutableSharedFlow<Unit>()
+    override val updates = MutableSharedFlow<ChatMessage>(extraBufferCapacity = 32)
+    override val typing = MutableSharedFlow<TypingUpdate>(extraBufferCapacity = 32)
+    override val pins = MutableSharedFlow<PinState>(extraBufferCapacity = 8)
+    private val all = linkedMapOf<String, ChatMessage>()
+    private var replies = 0
+
+    private fun at(minutesAgo: Long) = Instant.now().minusSeconds(minutesAgo * 60).toString()
+    private fun msg(from: String, text: String, minutesAgo: Long, replyTo: String? = null, id: String = UUID.randomUUID().toString()) =
+        ChatMessage(id = id, senderId = from, content = text, createdAt = at(minutesAgo), replyTo = replyTo)
+
+    init {
+        val first = msg(ALEX, "Hey! Did you see this? https://www.youtube.com/watch?v=dQw4w9WgXcQ", 180, id = "00000000-0000-4000-8000-0000000000b1")
+        listOf(
+            first,
+            msg(ME, "Haha classic. This is on repeat for me today https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT", 175),
+            msg(ALEX, "Also thinking of getting this https://www.amazon.in/dp/B0CHX1W1XY", 120),
+            msg(ME, "Call me on +91 98765 43210 when you're free, or check shirt.online", 110, replyTo = first.id),
+            msg(ALEX, "My new profile 👉 https://www.instagram.com/instagram/", 60),
+            msg(ME, "Typo-ed message you can still edit or delete (sent 5 min ago)", 5),
+        ).forEach { all[checkNotNull(it.id)] = it }
+    }
+
+    override suspend fun start() {}
+    override suspend fun stop() {}
+    override suspend fun history(connectionId: String, before: String?, after: String?): List<ChatMessage> =
+        if (before == null && after == null) all.values.toList() else emptyList()
+    override suspend fun markRead(connectionId: String) {}
+
+    override suspend fun send(message: SendMessage): ChatMessage {
+        delay(250)
+        val saved = ChatMessage(id = UUID.randomUUID().toString(), senderId = ME, content = message.content, createdAt = Instant.now().toString(),
+            type = message.type, payload = message.payload, replyTo = message.replyTo, tempId = message.tempId)
+        all[checkNotNull(saved.id)] = saved
+        if (message.type == "text") scope.launch { alexResponds(saved) }
+        return saved
+    }
+
+    private suspend fun alexResponds(to: ChatMessage) {
+        delay(700); receipts.emit(ReceiptUpdate(ALEX, lastReadAt = Instant.now().toString(), lastDeliveredAt = Instant.now().toString()))
+        if (to.content.trim().equals("alarm", ignoreCase = true)) {
+            delay(800)
+            val raise = ChatMessage(id = UUID.randomUUID().toString(), senderId = ALEX, content = "", createdAt = Instant.now().toString(), type = "alarm")
+            all[checkNotNull(raise.id)] = raise; incoming.emit(raise); return
+        }
+        typing.emit(TypingUpdate(ALEX, true)); delay(2_200)
+        val lines = listOf("Haha nice 😄", "Totally agree", "Sending you this too: https://github.com/aarahman04", "Okay, talk soon!",
+            "Read this later https://en.wikipedia.org/wiki/Android_(operating_system)")
+        val reply = ChatMessage(id = UUID.randomUUID().toString(), senderId = ALEX, content = lines[replies++ % lines.size],
+            createdAt = Instant.now().toString(), replyTo = to.id.takeIf { replies % 3 == 0 })
+        all[checkNotNull(reply.id)] = reply
+        incoming.emit(reply)
+        if (replies % 2 == 0) { delay(600); reactions.emit(ReactionUpdate(checkNotNull(to.id), "❤️", ALEX, "add")) }
+    }
+
+    override suspend fun react(messageId: String, emoji: String, remove: Boolean) {
+        reactions.emit(ReactionUpdate(messageId, emoji, ME, if (remove) "remove" else "add"))
+    }
+    override suspend fun edit(messageId: String, content: String): ChatMessage {
+        val edited = checkNotNull(all[messageId]).copy(content = content, editedAt = Instant.now().toString())
+        all[messageId] = edited; return edited
+    }
+    override suspend fun delete(messageId: String): ChatMessage {
+        val gone = checkNotNull(all[messageId]).copy(content = "", payload = null, reactions = emptyList(), deletedAt = Instant.now().toString())
+        all[messageId] = gone; return gone
+    }
+    override suspend fun pin(messageId: String?) = PinState(messageId, messageId?.let { ME }, messageId?.let { Instant.now().toString() })
+    override fun typing(active: Boolean) {}
+    override suspend fun linkPreview(url: String): LinkPreview? { delay(400); return previews[url] }
+}
+

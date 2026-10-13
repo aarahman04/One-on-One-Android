@@ -32,6 +32,8 @@ object CallNotifications {
      */
     @Volatile private var token: String? = null
     @Volatile private var ringingCallId: String? = null
+    /** MainActivity is started (on screen). The call screen then rings itself, so the notification stays quiet. */
+    @Volatile var appVisible = false
 
     fun tokenValid(value: String?, callId: String?): Boolean =
         token != null && token == value && callId != null && callId == ringingCallId
@@ -57,6 +59,7 @@ object CallNotifications {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setTimeoutAfter(RING_TIMEOUT_MS)
+            .setSilent(appVisible)
             .setFullScreenIntent(activity(3_002, ACTION_SHOW), true)
             .setContentIntent(activity(3_002, ACTION_SHOW))
             .setStyle(NotificationCompat.CallStyle.forIncomingCall(person, decline, activity(3_001, ACTION_ANSWER))

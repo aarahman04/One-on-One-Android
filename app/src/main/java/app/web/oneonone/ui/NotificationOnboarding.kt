@@ -104,6 +104,20 @@ private fun NotificationFirstRunPreview(@PreviewParameter(ScreenThemePreviews::c
     OneOnOneTheme(darkTheme = dark) { NotificationContent(false, false, 34, null, true, {}, {}, {}, {}, {}, {}, {}) }
 }
 
+/** Shown on entering the chat while notifications are off (again every 3 days); "Turn on" opens the app's notification settings. */
+@Composable
+fun NotificationReminderDialog(onDone: () -> Unit) {
+    val context = LocalContext.current
+    app.web.oneonone.ui.chat.FeatureModal(onDismissRequest = onDone,
+        title = { Text("Turn on notifications?") },
+        text = { Text("Without notifications you'll miss messages, calls and emergency alarms while One on One is closed.") },
+        confirmButton = { PrimaryButton("Turn on", onClick = {
+            openSetting(context, listOf(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)))
+            onDone()
+        }) },
+        dismissButton = { SecondaryButton("Not now", onClick = onDone) })
+}
+
 private fun component(packageName: String, className: String) = Intent().setComponent(ComponentName(packageName, className))
 
 internal fun autostartIntents(manufacturer: String): List<Intent> = when (manufacturer.lowercase(Locale.ROOT)) {

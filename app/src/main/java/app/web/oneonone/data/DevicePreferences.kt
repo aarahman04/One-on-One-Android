@@ -3,6 +3,7 @@ package app.web.oneonone.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,6 +26,8 @@ interface DeviceStore {
     suspend fun onboardingSeen(): Boolean
     suspend fun markOnboardingSeen()
     suspend fun claimNotification(messageId: String): Boolean
+    /** True at most once per [NOTIFICATION_REMINDER_MS]; a true result starts the next wait. */
+    suspend fun claimNotificationReminder(now: Long): Boolean = false
     val theme: Flow<String>
     suspend fun setTheme(value: String)
     suspend fun letterSignature(): String
@@ -41,6 +44,7 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     private val handledPushes = stringPreferencesKey("handledMessagePushes")
     private val themeKey = stringPreferencesKey("appearanceTheme")
     private val signature = stringPreferencesKey("letterFrom")
+    private val reminderAt = longPreferencesKey("notificationReminderAt")
     override val theme = store.data.map { it[themeKey] ?: "dark" }
     override suspend fun setTheme(value: String) {
         require(value in setOf("light", "dark"))
@@ -57,7 +61,13 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
         if (token == null) it.remove(pushToken) else it[pushToken] = token
     } }
     override suspend fun onboardingSeen() = store.data.first()[onboarding] == true
-    override suspend fun markOnboardingSeen() { store.edit { it[onboarding] = true } }
+    // The onboarding page already asked, so the first reminder waits a full interval.
+    override suspend fun markOnboardingSeen() { store.edit { it[onboarding] = true; it[reminderAt] = System.currentTimeMillis() } }
+    override suspend fun claimNotificationReminder(now: Long): Boolean {
+        var claimed = false
+        store.edit { if (notificationReminderDue(it[reminderAt], now)) { it[reminderAt] = now; claimed = true } }
+        return claimed
+    }
     override suspend fun claimNotification(messageId: String): Boolean {
         var claimed = false
         store.edit { preferences ->
@@ -71,5 +81,9 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
         return claimed
     }
 }
+
+const val NOTIFICATION_REMINDER_MS = 3L * 24 * 60 * 60 * 1000
+
+internal fun notificationReminderDue(last: Long?, now: Long): Boolean = last == null || now - last >= NOTIFICATION_REMINDER_MS || now < last
 
 data class Gates(val ageVerified: Boolean = false, val termsAccepted: Boolean = false)

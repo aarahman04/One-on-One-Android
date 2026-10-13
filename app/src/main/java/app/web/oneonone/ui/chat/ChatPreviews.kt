@@ -34,7 +34,7 @@ private fun Host(dark: Boolean, content: @Composable () -> Unit) {
 @Composable
 private fun PreviewBubble(m: ChatMessage, mine: Boolean, palette: BubblePalette, groupStart: Boolean = true, receipt: String = "Read", quote: BubbleQuote? = null) =
     MessageBubble(m, mine, palette, receipt, groupStart = groupStart, animateIn = false, quote = quote,
-        onReply = {}, onReact = {}, onRetry = {}, onQuote = {}, onReport = {}, card = { Text("card") })
+        onReply = {}, onReact = {}, onRetry = {}, onQuote = {}, card = { Text("card") })
 
 @Composable
 private fun Conversation(palette: BubblePalette) {

@@ -41,7 +41,7 @@ private fun CardPreview(palette: BubblePalette, message: ChatMessage, content: @
             listOf(false, true).forEach { mine ->
                 val colors = if (mine) palette.mine else palette.other
                 CompositionLocalProvider(LocalBubbleColors provides colors, LocalContentColor provides colors.text, LocalInspectionMode provides true) {
-                    MessageBubble(message, mine, palette, "Read", true, false, null, {}, {}, {}, {}, {}, card = { content(mine) })
+                    MessageBubble(message, mine, palette, "Read", true, false, null, {}, {}, {}, {}, card = { content(mine) })
                 }
             }
         }

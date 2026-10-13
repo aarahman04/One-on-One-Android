@@ -12,6 +12,7 @@ data class BubbleColors(
     val edge: Color,
 )
 
+/** read: the deepest blue that still clears 3:1 on each palette's sent bubble (dark blue on light bubbles). */
 data class BubblePalette(val mine: BubbleColors, val other: BubbleColors, val ticks: Color, val read: Color)
 
 object BubbleTokens {
@@ -24,27 +25,27 @@ object BubbleTokens {
             Color(0xFFF2FFF6), Color(0xFFCDEED8), BrandGreen.copy(alpha = .38f)),
         other = BubbleColors(Color(0xFF1F4468), Color(0xFF183552), Color(0xFF1B3C5D),
             Color(0xFFEAF4FF), Color(0xFFA9C7E4), BrandBlue.copy(alpha = .34f)),
-        ticks = Color(0xFFCDEED8), read = Color(0xFF8FD0FF),
+        ticks = Color(0xFFCDEED8), read = Color(0xFF5AB4FF),
     )
     val Light = BubblePalette(
         mine = BubbleColors(Color(0xFFD6F6D8), Color(0xFFC3EEC8), Color(0xFFCBF1CF),
             Color(0xFF0F2E1A), Color(0xFF3A5F45), Color(0xFF1A7F37).copy(alpha = .4f)),
         other = BubbleColors(Color(0xFFE6F2FF), Color(0xFFD5E8FB), Color(0xFFDDEDFC),
             Color(0xFF10283F), Color(0xFF45637F), Color(0xFF0969DA).copy(alpha = .32f)),
-        ticks = Color(0xFF4A6B53), read = Color(0xFF005B94),
+        ticks = Color(0xFF4A6B53), read = Color(0xFF0B57D0),
     )
     val Love = BubblePalette(
         mine = BubbleColors(Color(0xFFEFD08A), Color(0xFFF5E6B5), Color(0xFFF2DBA0),
             Color(0xFF26323B), Color(0xFF4A5A64), Color(0xFF26323B).copy(alpha = .18f)),
         other = BubbleColors(Color(0xFF476A80), Color(0xFF476A80), Color(0xFF476A80),
             Color.White, Color(0xFFEAF3F8), Color.White.copy(alpha = .2f)),
-        ticks = Color(0xFF4B5B66), read = Color(0xFF0B4F7A),
+        ticks = Color(0xFF4B5B66), read = Color(0xFF0B57D0),
     )
     val Samurai = BubblePalette(
         mine = BubbleColors(Color(0xFFB0003A), Color(0xFFD10A4A), Color(0xFFC10543),
             Color.White, Color(0xFFFFF1F5), Color.White.copy(alpha = .22f)),
         other = BubbleColors(Color(0xFF232323), Color(0xFF232323), Color(0xFF232323),
             Color(0xFFD9D3BE), Color(0xFFB3AD98), Color(0xFFD9D3BE).copy(alpha = .2f)),
-        ticks = Color(0xFFFFF1F5), read = Color(0xFFC7EBFF),
+        ticks = Color(0xFFFFF1F5), read = Color(0xFF80C8FF),
     )
 }

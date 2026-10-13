@@ -109,6 +109,8 @@ class WebRtcSession(
             override fun onTrack(transceiver: RtpTransceiver) {
                 val track = transceiver.receiver.track()
                 if (track is VideoTrack) scope.launch { mutableRemoteVideo.value = track }
+                // Hardware AEC/NS on some phones (Xiaomi) leaves the far end quiet; WebRTC's gain is 0..10, 1 = unchanged.
+                if (track is AudioTrack) track.setVolume(REMOTE_GAIN)
             }
             override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) = Unit
             override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
@@ -250,6 +252,7 @@ class WebRtcSession(
 
     private companion object {
         const val STREAM_ID = "oneonone"
+        const val REMOTE_GAIN = 2.5
         const val RECONNECT_GRACE_MS = 20_000L // same as web RECONNECT_GRACE_MS
     }
 }

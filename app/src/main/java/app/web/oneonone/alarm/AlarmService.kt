@@ -130,8 +130,8 @@ class AlarmService : Service() {
         const val ACTION_STOP = "app.web.oneonone.alarm.STOP"
         const val EXTRA_ALARM_ID = "alarmId"
         const val EXTRA_RAISED_AT = "raisedAt"
-        // MainActivity extras. SILENCE = user tapped (stop, open chat). SHOW = full-screen intent.
-        const val EXTRA_SILENCE = "alarmSilence"
+        // MainActivity extra for the tap and full-screen intents: open the chat over the lock screen. Opening never
+        // silences; the chat glows red until the alarm is acknowledged there (or "Silence" is pressed).
         const val EXTRA_SHOW = "alarmShow"
         const val EXTRA_TOKEN = "alarmToken"
         const val NOTIFICATION_ID = 2
@@ -198,7 +198,7 @@ class AlarmService : Service() {
                 .setOngoing(!fallback)
                 .setAutoCancel(fallback)
                 .setTimeoutAfter(AlarmPolicy.WINDOW_MS)
-                .setContentIntent(activity(2_001, EXTRA_SILENCE))
+                .setContentIntent(activity(2_001, EXTRA_SHOW))
                 .setFullScreenIntent(activity(2_002, EXTRA_SHOW), true)
                 .addAction(0, context.getString(R.string.alarm_silence), silence)
                 .build()

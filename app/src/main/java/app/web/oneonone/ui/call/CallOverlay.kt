@@ -3,7 +3,14 @@ package app.web.oneonone.ui.call
 import android.Manifest
 import android.animation.ValueAnimator
 import android.database.ContentObserver
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.RingtoneManager
+import android.os.Build
 import android.os.Handler
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.os.Looper
 import android.provider.Settings
 import androidx.annotation.DrawableRes
@@ -38,6 +45,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.geometry.Offset
@@ -89,6 +98,11 @@ fun CallOverlay(calls: CallManager) {
 
     val current = state
     if (current is CallUi.Idle || current is CallUi.NeedsPermission) return
+    // A call takes over the screen: drop the chat keyboard instead of leaving it open over the call UI.
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    LaunchedEffect(Unit) { keyboard?.hide(); focus.clearFocus() }
+    if (current is CallUi.Incoming) IncomingRing()
     val remote by (session?.remoteVideo ?: remember { kotlinx.coroutines.flow.MutableStateFlow<VideoTrack?>(null) }).collectAsState()
     val local by (session?.localVideo ?: remember { kotlinx.coroutines.flow.MutableStateFlow<VideoTrack?>(null) }).collectAsState()
 
@@ -98,6 +112,34 @@ fun CallOverlay(calls: CallManager) {
         onCamera = { calls.toggleCamera() }, onFlip = { calls.switchCamera() },
         remote = { remote?.let { VideoView(it, Modifier.fillMaxSize(), mirror = false) } },
         local = { modifier -> if (local != null) VideoView(checkNotNull(local), modifier, mirror = true, overlay = true) })
+}
+
+/**
+ * In-app ringtone while the incoming screen is up. The notification is posted silent while the app is
+ * visible (see CallNotifications.appVisible), since some OEMs (MIUI) drop a foreground app's call sound.
+ * Follows the ringer mode: silent = nothing, vibrate = vibration only.
+ */
+@Composable
+private fun IncomingRing() {
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val mode = audio.ringerMode
+        val ringtone = if (mode == AudioManager.RINGER_MODE_NORMAL) runCatching {
+            RingtoneManager.getRingtone(context, RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))?.apply {
+                audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+                if (Build.VERSION.SDK_INT >= 28) isLooping = true
+                play()
+            }
+        }.getOrNull() else null
+        val vibrator = if (mode == AudioManager.RINGER_MODE_SILENT) null
+            else if (Build.VERSION.SDK_INT >= 31) context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+            else @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)
+        vibrator?.takeIf { it.hasVibrator() }?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 1200), 0))
+        onDispose { runCatching { ringtone?.stop() }; vibrator?.cancel() }
+    }
 }
 
 @Composable

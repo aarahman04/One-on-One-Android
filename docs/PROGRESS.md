@@ -669,14 +669,16 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | 2.0.0 | 7 | 2026-10-10 | [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794) | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
 | 2.0.1 | 8 | 2026-10-13 | [38348089207](https://github.com/aarahman04/One-on-One-Android/actions/runs/38348089207) | Scroll-to-end, web-parity search, crisp splash logo |
 | 2.0.2 | 9 | 2026-10-13 | [38377404608](https://github.com/aarahman04/One-on-One-Android/actions/runs/38377404608) | Onboarding/connect redesign, gates per sign-in, links, friendly errors, vector icons |
+| 2.0.3 | 10 | pending dispatch | pending (dispatch on `main`) | Chat polish (gestures, selection, alarm glow, calls, share target), edit/delete/pin/typing, any-emoji reactions, link previews, /location fix, animations |
 
-- Both built by the `android-build` workflow (manual dispatch on `main`); version
+- Signed releases use the `android-build` workflow (manual dispatch on `main`); version
   name/code are workflow inputs, not stored in the repo. Signed with the existing
   Play upload key (SHA-1 check in the release job passed). Use the
   `android-release` artifact (AAB + APK); `android-debug` and
   `android-release-smoke-unsigned` are test-only.
-- 2.0.2 uses versionCode 9 (workflow defaults now 9 / 2.0.2);
-  **the upload after it needs versionCode 10 or higher.**
+- 2.0.2 uses versionCode 9; 2.0.3 uses versionCode 10 (workflow defaults now 10 / 2.0.3);
+  **the upload after it needs versionCode 11 or higher.**
+- 2.0.3 needs the backend from web PR #100 (merged to web `main`; deployed to Railway 2026-10-14 with `railway up`) and migration 036 (run 2026-10-14).
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
   S2–S5 device checklists above, then upload the AAB to internal testing.
 
@@ -954,3 +956,85 @@ Xiaomi checklist:
 - [ ] Background is navy #0D1017 on every intro screen (not teal/green).
 - [ ] Date-of-birth wheel: smooth fling, tick vibration (and click if touch sounds on) per row;
   Continue disabled until a wheel moves.
+
+## Chat polish from owner feedback (2026-10-14, branch `fix/chat-polish-1014`)
+
+Client-only; no endpoint, payload or backend rule added. Build-verified, not device-tested.
+
+- Gestures (WhatsApp model): double-tap a message = quick reaction bar (the 6 contract emoji,
+  in the bubble's own wallpaper colours, springs out of the bubble's corner, not focusable so the
+  keyboard stays open; Back or a tap outside closes it). Long press = select; tap more rows to add.
+  The header becomes close · count · reply (one row) · copy · ⋮ (Save a copy, Report message).
+  Copy of several rows joins them oldest first.
+- One gesture detector per bubble routes taps by position: links/numbers open on tap and copy on
+  long press; the reply quote jumps to the original on tap; a reply bubble can now be long-pressed,
+  selected and reacted to like any other.
+- Swipe to reply opens the keyboard on the composer; the swipe shows a round reply-icon chip with a
+  haptic tick at the trigger. The reply preview is a compact docked card.
+- Live messages rise, fade and scale in from their own side over 320 ms (was 160 ms).
+- Read ticks: dark blue `#0B57D0` on light bubbles (Light, Love); on dark bubbles (Dark green,
+  Samurai red) dark blue is invisible, so the deepest blue that clears 3:1 (`#5AB4FF`, `#80C8FF`).
+  `BubbleTokensTest` enforces the contrast.
+- Links: more TLDs (`shirt.online`, `.site`, `.store`, `.xyz`, country codes…); file names stay plain.
+- Search matches word starts: "hey" finds "Hey!" and "heyy", not "they". `ChatSearchTest`.
+- "Load older messages" only when the newest page was full (no button at the start of a short chat).
+- A connection with no nickname asks "What would you like to call this person?" on entering the chat.
+- Notifications off: a centred "Turn on notifications?" popup on entering the chat; "Turn on" opens
+  the app's notification settings. Asked again every 3 days. `NotificationReminderTest`.
+- Message notifications forget lines that were swiped away, read, or seen by opening the chat.
+- Share sheet: One on One accepts text (goes into the draft), photos and the contract's document
+  types (attachment preview; nothing is sent until the user taps send). Only `content://` streams.
+- Calls: speaker button flips instantly (device switch off the main thread); volume keys set call
+  volume during a call; remote audio gain 2.5×; keyboard closes when a call screen opens; the
+  incoming screen rings and vibrates itself while the app is visible (notification posted silent then).
+- Emergency alarm: tapping the alarm notification opens the chat without silencing. While their
+  alarm is live the whole chat glows red with a red "Emergency alarm from X · Acknowledge" banner;
+  acknowledging sends the contract ack, which stops the ring on every device.
+
+The backend-dependent additions below supersede this batch's initial exclusions:
+typing, edit/delete, shared pins, any-emoji reactions and server-side link previews.
+
+Xiaomi checklist:
+- [ ] Double-tap a message with the keyboard open: bar pops from the bubble, keyboard stays up.
+- [ ] Bar colours match each wallpaper (off / love / samurai) in light and dark.
+- [ ] Long press selects; tap others to add; count updates; copy, reply, Report work; Back clears.
+- [ ] Long press a link and a phone number: copied, no selection. Tap opens. Double-tap reacts.
+- [ ] Long press a reply bubble: selects. Tap its quote: jumps to the original.
+- [ ] Swipe to reply: keyboard opens with the reply card above the composer.
+- [ ] Read ticks visible on all four palettes.
+- [ ] Send `shirt.online`: link. Search "hey" with a "they" message: not matched.
+- [ ] New connection without nickname: prompt on entering chat.
+- [ ] Notifications off: popup on entering chat, Turn on opens settings; not again for 3 days.
+- [ ] Swipe away a message notification, receive another: only the new line shows.
+- [ ] Share text, a photo and a PDF from Gmail/Chrome/Gallery into One on One.
+- [ ] Call: audible on earpiece and speaker; volume keys change it; speaker toggles at once.
+- [ ] Typing when a call arrives: keyboard closes; ringtone plays inside the app.
+- [ ] Alarm received while in chat: red glow + banner, ring continues until Acknowledge.
+- [ ] Alarm received in background: tap notification, chat opens glowing; Acknowledge stops it.
+
+## Edit, delete, pin, typing, any-emoji reactions, link previews (2026-10-14, same branch)
+
+Backend: web `main`, merged PR #100 (migration 036). Contract §5/§8 updated (copy here).
+- Long press = select + quick reactions above the message; "+" opens the full emoji picker (androidx emoji2-emojipicker).
+- Selection bar: reply · edit (own text, ≤30 min) · copy · delete for everyone (own, ≤30 min, with confirm) · ⋮ Pin/Unpin, Save, Report.
+- Edited messages show "edited HH:mm"; deleted show "This message was deleted" for both. Tap a bubble for the full sent/edited date.
+- Pinned banner under the header (tap jumps to it, × unpins); one pin per chat, newest replaces.
+- Typing: header says "typing…" and a three-dot bubble bounces at the bottom; sent at most every 3 s.
+- Link cards (server unfurl): wide art full width (YouTube, Spotify, Amazon), square art / site icon as a thumbnail.
+- /location fixed: last fix from the past 2 min, else all providers raced for 20 s (GPS alone timed out indoors and nothing was sent), then any fix from the last 30 min.
+- Composer pill 44 dp (was 48 + padding); reactions chips spring in/out; reaction bar animates out; Connection menu group, search bar,
+  banners, reply/edit bar, slash menu and the header/selection swap all fade + fold instead of popping.
+- Debug builds have a second launcher icon "1on1 Demo": the real chat UI against a scripted contact (types, replies, reacts; send "alarm"
+  for an emergency alarm), with link cards produced by the real unfurler. Not in release builds.
+
+Deploy order: run `036_message_edit_delete_pin.sql` in Supabase, then deploy the backend, then install this build.
+
+Xiaomi checklist (after deploy):
+- [ ] Long press: selects + reaction bar; "+" → picker; picked emoji shows on both phones.
+- [ ] Edit within 30 min: both see the new text + "edited". After 30 min edit/delete hidden.
+- [ ] Delete for everyone: both see "This message was deleted".
+- [ ] Pin on A, then pin another on B: both show B's pin. × unpins on both.
+- [ ] Typing on A shows "typing…" + dots on B, stops ~6 s after A stops.
+- [ ] YouTube / Spotify / Instagram / Amazon links show cards on both phones.
+- [ ] /location indoors sends a snapshot within ~20 s.
+

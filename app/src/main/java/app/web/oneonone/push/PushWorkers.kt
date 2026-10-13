@@ -96,6 +96,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val connection = intent.getStringExtra("connectionId")
         val owner = intent.getStringExtra("ownerAuthId")
         val action = intent.action
+        if (action == "dismiss" && validUuid(connection)) { MessageNotifications.markCleared(context, checkNotNull(connection)); return }
         if (!validUuid(connection) || !validUuid(owner) || action !in setOf("reply", "read")) return
         val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(MessageNotifications.REPLY_KEY)?.toString()?.trim()
         if (action == "reply" && (text.isNullOrEmpty() || text.length > 4_000)) return

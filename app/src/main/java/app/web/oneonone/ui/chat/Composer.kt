@@ -12,6 +12,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -40,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -58,6 +63,8 @@ import app.web.oneonone.ui.theme.FontFamilies
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 
+private val ComposerHeight = 44.dp
+
 /** Slash-command descriptions, copied from client/src/features/slashCommands.ts. */
 private val CommandDescriptions = mapOf(
     "letter" to "Write a letter",
@@ -73,20 +80,23 @@ private val CommandDescriptions = mapOf(
 internal fun slashMatches(draft: String): List<String> =
     if (!draft.startsWith("/")) emptyList() else draft.drop(1).lowercase().let { q -> FeatureCommands.filter { it.startsWith(q) } }
 
-/** .chat__reply-bar: 56dp strip above the composer with the quoted author/snippet and a close button. */
+/** Reply preview docked above the composer: a compact card with the accent bar, author and snippet (WhatsApp-style). */
 @Composable
 internal fun ReplyBar(author: String, snippet: String, onCancel: () -> Unit) {
     val c = OneTheme.colors
-    Row(
-        Modifier.fillMaxWidth().height(OneTheme.sizes.header56).background(c.bgRaised).padding(start = 12.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(author, color = c.accentOther, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(snippet, color = c.textDim, style = OneTextStyles.cardHint.copy(fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val shape = RoundedCornerShape(OneTheme.radii.sm6)
+    Box(Modifier.fillMaxWidth().background(c.bg).padding(start = 8.dp, end = 8.dp, top = 6.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clip(shape).background(c.bgRaised).height(IntrinsicSize.Min),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.width(3.dp).fillMaxHeight().background(c.accentOther))
+            Column(Modifier.weight(1f).padding(start = 10.dp, top = 6.dp, bottom = 6.dp)) {
+                Text(author, color = c.accentOther, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(snippet, color = c.textDim, style = OneTextStyles.cardHint.copy(fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OneIconButton(R.drawable.ic_x, "Cancel reply", onCancel)
         }
-        OneIconButton(R.drawable.ic_x, "Cancel reply", onCancel)
     }
 }
 
@@ -135,6 +145,7 @@ internal fun ChatComposer(
     onStop: () -> Unit = {},
     onDiscard: () -> Unit = {},
     onFocus: () -> Unit = {},
+    focusRequester: FocusRequester = remember { FocusRequester() },
 ) {
     val c = OneTheme.colors
     val pillShape = RoundedCornerShape(OneTheme.radii.pill22)
@@ -143,7 +154,7 @@ internal fun ChatComposer(
     LaunchedEffect(focused) { if (focused) onFocus() }
     val textStyle = TextStyle(fontFamily = FontFamilies.Body, fontSize = 16.sp, lineHeight = 22.4.sp, color = c.text)
     Row(
-        modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(8.dp),
+        modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -154,23 +165,24 @@ internal fun ChatComposer(
         Row(
             Modifier
                 .weight(1f)
-                .heightIn(min = OneTheme.sizes.send48)
+                .heightIn(min = ComposerHeight)
                 .clip(pillShape)
                 .background(c.bgRaised)
                 .then(if (focused) Modifier.border(1.dp, c.accentYou, pillShape) else Modifier)
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            OneIconButton(R.drawable.ic_paperclip, "Attach", onAttach, Modifier.padding(bottom = 4.dp))
+            // 44dp pill: the 40dp attach button sits 2dp in from the bottom, so one line of text stays a slim pill.
+            OneIconButton(R.drawable.ic_paperclip, "Attach", onAttach, Modifier.padding(bottom = 2.dp))
             BasicTextField(
                 value = draft,
                 onValueChange = onDraft,
-                modifier = Modifier.weight(1f).heightIn(max = 120.dp),
+                modifier = Modifier.weight(1f).heightIn(max = 120.dp).focusRequester(focusRequester),
                 textStyle = textStyle,
                 cursorBrush = SolidColor(c.accentYou),
                 interactionSource = source,
                 decorationBox = { inner ->
-                    Box(Modifier.padding(horizontal = 8.dp, vertical = 12.dp)) {
+                    Box(Modifier.padding(start = 4.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)) {
                         if (draft.isEmpty()) Text("Message", style = textStyle, color = c.muted)
                         inner()
                     }
@@ -181,7 +193,7 @@ internal fun ChatComposer(
             val sendSource = remember { MutableInteractionSource() }
             Box(
                 Modifier
-                    .size(OneTheme.sizes.send48)
+                    .size(ComposerHeight)
                     .pressScale(sendSource, .94f)
                     .alpha(if (canSend) 1f else .5f)
                     .clip(CircleShape)
@@ -193,7 +205,7 @@ internal fun ChatComposer(
                 Icon(painterResource(R.drawable.ic_send), null, tint = c.sendFg, modifier = Modifier.size(20.dp))
             }
         } else {
-            Box(Modifier.size(OneTheme.sizes.send48), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(ComposerHeight), contentAlignment = Alignment.Center) {
                 OneIconButton(R.drawable.ic_mic, "Record voice note", onMic)
             }
         }

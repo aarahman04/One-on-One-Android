@@ -27,6 +27,7 @@ class AudioRouter @Inject constructor(@ApplicationContext private val context: C
     private val audio = context.getSystemService(AudioManager::class.java)
     private val power = context.getSystemService(PowerManager::class.java)
     private val main = Handler(Looper.getMainLooper())
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val mutableRoute = MutableStateFlow(AudioRoute.Earpiece)
     val route: StateFlow<AudioRoute> = mutableRoute.asStateFlow()
 
@@ -55,10 +56,13 @@ class AudioRouter @Inject constructor(@ApplicationContext private val context: C
     }
 
     /** Video toggled on/off mid-call is not a feature; kind is fixed per call. */
+    /** The button flips at once; the device switch (slow on some HALs) runs off the main thread. */
     @Synchronized fun toggleSpeaker() {
         if (!active) return
-        speakerToggle = route.value != AudioRoute.Speaker
-        apply()
+        val speaker = route.value != AudioRoute.Speaker
+        speakerToggle = speaker
+        if (speaker) mutableRoute.value = AudioRoute.Speaker
+        worker.execute { apply() }
     }
 
     @Synchronized fun stop() {
