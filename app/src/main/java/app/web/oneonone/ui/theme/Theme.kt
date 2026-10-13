@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 
 val BrandGreen = Color(0xFF7EE787)
 val BrandBlue = Color(0xFF79C0FF)
-val BrandBackground = Color(0xFF0D1117)
+val BrandBackground = Color(0xFF0D1017)
 
 private fun OneColors.toScheme(dark: Boolean): ColorScheme = if (dark) {
     darkColorScheme(

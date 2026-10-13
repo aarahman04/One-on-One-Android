@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -81,7 +82,10 @@ import java.time.LocalDate
 import java.time.Month
 import java.time.YearMonth
 import java.util.Locale
-import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
+import android.view.HapticFeedbackConstants
+import android.view.SoundEffectConstants
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
@@ -341,7 +345,7 @@ private fun LegalLinks() {
 @Composable
 private fun AgeScreen(busy: Boolean, onVerify: (LocalDate) -> Unit) {
     Title("What's your date of birth?")
-    ScreenSubtitle("One on One is for adults only. Your date of birth stays on this device.")
+    ScreenSubtitle("18+ only. It stays on this device.")
     // Neutral age screen: starts on today, and Continue waits until the wheels have been moved.
     val today = remember { LocalDate.now() }
     var year by rememberSaveable { mutableIntStateOf(today.year) }
@@ -354,8 +358,7 @@ private fun AgeScreen(busy: Boolean, onVerify: (LocalDate) -> Unit) {
     val years = remember { (1900..today.year).map(Int::toString) }
     Box(BlockWidth, contentAlignment = Alignment.Center) {
         // One selection band across all three wheels, like iOS.
-        Box(Modifier.fillMaxWidth().height(WheelRow).background(OneTheme.colors.bgRaised, RoundedCornerShape(OneTheme.radii.md10))
-            .border(1.dp, OneTheme.colors.border, RoundedCornerShape(OneTheme.radii.md10)))
+        Box(Modifier.fillMaxWidth().height(WheelRow).background(OneTheme.colors.border, RoundedCornerShape(percent = 50)))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
             Wheel((1..days).map(Int::toString), safeDay - 1, "Day", Modifier.weight(1f)) { day = it + 1; touched = true }
             Wheel(months, month - 1, "Month", Modifier.weight(1.3f)) { month = it + 1; touched = true }
@@ -365,10 +368,11 @@ private fun AgeScreen(busy: Boolean, onVerify: (LocalDate) -> Unit) {
     PrimaryButton("Continue", onClick = { onVerify(LocalDate.of(year, month, safeDay)) }, enabled = !busy && touched)
 }
 
-private val WheelRow = 40.dp
-private const val WheelRows = 5
+private val WheelRow = 38.dp
+private const val WheelRows = 7
+private const val WheelStepDeg = 20f
 
-/** iOS-style scroll wheel (look after ty0x2333/WheelPicker): rows curve away and fade, a tick on each step, snaps to the centre row. */
+/** iOS-style drum wheel (look after ty0x2333/WheelPicker): rows sit on a cylinder, squeeze and fade toward the edges, tick on each step, snap to centre. */
 @Composable
 private fun Wheel(items: List<String>, index: Int, label: String, modifier: Modifier = Modifier, onIndex: (Int) -> Unit) {
     val c = OneTheme.colors
@@ -380,8 +384,13 @@ private fun Wheel(items: List<String>, index: Int, label: String, modifier: Modi
     } }
     val latest by rememberUpdatedState(onIndex)
     LaunchedEffect(state) { snapshotFlow { state.isScrollInProgress }.drop(1).filter { !it }.collect { latest(centre) } }
-    val haptics = LocalHapticFeedback.current
-    LaunchedEffect(state) { snapshotFlow { centre }.drop(1).collect { haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick) } }
+    // Tick per row: CLOCK_TICK haptic plus the system click (silent when the phone's touch sounds are off).
+    val view = LocalView.current
+    LaunchedEffect(state) { snapshotFlow { centre }.drop(1).collect {
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        view.playSoundEffect(SoundEffectConstants.CLICK)
+    } }
+    val radius = rowPx / Math.toRadians(WheelStepDeg.toDouble()).toFloat()
     // A shorter month can push the day off the end; keep the wheel on the clamped value.
     LaunchedEffect(index, items.size) { if (!state.isScrollInProgress && centre != index) state.scrollToItem(index) }
     Box(modifier.height(WheelRow * WheelRows), contentAlignment = Alignment.Center) {
@@ -391,16 +400,17 @@ private fun Wheel(items: List<String>, index: Int, label: String, modifier: Modi
             itemsIndexed(items) { i, text ->
                 Text(text, Modifier.fillMaxWidth().height(WheelRow).clickable { scope.launch { state.animateScrollToItem(i) } }
                     .wrapContentHeight().graphicsLayer {
-                        // Continuous distance from the centre row drives the drum curve and fade.
+                        // Project the row onto a cylinder: angle from centre → squeezed spacing (sin) and height (cos).
                         val f = i - (state.firstVisibleItemIndex + state.firstVisibleItemScrollOffset / rowPx)
-                        rotationX = (-f * 22f).coerceIn(-75f, 75f)
-                        alpha = (1f - abs(f) * .3f).coerceAtLeast(.15f)
-                        val scale = 1f + (1f - abs(f)).coerceAtLeast(0f) * .12f
-                        scaleX = scale; scaleY = scale
-                        cameraDistance = 12f * density
+                        val angle = Math.toRadians((f * WheelStepDeg).coerceIn(-90f, 90f).toDouble())
+                        val depth = cos(angle).toFloat()
+                        translationY = radius * sin(angle).toFloat() - f * rowPx
+                        scaleY = depth
+                        scaleX = .92f + .08f * depth
+                        alpha = depth * depth
                     },
                     // Style is constant so scrolling only redraws (graphicsLayer), never recomposes or relayouts rows.
-                    style = OneTextStyles.subtitle.copy(fontSize = 17.sp), color = c.text, textAlign = TextAlign.Center, maxLines = 1)
+                    style = OneTextStyles.subtitle.copy(fontSize = 20.sp, lineHeight = 24.sp), color = c.text, textAlign = TextAlign.Center, maxLines = 1)
             }
         }
     }

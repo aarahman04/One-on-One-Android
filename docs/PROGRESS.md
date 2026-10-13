@@ -911,9 +911,10 @@ backend calls and chat changes are **not** device-tested. No backend or endpoint
 - Waiting / Request: duplicate eyebrows removed, full-width buttons, same footer.
 - Age and Terms gates are cleared on sign-out and account deletion, so every sign-in
   (new, re-created or another account) asks again. Still per-device, as on web.
-- Date of birth is an inline iOS-style wheel (day / month / year; look after
+- Date of birth is an inline iOS-style drum wheel (day / month / year, 7 rows on a cylinder, pill band; look after
   ty0x2333/WheelPicker, built in Compose): one navy selection band, rows curve and
-  fade, snap, tick haptic per step, tap a row to jump. Starts on today (neutral age
+  fade, snap, CLOCK_TICK haptic + system click per step (respects touch-sound setting), tap a row to jump.
+  Subtitle shortened to "18+ only. It stays on this device." App background is #0D1017 (owner choice). Starts on today (neutral age
   screen) and Continue stays disabled until a wheel is moved, so a stray tap can't
   land on the under-18 dead end. Scrolling only redraws (graphicsLayer).
 - Notification prompt now appears when the chat first opens, not after Terms.

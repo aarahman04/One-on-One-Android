@@ -2,12 +2,12 @@
     <style name="Theme.OneOnOne" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">#0d1117</item>
+        <item name="android:windowBackground">#0d1017</item>
         <item name="android:colorAccent">#7ee787</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
     <style name="Theme.OneOnOne.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#0d1117</item>
+        <item name="windowSplashScreenBackground">#0d1017</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
         <item name="postSplashScreenTheme">@style/Theme.OneOnOne</item>
         <item name="android:windowLightStatusBar">false</item>

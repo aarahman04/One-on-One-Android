@@ -29,7 +29,7 @@ data class OneColors(
 ) {
     companion object {
         val Dark = OneColors(
-            bg = Color(0xFF0D1117), bgRaised = Color(0xFF12181F), border = Color(0xFF1F2630),
+            bg = Color(0xFF0D1017), bgRaised = Color(0xFF12181F), border = Color(0xFF1F2630),
             text = Color(0xFFE6EDF3), textDim = Color(0xFF9AA4AF), muted = Color(0xFF6E7681),
             accentYou = Color(0xFF7EE787), accentOther = Color(0xFF79C0FF), danger = Color(0xFFF85149),
         )
