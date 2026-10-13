@@ -24,6 +24,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -419,19 +421,38 @@ private fun Wheel(items: List<String>, index: Int, label: String, modifier: Modi
 
 @Composable
 private fun ConsentScreen(busy: Boolean, onAccept: () -> Unit) {
-    Eyebrow("BEFORE YOU START")
+    val c = OneTheme.colors
     Title("A few ground rules.")
-    ScreenSubtitle("One on One is a private space for two people. Harassment, hate, and any sexual content involving minors are not allowed and will be acted on.")
-    var agreed by rememberSaveable { mutableStateOf(false) }
-    Row(Modifier.widthIn(max = 320.dp).fillMaxWidth().toggleable(agreed, role = Role.Checkbox, onValueChange = { agreed = it }).padding(OneTheme.spacing.sm8),
-        verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = agreed, onCheckedChange = null, colors = CheckboxDefaults.colors(
-            checkedColor = OneTheme.colors.accentYou, uncheckedColor = OneTheme.colors.border, checkmarkColor = OneTheme.colors.onPrimary))
-        Text("I am 18 or older and I agree to the Terms and Privacy Policy.", Modifier.padding(start = OneTheme.spacing.sm8),
-            style = OneTextStyles.subtitle, color = OneTheme.colors.text)
+    ScreenSubtitle("A private space for two people.")
+    // Rules and the agreement share one left edge and width so the block reads as a single unit.
+    Column(BlockWidth, verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.md12)) {
+        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(OneTheme.radii.md10), color = c.bgRaised, border = BorderStroke(1.dp, c.border)) {
+            Column(Modifier.padding(horizontal = OneTheme.spacing.lg16, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf("No harassment or hate.", "No sexual content involving minors.", "Breaking these rules will be acted on.").forEach { rule ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).background(c.accentYou, CircleShape))
+                        Text(rule, Modifier.padding(start = OneTheme.spacing.md12), style = OneTextStyles.subtitle, color = c.text)
+                    }
+                }
+            }
+        }
+        var agreed by rememberSaveable { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(OneTheme.radii.md10))
+            .toggleable(agreed, role = Role.Checkbox, onValueChange = { agreed = it }).padding(vertical = OneTheme.spacing.sm8),
+            verticalAlignment = Alignment.CenterVertically) {
+            // Checkbox already reserves a 48dp touch target, so its box sits flush with the card edge only after a small nudge.
+            Checkbox(checked = agreed, onCheckedChange = null, modifier = Modifier.padding(start = 4.dp), colors = CheckboxDefaults.colors(
+                checkedColor = c.accentYou, uncheckedColor = c.textDim, checkmarkColor = c.onPrimary))
+            Text("I am 18 or older and I agree to the Terms and Privacy Policy.", Modifier.padding(start = OneTheme.spacing.md12),
+                style = OneTextStyles.subtitle, color = c.text)
+        }
+        // The button spans exactly the legal links row beneath it, as on sign-in.
+        Column(Modifier.align(Alignment.CenterHorizontally).width(IntrinsicSize.Max), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            PrimaryButton("Agree and continue", onAccept, modifier = Modifier.fillMaxWidth(), enabled = agreed && !busy)
+            LegalLinks()
+        }
     }
-    LegalLinks()
-    PrimaryButton("Agree and continue", onAccept, enabled = agreed && !busy)
 }
 
 @Composable

@@ -910,6 +910,8 @@ backend calls and chat changes are **not** device-tested. No backend or endpoint
   legal and account deletion, which Play requires to stay reachable).
 - Sign-in: "ONE" eyebrow and tagline removed (logo, name, button only); Continue with
   Google spans exactly the Privacy Policy · Terms · Child Safety row.
+- Ground rules: subtitle "A private space for two people.", the three rules as a bulleted
+  card, checkbox row on the same left edge, Agree and continue matches the legal row width.
 - Waiting / Request: duplicate eyebrows removed, full-width buttons, same footer.
 - Age and Terms gates are cleared on sign-out and account deletion, so every sign-in
   (new, re-created or another account) asks again. Still per-device, as on web.
