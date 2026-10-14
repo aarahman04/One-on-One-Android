@@ -14,6 +14,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.Json
+import app.web.oneonone.data.stickers.StickerLibrary
+import java.io.File
+import java.util.UUID
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.LocalDate
@@ -105,12 +109,36 @@ fun connection(status: String, requester: Boolean) = CurrentConnection(
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class AccountTest {
+    @Test fun stickerCleanupFollowsSuccessfulSignOutAndAccountDeletionOnly() = runTest {
+        val owner = "00000000-0000-4000-8000-000000000001"
+        val session = FakeSession()
+        val api = FakeAccountApi(session)
+        val library = testStickerLibrary()
+        val repository = AccountRepository(api, session, FakeDeviceStore(), stickers = library)
+        val sticker = library.save(owner, byteArrayOf(1, 2), 1).single()
+        val file = library.file(owner, sticker.id)
+        api.unregisterFails = true
+        assertTrue(runCatching { repository.signOut() }.isFailure)
+        assertTrue(file.exists())
+        api.unregisterFails = false
+        repository.signOut()
+        assertFalse(file.exists())
+        session.signedIn.value = true; session.token = "old"
+        val replacement = library.save(owner, byteArrayOf(3), 2).single()
+        api.deleteFails = true
+        assertTrue(runCatching { repository.deleteAccount() }.isFailure)
+        assertTrue(library.file(owner, replacement.id).exists())
+        api.deleteFails = false
+        repository.deleteAccount()
+        assertFalse(library.file(owner, replacement.id).exists())
+    }
+
     @Test fun onboardingAppearsAfterConsentAndOnlyOnce() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val session = FakeSession()
             val preferences = FakeDeviceStore().apply { savedGates = Gates(); seenOnboarding = false }
-            val vm = AppViewModel(session, AccountRepository(FakeAccountApi(session), session, preferences), preferences)
+            val vm = AppViewModel(session, AccountRepository(FakeAccountApi(session), session, preferences, stickers = testStickerLibrary()), preferences)
             runCurrent()
             assertEquals(BootRoute.Age, vm.state.value.route)
             assertFalse(vm.state.value.needsNotificationOnboarding)
@@ -143,7 +171,7 @@ class AccountTest {
         val session = FakeSession()
         val api = FakeAccountApi(session)
         val preferences = FakeDeviceStore()
-        val repository = AccountRepository(api, session, preferences)
+        val repository = AccountRepository(api, session, preferences, stickers = testStickerLibrary())
         api.unregisterFails = true
         assertTrue(runCatching { repository.signOut() }.isFailure)
         assertEquals("old", session.token)
@@ -159,7 +187,7 @@ class AccountTest {
         val session = FakeSession()
         val preferences = FakeDeviceStore()
         val api = FakeAccountApi(session).apply { deleteFails = true }
-        val repository = AccountRepository(api, session, preferences)
+        val repository = AccountRepository(api, session, preferences, stickers = testStickerLibrary())
         assertTrue(runCatching { repository.deleteAccount() }.isFailure)
         assertEquals("old", session.token)
         assertEquals("device-token", preferences.token)
@@ -176,7 +204,7 @@ class AccountTest {
             val session = FakeSession()
             val api = FakeAccountApi(session)
             val preferences = FakeDeviceStore().apply { savedGates = Gates() }
-            val vm = AppViewModel(session, AccountRepository(api, session, preferences), preferences)
+            val vm = AppViewModel(session, AccountRepository(api, session, preferences, stickers = testStickerLibrary()), preferences)
             runCurrent()
             assertEquals(BootRoute.Age, vm.state.value.route)
             vm.verifyAge(LocalDate.now().minusYears(18)); runCurrent()
@@ -197,7 +225,7 @@ class AccountTest {
             vm.refresh(); runCurrent()
             assertEquals(BootRoute.Chat, vm.state.value.route)
             assertNotNull(vm.state.value.error)
-            vm.signOut(); runCurrent()
+            vm.signOut().join(); runCurrent()
             assertEquals(BootRoute.SignIn, vm.state.value.route)
             vm.viewModelScope.cancel(); runCurrent()
         } finally { Dispatchers.resetMain() }
@@ -209,7 +237,7 @@ class AccountTest {
             val session = FakeSession()
             val api = FakeAccountApi(session)
             val preferences = FakeDeviceStore().apply { savedGates = Gates() }
-            val vm = AppViewModel(session, AccountRepository(api, session, preferences), preferences)
+            val vm = AppViewModel(session, AccountRepository(api, session, preferences, stickers = testStickerLibrary()), preferences)
             runCurrent()
             vm.verifyAge(LocalDate.now().minusYears(17)); runCurrent()
             vm.refresh(); runCurrent()
@@ -219,3 +247,5 @@ class AccountTest {
         } finally { Dispatchers.resetMain() }
     }
 }
+
+internal fun testStickerLibrary() = StickerLibrary(File(System.getProperty("java.io.tmpdir"), "stickers-test-" + UUID.randomUUID()), Json)

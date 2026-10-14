@@ -1105,3 +1105,90 @@ Emulator/Xiaomi checklist:
 - [ ] GIF while replying: sent as a reply. Delete it within 30 min: gone for both.
 - [ ] Without GIPHY_API_KEY: GIFs tab shows "Couldn't load GIFs…", no crash.
 - [ ] Voice and video call (ringing, connected, audio-only): the partner's photo fills the avatar circle.
+
+## Sticker maker + library (2026-10-14, branch feat/stickers; Prompt 1 only)
+
+Based on main 002b1d8, Chat polish round 2. The sibling repository is read-only.
+
+- Emoji sheet now has Emoji, GIFs and Stickers. The + tile opens PickVisualMedia;
+  the maker shows progress, Original / Cut-out, square drag/pinch crop, a
+  checkerboard preview, accessible crop actions, Reset and Save.
+- On-device CPU background removal uses MediaPipe Tasks Vision 1.1.0 and a
+  bundled DeepLab-v3 model. No runtime model download. The comparison, scope
+  limitations, Apache-2.0 licence, attribution and model checksum are in ARCHITECTURE.
+  Missing subjects and segmentation failures offer Original.
+- Every saved sticker is 512×512 WebP with alpha. Encoding tries quality 100,
+  95, 90, 85 and 80 until ≤100000 bytes; if still too large, Save asks for a
+  tighter crop rather than dropping quality below 80.
+- Each account's files and atomic JSON index live under filesDir/stickers/ownerId.
+  Favourites, last 16 Recent, My stickers and the original six-drawing Little
+  signals pack persist across restarts. Hold a tile to Favourite/Unfavourite or
+  Delete with confirmation. Deleted built-ins stay deleted.
+- Successful sign-out and account deletion clear index and files under the
+  shared account mutation lock. Failed unregistration/deletion preserves the
+  library. Restored draft URI, mode and normalized crop are scoped to the owner.
+- Tap sends through FeatureViewModel → MediaGateway attachment upload →
+  MessageService → Transport → InternetTransport. It is the contract's normal
+  image/webp image payload, including width/height 512 and optional replyTo.
+  Received images and delete-for-everyone keep existing rendering and rules.
+
+Verification: ./gradlew assembleDebug lintDebug testDebugUnitTest passed on the
+final code (123 JVM tests, zero failures/errors, zero lint issues). Checks cover
+crop/pinch/pan boundaries, 512 scaling, WebP cap/quality retries, alpha thresholds,
+favourite/recent ordering, durable per-owner index/deletion, failed-account-action
+preservation and a late upload after the conversation changes. Native bitmap
+ownership has a runtime assert: MPImage may recycle only its private copy.
+./gradlew assembleRelease bundleRelease lintRelease also passed. The native
+checker self-test and final unsigned APK/AAB checks passed for all eight 64-bit
+libraries; SDK zipalign -c -P 16 4 passed. No signing identity or version changes.
+
+Universal debug APK, identical local configuration/all ABIs: main 002b1d8 was
+67,544,688 bytes; this change is 133,462,489 bytes. Delta +65,917,801 bytes
+(+62.86 MiB), mainly MediaPipe's four native ABIs plus the bundled model.
+This is not a Play per-device download-size measurement.
+
+API 36 emulator, 360dp, scripted Demo account: third tab, native photo picker,
+offline portrait cut-out, Original/Cut-out switching and Save exercised.
+Long-press Favourite updated the index and survived a force-stop/relaunch.
+The saved file was independently decoded: WebP, 512×512, RGBA alpha 0–255,
+90,464 bytes. Original remained valid after segmentation. The supplied portrait
+fixture showed some remaining background objects/soft edges; this is a coarse
+VOC model, not a measured quality match for WhatsApp or ML Kit.
+The SDK ownership fix was found while inspecting the pinned SDK's bytecode.
+During an earlier run alongside R8, both System UI and the app reported input
+ANRs with high emulator CPU pressure. This run is not a hardware latency claim.
+No authenticated upload, second-client receive/delete, physical Xiaomi, complete
+light/XL/TalkBack, real process-death draft, pet/object quality, API 26–29 or
+16 KB runtime verification is claimed.
+
+Screenshots: [maker](design/screens/stickers-maker-dark-360.png),
+[library](design/screens/stickers-library-dark-360.png). The portrait input is the
+[MediaPipe test fixture](https://storage.googleapis.com/mediapipe-assets/portrait.jpg);
+test photos and APKs are not committed.
+
+### Emulator / Xiaomi HyperOS checklist (owner)
+
+- [ ] Emoji → Stickers at 360dp, dark/light, chat text size S/M/L/XL, large
+  system fonts and TalkBack: all tabs, tiles, crop actions and buttons reachable.
+- [ ] + → photo picker: cancel, portrait JPEG with EXIF rotation/mirroring,
+  PNG with alpha, landscape and a large photo; no camera/storage permission added.
+- [ ] With networking off before first use, make cut-outs of a person, cat/dog
+  and a supported object. Inspect hair/fur and edges; note latency and memory.
+- [ ] Blank image / unrecognized object → friendly no-subject notice; Original
+  remains usable. Switch modes; pinch/drag/reset inside the square; Save.
+- [ ] Inspect saved WebP: 512×512, alpha present, ≤100000 bytes; a detailed crop
+  retries down to 80 or explains the cap. Do not accept a silently oversized file.
+- [ ] Rotate while picking, segmenting and cropping; background/relaunch or
+  recreate the process with a draft open; crop and mode restore or an expired
+  picker grant produces a friendly message. Saving succeeds once.
+- [ ] Save several stickers; restart; Favourite/Unfavourite; send more than 16
+  distinct stickers and check Recent. Delete/cancel; deleted built-ins do not return.
+- [ ] In a disposable signed-in conversation, send a custom and built-in sticker,
+  including a reply. Both phones/web receive an ordinary image with transparency.
+  Upload error/offline retry does not send to a changed conversation.
+- [ ] Delete a sent sticker for everyone within 30 minutes: both clients show
+  the existing deleted-message state; library deletion does not alter sent messages.
+- [ ] Sign out (including while saving), sign into another account: no old
+  files, index, favourites or draft. Repeat after deleting a disposable account.
+- [ ] API 26–29 legacy WebP encoding and a real 16 KB page-size device: inference,
+  preview/save and native loading; real Xiaomi performance and edge quality.

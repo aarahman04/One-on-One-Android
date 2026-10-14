@@ -47,6 +47,7 @@ import app.web.oneonone.ui.AppViewModel
 import app.web.oneonone.ui.BootRoute
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
+import app.web.oneonone.ui.chat.StickerViewModel
 import app.web.oneonone.ui.theme.OneColors
 import app.web.oneonone.ui.theme.OneOnOneTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -58,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: AppViewModel by viewModels()
     private val chatViewModel: ChatViewModel by viewModels()
     private val featureViewModel: FeatureViewModel by viewModels()
+    private val stickerViewModel: StickerViewModel by viewModels()
     private val profileViewModel: ProfileViewModel by viewModels()
     @Inject lateinit var pushRegistration: PushRegistration
     @Inject lateinit var calls: CallManager
@@ -99,7 +101,7 @@ class MainActivity : ComponentActivity() {
             OneOnOneTheme(darkTheme = dark) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Box {
-                        AppNavigation(viewModel, chatViewModel, featureViewModel, profileViewModel, pushRegistration)
+                        AppNavigation(viewModel, chatViewModel, featureViewModel, profileViewModel, pushRegistration, stickerViewModel)
                         val connection = state.connection
                         val avatars by profileViewModel.urls.collectAsState()
                         val inCall by remember { calls.state.map { it !is CallUi.Idle } }.collectAsState(false)

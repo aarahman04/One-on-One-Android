@@ -17,6 +17,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import javax.inject.Inject
+import java.io.File
 
 @HiltViewModel
 class FeatureViewModel @Inject constructor(
@@ -86,6 +87,13 @@ class FeatureViewModel @Inject constructor(
         val session = ChatSession(connection.myUserId, connection.id)
         check(service.active.value == session) { "Conversation changed." }
         val payload = media.attachGif(connection.id, id)
+        check(service.active.value == session) { "Conversation changed while sending." }
+        service.send("", "image", payload, reply); onDone()
+    }
+    fun sendSticker(connection: CurrentConnection, file: File, reply: String?, onDone: () -> Unit) = action {
+        val session = ChatSession(connection.myUserId, connection.id)
+        check(service.active.value == session) { "Conversation changed." }
+        val payload = media.uploadSticker(connection.id, file)
         check(service.active.value == session) { "Conversation changed while sending." }
         service.send("", "image", payload, reply); onDone()
     }

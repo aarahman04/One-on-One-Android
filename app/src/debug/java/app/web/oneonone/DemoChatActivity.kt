@@ -16,6 +16,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.room.Room
 import app.web.oneonone.call.CallLauncher
 import app.web.oneonone.data.DevicePreferences
+import app.web.oneonone.data.AccountMutationLock
+import app.web.oneonone.data.stickers.StickerLibrary
 import app.web.oneonone.data.api.AccountApi
 import app.web.oneonone.data.api.CurrentConnection
 import app.web.oneonone.data.auth.AccountSession
@@ -30,6 +32,7 @@ import app.web.oneonone.data.transport.Transport
 import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
+import app.web.oneonone.ui.chat.StickerViewModel
 import app.web.oneonone.ui.theme.OneOnOneTheme
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -69,6 +72,9 @@ class DemoChatActivity : ComponentActivity() {
         FeatureViewModel(service, account, MediaRepository(applicationContext, retrofit.create(AttachmentApi::class.java), json),
             DevicePreferences(applicationContext), createSavedStateHandle())
     } } }
+    private val stickers: StickerViewModel by viewModels { viewModelFactory { initializer {
+        StickerViewModel(applicationContext, service, DemoSession, AccountMutationLock(), StickerLibrary(applicationContext, json), createSavedStateHandle())
+    } } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,7 +85,7 @@ class DemoChatActivity : ComponentActivity() {
         setContent {
             OneOnOneTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
-                    ChatScreen(connection, chat, features, onSettings = {}, onAccount = {}, onRefresh = {})
+                    ChatScreen(connection, chat, features, stickers, onSettings = {}, onAccount = {}, onRefresh = {})
                 }
             }
         }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -24,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,7 +52,7 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
-/** Composer sheet: Emoji (inserted into the draft) | GIFs (GIPHY, sent on tap). */
+/** Composer sheet: Emoji inserts into the draft; GIFs and stickers send ordinary images. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ComposerEmojiSheet(
@@ -58,30 +60,35 @@ internal fun ComposerEmojiSheet(
     search: suspend (String, Int) -> GifPage,
     onGif: (GifResult) -> Unit,
     sending: Boolean,
+    stickers: @Composable () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val c = OneTheme.colors
-    var gifs by rememberSaveable { mutableStateOf(false) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     val pick by rememberUpdatedState(onEmoji)
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.bgRaised, contentColor = c.text) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Emoji" to false, "GIFs" to true).forEach { (label, tab) ->
-                val on = gifs == tab
+            listOf("Emoji", "GIFs", "Stickers").forEachIndexed { index, label ->
+                val on = tab == index
                 Text(label,
-                    Modifier.clip(RoundedCornerShape(OneTheme.radii.pill22))
+                    Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(OneTheme.radii.pill22))
                         .background(if (on) c.accentYou.copy(alpha = .18f) else c.bg)
-                        .clickable(role = Role.Tab) { gifs = tab }
-                        .semantics { selected = on }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = if (on) c.accentYou else c.textDim, style = OneTextStyles.menuItem)
+                        .clickable(role = Role.Tab) { tab = index }
+                        .semantics { selected = on; contentDescription = label }
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                    color = if (on) c.accentYou else c.textDim, style = OneTextStyles.menuItem,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
         Box(Modifier.fillMaxWidth().height(380.dp)) {
-            if (gifs) GifGrid(search, onGif, sending)
-            else AndroidView(
+            when (tab) {
+            2 -> stickers()
+            1 -> GifGrid(search, onGif, sending)
+            else -> AndroidView(
                 factory = { context -> EmojiPickerView(context).apply { emojiGridColumns = 8; setOnEmojiPickedListener { pick(it.emoji) } } },
                 modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
             )
+            }
         }
     }
 }

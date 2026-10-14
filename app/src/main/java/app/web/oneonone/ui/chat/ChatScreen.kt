@@ -100,7 +100,7 @@ internal fun receiptLabel(message: ChatMessage, readAt: String?, deliveredAt: St
 }
 
 @Composable
-fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: FeatureViewModel, onSettings: () -> Unit, onAccount: () -> Unit, onRefresh: () -> Unit, accountError: String? = null,
+fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: FeatureViewModel, stickers: StickerViewModel, onSettings: () -> Unit, onAccount: () -> Unit, onRefresh: () -> Unit, accountError: String? = null,
                partnerAvatar: Pair<String, String>? = null) {
     val context = LocalContext.current
     val messages by vm.messages.collectAsState()
@@ -209,6 +209,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     }
     var reactingTo by remember { mutableStateOf<String?>(null) }
     var composerEmoji by remember { mutableStateOf(false) }
+    val stickerMaker by stickers.makerOpen.collectAsState()
+    val stickerPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) stickers.pick(uri) }
     var elapsed by remember { mutableIntStateOf(0) }
     LaunchedEffect(recording) { elapsed = 0; while (recording) { delay(1_000); elapsed++ } }
     val sendRecording: () -> Unit = { features.stopAndSend(connection, replyTo) { vm.reply(null) } }
@@ -467,7 +469,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             canSend = !busy && !featureBusy,
             recording = recording,
             onAttach = { more = false; attachmentOpen = !attachmentOpen },
-            onEmoji = { attachmentOpen = false; composerEmoji = true },
+            onEmoji = { attachmentOpen = false; stickers.clearError(); composerEmoji = true },
             onCamera = {
                 attachmentOpen = false; features.clearError()
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) takePhoto()
@@ -505,7 +507,15 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     }
     if (composerEmoji) ComposerEmojiSheet(onEmoji = { emoji -> vm.draft(draft + emoji) }, search = features::gifs, sending = featureBusy,
         onGif = { gif -> features.sendGif(connection, gif.id, replyTo) { composerEmoji = false; vm.reply(null) } },
+        stickers = {
+            StickerGrid(connection.myUserId, stickers, featureBusy,
+                onCreate = { stickerPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onSend = { sticker -> features.sendSticker(connection, stickers.file(connection.myUserId, sticker.id), replyTo) {
+                    stickers.used(sticker.id); composerEmoji = false; vm.reply(null)
+                } })
+        },
         onDismiss = { composerEmoji = false })
+    if (stickerMaker) StickerMaker(stickers)
     if (report || reportMessage != null) ReportDialog(connection, reportMessage, features) { report = false; reportMessage = null }
     if (block) BlockDialog(connection, features, close = { block = false }, refresh = onRefresh)
     if (alarm) FeatureModal(onDismissRequest = { alarm = false }, title = { Text("Send an emergency alarm?") },

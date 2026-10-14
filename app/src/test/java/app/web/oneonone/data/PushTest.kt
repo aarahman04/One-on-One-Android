@@ -79,7 +79,7 @@ class PushTest {
         val registration = launch { registerPushToken("rotated-token", "owner", api, session, preferences, mutations) }
         entered.await()
         assertEquals("rotated-token", preferences.token)
-        val signOut = launch { AccountRepository(api, session, preferences, mutations).signOut() }
+        val signOut = launch { AccountRepository(api, session, preferences, mutations, testStickerLibrary()).signOut() }
         runCurrent()
         assertEquals(listOf("unregister", "register:android-native"), session.operations)
         release.complete(Unit)

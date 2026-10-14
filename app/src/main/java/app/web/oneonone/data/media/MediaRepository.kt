@@ -26,6 +26,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import app.web.oneonone.BuildConfig
 import app.web.oneonone.data.model.*
+import app.web.oneonone.data.stickers.STICKER_MAX_BYTES
+import app.web.oneonone.data.stickers.STICKER_PX
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -69,6 +71,7 @@ interface AttachmentApi {
 data class VoiceClip(val file: File, val duration: Double)
 interface MediaGateway {
     suspend fun upload(connection: String, kind: String, uri: Uri, duration: Double? = null): JsonObject
+    suspend fun uploadSticker(connection: String, file: File): JsonObject
     suspend fun signedUrl(connection: String, path: String): String
     suspend fun download(connection: String, payload: JsonObject): Uri
     suspend fun location(): JsonObject
@@ -187,6 +190,23 @@ class MediaRepository @Inject constructor(
             if (it.moveToFirst()) it.getString(0) else null
         }
         return name?.trim()?.take(255)?.takeIf { it.isNotEmpty() } ?: "attachment"
+    }
+
+    /** The maker already re-encodes pixels; preserve its WebP bytes and alpha instead of converting to JPEG. */
+    override suspend fun uploadSticker(connection: String, file: File): JsonObject = withContext(Dispatchers.IO) {
+        require(file.canonicalFile.parentFile?.parentFile == File(context.filesDir, "stickers").canonicalFile) { "Invalid sticker file." }
+        val bytes = file.inputStream().use { readBounded(it, STICKER_MAX_BYTES) }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        require(bounds.outMimeType == "image/webp" && bounds.outWidth == STICKER_PX && bounds.outHeight == STICKER_PX) { "Invalid sticker image." }
+        val uploaded = api.upload(connection, "image", bytes.toRequestBody("image/webp".toMediaType()))
+        check(uploaded.mime == "image/webp" && uploaded.size == bytes.size) { "Invalid sticker upload." }
+        val payload = buildJsonObject {
+            put("path", uploaded.path); put("mime", uploaded.mime); put("size", uploaded.size)
+            put("width", STICKER_PX); put("height", STICKER_PX)
+        }
+        validateFeaturePayload(connection, "image", payload)
+        payload
     }
 
     override suspend fun signedUrl(connection: String, path: String): String = signing.withLock {
@@ -340,7 +360,7 @@ class MediaRepository @Inject constructor(
     }
 }
 
-private fun orientLegacy(bitmap: Bitmap, bytes: ByteArray): Bitmap {
+internal fun orientLegacy(bitmap: Bitmap, bytes: ByteArray): Bitmap {
     val orientation = runCatching { ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
     val matrix = Matrix().apply {
         when (orientation) {

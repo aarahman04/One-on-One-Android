@@ -4,6 +4,7 @@ import app.web.oneonone.data.api.AccountApi
 import app.web.oneonone.data.api.ConnectionRequest
 import app.web.oneonone.data.api.TokenBody
 import app.web.oneonone.data.auth.AccountSession
+import app.web.oneonone.data.stickers.StickerLibrary
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.sync.Mutex
@@ -18,12 +19,14 @@ class AccountRepository @Inject constructor(
     private val auth: AccountSession,
     private val preferences: DeviceStore,
     private val mutations: AccountMutationLock = AccountMutationLock(),
+    private val stickers: StickerLibrary,
 ) {
     suspend fun request(code: String) = api.request(ConnectionRequest(normalizeCode(code)))
     suspend fun signOut() = mutations.mutex.withLock {
         // Preserve the session on unregister failure so the user can retry safely.
         preferences.pushToken()?.let { api.unregister(TokenBody(it)) }
         preferences.savePushToken(null)
+        stickers.clear()
         auth.signOut()
         // Age and Terms gates are re-asked on every sign-in, including a re-created account.
         preferences.resetGates()
@@ -31,6 +34,7 @@ class AccountRepository @Inject constructor(
     suspend fun deleteAccount() = mutations.mutex.withLock {
         api.deleteAccount()
         preferences.savePushToken(null)
+        stickers.clear()
         auth.signOut()
         preferences.resetGates()
     }
