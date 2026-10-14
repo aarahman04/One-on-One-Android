@@ -50,6 +50,7 @@ class StickerViewModel @Inject constructor(
     val makerOpen = saved.getStateFlow("stickerMaker", false)
     val cutOut = saved.getStateFlow("stickerCutOut", true)
     val crop = saved.getStateFlow("stickerCrop", StickerCrop())
+    val trim = saved.getStateFlow("stickerTrim", StickerTrim())
     private var processing: Job? = null
 
     init {
@@ -117,11 +118,13 @@ class StickerViewModel @Inject constructor(
 
     fun original(keepOriginal: Boolean) { saved["stickerCutOut"] = !keepOriginal }
     fun crop(value: StickerCrop) { saved["stickerCrop"] = value }
+    // The cropped part has new proportions, so its placement in the square starts over.
+    fun trim(value: StickerTrim) { saved["stickerTrim"] = boundedStickerTrim(value); saved["stickerCrop"] = StickerCrop() }
 
     fun closeMaker() {
         processing?.cancel(); processing = null
         saved["stickerMaker"] = false; saved["stickerSource"] = null
-        saved["stickerCrop"] = StickerCrop(); saved["stickerCutOut"] = true
+        saved["stickerCrop"] = StickerCrop(); saved["stickerTrim"] = StickerTrim(); saved["stickerCutOut"] = true
         mutableDraft.value = StickerDraft(); mutableError.value = null
     }
 
@@ -144,10 +147,14 @@ class StickerViewModel @Inject constructor(
         if (draft.processing || mutableBusy.value) return
         val source = (if (cutOut.value) draft.cutOut else draft.original) ?: return
         val crop = crop.value
+        val trim = trim.value
         edit { owner ->
             val bytes = withContext(Dispatchers.Default) {
-                val rendered = renderSticker(source, crop)
-                try { stickerWebP(rendered) } finally { rendered.recycle() }
+                val trimmed = trimSticker(source, trim)
+                try {
+                    val rendered = renderSticker(trimmed, crop)
+                    try { stickerWebP(rendered) } finally { rendered.recycle() }
+                } finally { if (trimmed !== source) trimmed.recycle() }
             }
             library.save(owner, bytes).also { closeMaker() }
         }

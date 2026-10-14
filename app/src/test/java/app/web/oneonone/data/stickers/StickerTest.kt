@@ -33,6 +33,21 @@ class StickerTest {
         assertTrue(runCatching { transformStickerCrop(1, 1, StickerCrop(), 0f, 0f, 0f) }.isFailure)
     }
 
+    @Test fun cropBoxCornersResizeMoveStaysInsideAndNeverCollapses() {
+        val full = StickerTrim()
+        assertEquals(StickerTrim(.2f, .1f, 1f, 1f), dragStickerTrim(full, 0, .2f, .1f))
+        // A corner can't cross the opposite edge: the box keeps at least 10% each way.
+        val squeezed = dragStickerTrim(full, 3, -5f, -5f)
+        assertEquals(.1f, squeezed.right, 1e-6f); assertEquals(.1f, squeezed.bottom, 1e-6f)
+        // Moving keeps the size and stops at the photo's edge.
+        val moved = dragStickerTrim(StickerTrim(.2f, .2f, .6f, .6f), 4, 1f, -1f)
+        listOf(.6f to moved.left, 0f to moved.top, 1f to moved.right, .4f to moved.bottom).forEach { (want, got) -> assertEquals(want, got, 1e-6f) }
+        assertArrayEquals(intArrayOf(0, 0, 100, 50), stickerTrimPixels(100, 50, full))
+        assertArrayEquals(intArrayOf(25, 10, 50, 30), stickerTrimPixels(100, 50, StickerTrim(.25f, .2f, .75f, .8f)))
+        val tiny = stickerTrimPixels(3, 3, StickerTrim(.95f, .95f, 1f, 1f))
+        assertTrue(tiny[2] >= 1 && tiny[3] >= 1 && tiny[0] + tiny[2] <= 3 && tiny[1] + tiny[3] <= 3)
+    }
+
     @Test fun scalingKeepsAspectRatioInside512IncludingTinyAndThinPhotos() {
         assertEquals(512 to 256, stickerDimensions(4000, 2000))
         assertEquals(256 to 512, stickerDimensions(2000, 4000))

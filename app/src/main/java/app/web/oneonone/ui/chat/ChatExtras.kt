@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -172,6 +173,33 @@ internal fun TypingBubble(visible: Boolean, palette: BubblePalette) {
                     Box(Modifier.size(7.dp).graphicsLayer { translationY = -5.dp.toPx() * lift; alpha = .45f + .55f * lift }
                         .clip(CircleShape).background(colors.text))
                 }
+            }
+        }
+    }
+}
+
+/** Own voice note / sticker / GIF still uploading: shown at once, replaced by the real message when the send lands. */
+@Composable
+internal fun PendingMediaBubble(item: FeatureViewModel.PendingMedia, palette: BubblePalette, modifier: Modifier = Modifier) {
+    val colors = palette.mine
+    Box(modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp), contentAlignment = Alignment.CenterEnd) {
+        val bare = item.kind == "sticker" // Stickers have no bubble once sent, so none while sending either.
+        Row(
+            (if (bare) Modifier else Modifier.bubbleTail(true, colors.backgroundStart).clip(RoundedCornerShape(OneTheme.radii.bubble8))
+                .background(colors.backgroundStart).padding(if (item.kind == "voice") 12.dp else 4.dp))
+                .semantics(mergeDescendants = true) { contentDescription = "Sending ${if (item.kind == "gif") "GIF" else item.kind}" },
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (item.kind == "voice") {
+                Icon(painterResource(R.drawable.ic_mic), null, tint = colors.text, modifier = Modifier.size(20.dp))
+                val seconds = kotlin.math.round(item.duration ?: 0.0).toInt()
+                Text("%d:%02d".format(seconds / 60, seconds % 60), color = colors.text, style = OneTextStyles.menuItem)
+                Text("Sending…", color = colors.meta, style = OneTextStyles.cardHint)
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = colors.meta, strokeWidth = 2.dp)
+            } else Box(Modifier.size(if (bare) StickerSize else 140.dp), contentAlignment = Alignment.Center) {
+                item.file?.let { coil3.compose.AsyncImage(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = .6f }) }
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(28.dp), color = colors.text, strokeWidth = 2.5.dp)
             }
         }
     }

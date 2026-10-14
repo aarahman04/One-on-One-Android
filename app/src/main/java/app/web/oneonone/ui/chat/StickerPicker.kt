@@ -4,7 +4,10 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,7 +60,7 @@ internal fun StickerGrid(owner: String, vm: StickerViewModel, sending: Boolean, 
             }
             sections.forEach { section ->
                 item(key = section.title, span = { GridItemSpan(maxLineSpan) }) {
-                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(section.title, Modifier.semantics { heading() }, color = c.textDim, style = OneTextStyles.menuItem)
                         if (section.entries.isEmpty() && section.title != "My stickers")
                             Text("None yet.", color = c.muted, style = OneTextStyles.cardHint)
@@ -72,7 +75,7 @@ internal fun StickerGrid(owner: String, vm: StickerViewModel, sending: Boolean, 
                     val favourite = if (sticker.favourite) "Unfavourite" else "Favourite"
                     Box {
                         AsyncImage(vm.file(owner, sticker.id), null,
-                            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(OneTheme.radii.sm6)).stickerCheckerboard()
+                            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(OneTheme.radii.sm6))
                                 .combinedClickable(enabled = !busy && !sending, role = Role.Button,
                                     onClickLabel = "Send sticker", onLongClickLabel = "Sticker options",
                                     onClick = { onSend(sticker) }, onLongClick = { menu = true })
@@ -105,9 +108,11 @@ internal fun StickerMaker(vm: StickerViewModel) {
     val draft by vm.draft.collectAsState()
     val cutOut by vm.cutOut.collectAsState()
     val crop by vm.crop.collectAsState()
+    val trim by vm.trim.collectAsState()
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
     val source = if (cutOut) draft.cutOut ?: draft.original else draft.original
+    var trimming by rememberSaveable { mutableStateOf(false) }
     val c = OneTheme.colors
     OneModal(onDismiss = { if (!busy) vm.closeMaker() }) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -125,16 +130,29 @@ internal fun StickerMaker(vm: StickerViewModel) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().semantics { contentDescription = "Processing photo on this device" })
             }
             source?.let {
-                Text("Pinch to zoom, drag to crop.", color = c.textDim, style = OneTextStyles.cardHint)
-                StickerCropPreview(it, crop, enabled = !busy, onCrop = vm::crop)
-                SecondaryButton("Reset crop", { vm.crop(StickerCrop()) }, Modifier.heightIn(min = 48.dp), enabled = !busy)
+                if (trimming) {
+                    Text("Drag the corners to crop, or drag inside to move.", color = c.textDim, style = OneTextStyles.cardHint)
+                    StickerTrimEditor(it, trim, enabled = !busy, onTrim = vm::trim)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SecondaryButton("Reset", { vm.trim(StickerTrim()) }, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
+                        PrimaryButton("Done", { trimming = false }, Modifier.weight(1f).heightIn(min = 48.dp))
+                    }
+                } else {
+                    val trimmed = remember(it, trim) { trimSticker(it, trim) }
+                    Text("Pinch to zoom, drag to place.", color = c.textDim, style = OneTextStyles.cardHint)
+                    StickerCropPreview(trimmed, crop, enabled = !busy, onCrop = vm::crop)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SecondaryButton("Crop", { trimming = true }, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
+                        SecondaryButton("Reset", { vm.trim(StickerTrim()) }, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
+                    }
+                }
             }
             draft.notice?.let { Text(it, color = c.textDim, style = OneTextStyles.cardHint) }
             error?.let { Text(it, color = c.danger, style = OneTextStyles.cardHint) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SecondaryButton("Cancel", vm::closeMaker, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
                 PrimaryButton("Save", vm::save, Modifier.weight(1f).heightIn(min = 48.dp),
-                    enabled = source != null && !draft.processing && !busy)
+                    enabled = source != null && !draft.processing && !busy && !trimming)
             }
         }
     }
@@ -149,6 +167,67 @@ private fun Modifier.stickerCheckerboard(): Modifier {
         for (y in 0..(size.height / square).toInt()) for (x in 0..(size.width / square).toInt()) {
             if ((x + y) % 2 == 0) drawRect(c.border, Offset(x * square, y * square), Size(square, square))
         }
+    }
+}
+
+/** The whole photo with a crop box: corner handles resize it, dragging inside moves it. Dimmed outside the box. */
+@Composable
+internal fun StickerTrimEditor(source: Bitmap, trim: StickerTrim, enabled: Boolean, onTrim: (StickerTrim) -> Unit) {
+    val image = remember(source) { source.asImageBitmap() }
+    val current by rememberUpdatedState(trim)
+    val accent = OneTheme.colors.accentYou
+    var frame by remember { mutableFloatStateOf(1f) }
+    // Where the photo sits inside the square frame (fit, centred), as frame fractions.
+    // Inset 4% so the corner handles are never clipped by the frame edge.
+    val area = remember(source) {
+        stickerPlacement(source.width, source.height, StickerCrop()).run { copy(left = .04f + left * .92f, top = .04f + top * .92f, width = width * .92f, height = height * .92f) }
+    }
+    val reach = with(LocalDensity.current) { 36.dp.toPx() }
+    fun nudge(handle: Int, du: Float, dv: Float) = onTrim(dragStickerTrim(current, handle, du, dv))
+    Canvas(Modifier.fillMaxWidth().aspectRatio(1f).clipToBounds().stickerCheckerboard()
+        .onSizeChanged { frame = it.width.toFloat().coerceAtLeast(1f) }
+        .pointerInput(source, enabled) {
+            if (!enabled) return@pointerInput
+            var handle = -1
+            detectDragGestures(onDragStart = { at ->
+                val t = current
+                val corners = listOf(t.left to t.top, t.right to t.top, t.left to t.bottom, t.right to t.bottom).map { (u, v) ->
+                    Offset((area.left + u * area.width) * frame, (area.top + v * area.height) * frame)
+                }
+                handle = corners.indices.minBy { (corners[it] - at).getDistance() }.takeIf { (corners[it] - at).getDistance() <= reach }
+                    ?: 4.takeIf {
+                        val u = (at.x / frame - area.left) / area.width; val v = (at.y / frame - area.top) / area.height
+                        u in t.left..t.right && v in t.top..t.bottom
+                    } ?: -1
+            }) { change, drag ->
+                if (handle < 0) return@detectDragGestures
+                change.consume()
+                nudge(handle, drag.x / frame / area.width, drag.y / frame / area.height)
+            }
+        }.semantics {
+            contentDescription = "Crop box"
+            customActions = if (!enabled) emptyList() else listOf(
+                CustomAccessibilityAction("Crop in") { onTrim(StickerTrim(current.left + .05f, current.top + .05f, current.right - .05f, current.bottom - .05f)); true },
+                CustomAccessibilityAction("Move left") { nudge(4, -.05f, 0f); true },
+                CustomAccessibilityAction("Move right") { nudge(4, .05f, 0f); true },
+                CustomAccessibilityAction("Move up") { nudge(4, 0f, -.05f); true },
+                CustomAccessibilityAction("Move down") { nudge(4, 0f, .05f); true },
+                CustomAccessibilityAction("Reset crop") { onTrim(StickerTrim()); true },
+            )
+        }) {
+        val left = area.left * size.width; val top = area.top * size.height
+        val w = area.width * size.width; val h = area.height * size.height
+        drawImage(image, dstOffset = IntOffset(left.roundToInt(), top.roundToInt()),
+            dstSize = IntSize(w.roundToInt().coerceAtLeast(1), h.roundToInt().coerceAtLeast(1)), filterQuality = FilterQuality.High)
+        val box = androidx.compose.ui.geometry.Rect(left + trim.left * w, top + trim.top * h, left + trim.right * w, top + trim.bottom * h)
+        val shade = androidx.compose.ui.graphics.Color.Black.copy(alpha = .55f)
+        drawRect(shade, Offset.Zero, Size(size.width, box.top))
+        drawRect(shade, Offset(0f, box.bottom), Size(size.width, size.height - box.bottom))
+        drawRect(shade, Offset(0f, box.top), Size(box.left, box.height))
+        drawRect(shade, Offset(box.right, box.top), Size(size.width - box.right, box.height))
+        drawRect(accent, box.topLeft, box.size, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+        val knob = 7.dp.toPx()
+        listOf(box.topLeft, box.topRight, box.bottomLeft, box.bottomRight).forEach { drawCircle(accent, knob, it) }
     }
 }
 

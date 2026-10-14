@@ -129,7 +129,7 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
                 }
                 "countdown" -> {
                     Field("Countdown label", first, 100) { first = it }
-                    SecondaryButton(if (target.isBlank()) "Choose date and time" else Instant.parse(target).atZone(ZoneId.systemDefault()).toLocalDateTime().toString(), onClick = {
+                    SecondaryButton(if (target.isBlank()) "Choose date and time" else FullFormat.withZone(ZoneId.systemDefault()).format(Instant.parse(target)), onClick = {
                         val initial = target.takeIf { it.isNotBlank() }?.let { Instant.parse(it).atZone(ZoneId.systemDefault()).toLocalDateTime() } ?: LocalDateTime.now().plusHours(1)
                         DatePickerDialog(context, { _, y, m, d ->
                             TimePickerDialog(context, { _, hour, minute ->
@@ -227,6 +227,16 @@ object LetterThemes {
 }
 
 /** A single bounded tile, as in the web card. OSM sees this approximate area and the device IP. */
+internal val StickerSize = 150.dp
+
+/**
+ * Stickers travel as ordinary images (the contract has no sticker type); the maker's exact 512×512 WebP marks one.
+ * Android photos are re-encoded to JPEG/PNG and GIFs stay GIF, so only stickers match here.
+ * shortcut: a 512×512 WebP photo sent from the web also renders bare; upgrade with a payload flag (codex Prompt 2).
+ */
+internal fun isSticker(message: ChatMessage): Boolean = message.type == "image" && message.deletedAt == null &&
+    message.payload.text("mime") == "image/webp" && message.payload.number("width") == 512.0 && message.payload.number("height") == 512.0
+
 internal fun locationTile(lat: Double, lng: Double): String {
     require(lat.isFinite() && lng.isFinite() && lat in -90.0..90.0 && lng in -180.0..180.0)
     val n = 1 shl 15
@@ -351,7 +361,7 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                         delay(1_000)
                     } }
                     CardHeading("⏳", payload.text("label")); CardHint(remaining)
-                    CardHint(runCatching { Instant.parse(payload.text("targetIso")).atZone(ZoneId.systemDefault()).toLocalDateTime().toString() }.getOrDefault(""))
+                    CardHint(runCatching { FullFormat.withZone(ZoneId.systemDefault()).format(Instant.parse(payload.text("targetIso"))) }.getOrDefault(""))
                 }
                 "location" -> {
                     val lat = payload.number("lat"); val lng = payload.number("lng")
@@ -375,9 +385,17 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                         }
                     } else Text("Location unavailable")
                 }
-                "image" -> {
+                "image" -> if (isSticker(message)) {
+                    // Bare sticker: transparent, fitted, no photo viewer; the bubble draws only a small time pill.
+                    Box(Modifier.size(StickerSize), contentAlignment = Alignment.Center) {
+                        url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "Sticker", Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit, onError = { onImageError() }) }
+                        if (url == null && urlError == null) androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        urlError?.let { CardAction("Retry", onClick = { onRetryPhoto() }) }
+                    }
+                } else {
                     if (url == null && urlError == null) Text("Loading photo…")
-                    url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "View shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp)
+                    url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "View shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp).clip(RoundedCornerShape(OneTheme.radii.sm6))
                         .clickable(role = Role.Button) { reveal = true }, contentScale = ContentScale.Crop,
                 placeholder = ColorPainter(OneTheme.colors.bgRaised), error = if (LocalInspectionMode.current) ColorPainter(OneTheme.colors.bgRaised) else null,
                         onError = { onImageError() }) }

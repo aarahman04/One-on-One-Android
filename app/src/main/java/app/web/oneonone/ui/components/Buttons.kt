@@ -57,13 +57,15 @@ private fun OneButton(
         border = BorderStroke(1.dp, if (enabled) border else c.border),
         interactionSource = source,
     ) {
-        Text(
-            text,
-            modifier = Modifier.padding(ButtonPadding),
-            // Surface stretches its child to the button's width; centre the label when a caller widens it.
-            style = OneTextStyles.subtitle.copy(fontWeight = weight, textAlign = TextAlign.Center),
-            color = if (enabled) content else c.muted,
-        )
+        // Surface pins its child top-start; centre the label both ways when a caller makes the button wider or taller.
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text,
+                modifier = Modifier.padding(ButtonPadding),
+                style = OneTextStyles.subtitle.copy(fontWeight = weight, textAlign = TextAlign.Center),
+                color = if (enabled) content else c.muted,
+            )
+        }
     }
 }
 

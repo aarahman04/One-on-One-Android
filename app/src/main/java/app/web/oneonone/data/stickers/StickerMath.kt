@@ -49,6 +49,47 @@ fun transformStickerCrop(
         focusY - (focusY - before.y) * ratio + panY))
 }
 
+/** Free crop of the photo as 0..1 fractions; the cropped part is then placed in the square frame by [StickerCrop]. */
+data class StickerTrim(val left: Float = 0f, val top: Float = 0f, val right: Float = 1f, val bottom: Float = 1f) : Serializable
+
+private const val TRIM_MIN = .1f
+
+fun boundedStickerTrim(trim: StickerTrim): StickerTrim {
+    require(listOf(trim.left, trim.top, trim.right, trim.bottom).all { it.isFinite() })
+    val left = trim.left.coerceIn(0f, 1f - TRIM_MIN)
+    val top = trim.top.coerceIn(0f, 1f - TRIM_MIN)
+    return StickerTrim(left, top, trim.right.coerceIn(left + TRIM_MIN, 1f), trim.bottom.coerceIn(top + TRIM_MIN, 1f))
+}
+
+/** [handle]: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right corner; anything else moves the whole box. */
+fun dragStickerTrim(trim: StickerTrim, handle: Int, du: Float, dv: Float): StickerTrim {
+    val t = boundedStickerTrim(trim)
+    fun left() = (t.left + du).coerceIn(0f, t.right - TRIM_MIN)
+    fun right() = (t.right + du).coerceIn(t.left + TRIM_MIN, 1f)
+    fun top() = (t.top + dv).coerceIn(0f, t.bottom - TRIM_MIN)
+    fun bottom() = (t.bottom + dv).coerceIn(t.top + TRIM_MIN, 1f)
+    return when (handle) {
+        0 -> t.copy(left = left(), top = top())
+        1 -> t.copy(right = right(), top = top())
+        2 -> t.copy(left = left(), bottom = bottom())
+        3 -> t.copy(right = right(), bottom = bottom())
+        else -> {
+            val dx = du.coerceIn(-t.left, 1f - t.right); val dy = dv.coerceIn(-t.top, 1f - t.bottom)
+            StickerTrim(t.left + dx, t.top + dy, t.right + dx, t.bottom + dy)
+        }
+    }
+}
+
+/** Pixel [x, y, width, height] of [trim] inside a width×height bitmap; never empty or out of bounds. */
+fun stickerTrimPixels(width: Int, height: Int, trim: StickerTrim): IntArray {
+    val t = boundedStickerTrim(trim)
+    val x = (t.left * width).toInt().coerceIn(0, width - 1)
+    val y = (t.top * height).toInt().coerceIn(0, height - 1)
+    val right = (t.right * width).roundToInt().coerceIn(x + 1, width)
+    val bottom = (t.bottom * height).roundToInt().coerceIn(y + 1, height)
+    return intArrayOf(x, y, right - x, bottom - y)
+}
+
 /** Retry without going below the requested quality floor or silently saving an oversized sticker. */
 internal fun encodeStickerWebP(encode: (Int) -> ByteArray): ByteArray {
     for (quality in listOf(100, 95, 90, 85, 80)) {

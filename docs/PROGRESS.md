@@ -669,15 +669,17 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | 2.0.0 | 7 | 2026-10-10 | [38031209794](https://github.com/aarahman04/One-on-One-Android/actions/runs/38031209794) | D1–D5 design fixes, presence, viewers, settings/account, alarm send fix |
 | 2.0.1 | 8 | 2026-10-13 | [38348089207](https://github.com/aarahman04/One-on-One-Android/actions/runs/38348089207) | Scroll-to-end, web-parity search, crisp splash logo |
 | 2.0.2 | 9 | 2026-10-13 | [38377404608](https://github.com/aarahman04/One-on-One-Android/actions/runs/38377404608) | Onboarding/connect redesign, gates per sign-in, links, friendly errors, vector icons |
-| 2.0.3 | 10 | pending dispatch | pending (dispatch on `main`) | Chat polish (gestures, selection, alarm glow, calls, share target), edit/delete/pin/typing, any-emoji reactions, link previews, /location fix, animations |
+| 2.0.3 | 10 | 2026-10-14 | [38487293539](https://github.com/aarahman04/One-on-One-Android/actions/runs/38487293539) | Chat polish (gestures, selection, alarm glow, calls, share target), edit/delete/pin/typing, any-emoji reactions, link previews, /location fix, animations |
+| 2.0.4 | 11 | 2026-10-14 | pending (dispatch on `main`) | Chat polish round 2 (alarm silence, inline push, composer, GIPHY, profile photos), sticker maker + packs, bare stickers, photo time overlay, 12-hour times, instant media sends |
 
 - Signed releases use the `android-build` workflow (manual dispatch on `main`); version
   name/code are workflow inputs, not stored in the repo. Signed with the existing
   Play upload key (SHA-1 check in the release job passed). Use the
   `android-release` artifact (AAB + APK); `android-debug` and
   `android-release-smoke-unsigned` are test-only.
-- 2.0.2 uses versionCode 9; 2.0.3 uses versionCode 10 (workflow defaults now 10 / 2.0.3);
-  **the upload after it needs versionCode 11 or higher.**
+- 2.0.3 uses versionCode 10; 2.0.4 uses versionCode 11 (workflow defaults now 11 / 2.0.4);
+  **the upload after it needs versionCode 12 or higher.**
+- 2.0.4 needs backend migration 037 (run 2026-10-14) and `GIPHY_API_KEY` on Railway (set 2026-10-14).
 - 2.0.3 needs the backend from web PR #100 (merged to web `main`; deployed to Railway 2026-10-14 with `railway up`) and migration 036 (run 2026-10-14).
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
   S2–S5 device checklists above, then upload the AAB to internal testing.
@@ -1192,3 +1194,36 @@ test photos and APKs are not committed.
   files, index, favourites or draft. Repeat after deleting a disposable account.
 - [ ] API 26–29 legacy WebP encoding and a real 16 KB page-size device: inference,
   preview/save and native loading; real Xiaomi performance and edge quality.
+
+### Owner review follow-ups (2026-10-14, Opus)
+
+- Composer smiley → sticker icon; sheet is Stickers (default) | GIFs, emoji tab
+  removed (keyboard has emoji). Slimmer 36dp pills inside 48dp targets, centred text.
+  New camera icon. GIF/sticker send errors now show inside the sheet (the chat
+  notice was hidden behind it).
+- Built-in packs: "Cats" (5 original vector drawings: happy, love, sad, grumpy,
+  sleepy) and Craftwork "Open Stickers" IT / Life / Nature / Shapes (80, owner holds a
+  paid licence), pre-encoded offline to 512×512 WebP in `assets/stickers/packs`
+  (+1.6 MB). Packs only seed when an account's index is first created.
+  User-made stickers stay in "My stickers". Grid tiles have no checkerboard.
+- Fix on main's code: link-preview card overlapped message text (round-2 deleted
+  fade put bubble content in AnimatedContent's Box); now a Column.
+- Emulator (demo, no backend): sheet, packs, maker, favourite, persistence and
+  in-sheet error checked. Real send/receive still needs a signed-in account.
+- Maker "Crop": free crop box over the whole photo (corner handles, drag to move,
+  10% minimum, TalkBack actions); the cropped part is then placed with pinch/drag.
+- Voice/sticker/GIF sends show an immediate "Sending…" bubble while uploading;
+  text is no longer blocked by a media upload; composer ↔ recording bar slide/fade.
+- Shared button fix: labels were top-aligned whenever a button was taller than its
+  text (all 48dp maker buttons); `OneButton` now centres them app-wide. Other
+  Surface/clickable labels audited: already centred.
+- Stickers (512×512 WebP image payloads, no reply quote) render bare, 150dp, with a
+  small bubble-coloured time+ticks pill hanging just under its corner. Photos sit
+  in a thin 3dp frame with time+ticks on a dark scrim printed on the image. Both:
+  bottom-right when sent, bottom-left when received (like text bubbles). The
+  sticker "Sending…" placeholder is bare too.
+- Debug demo: uploads now stay on the device (`DemoMedia`) and Alex echoes images
+  back, so photos/stickers/voice render offline; both layouts checked on the emulator.
+  Fixed a stuck fade-out ghost of the removed "Sending…" item (dropped `animateItem`).
+- All chat times are 12-hour with AM/PM (bubbles, tap-for-detail, last seen,
+  countdown cards), in the phone's time zone.

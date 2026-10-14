@@ -128,6 +128,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -200,10 +201,11 @@ private fun receiptOf(label: String): Receipt = when (label) {
     else -> Receipt.Pending
 }
 
-private val TimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-private val FullFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM yyyy · HH:mm")
+// Owner decision: always 12-hour with AM/PM, in the phone's time zone (English AM/PM on every locale).
+internal val TimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
+internal val FullFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM yyyy · h:mm a", Locale.ENGLISH)
 
-/** Tap-to-reveal detail: "Mon, 13 Oct 2026 · 01:42", plus when it was edited. */
+/** Tap-to-reveal detail: "Mon, 13 Oct 2026 · 1:42 AM", plus when it was edited. */
 private fun fullTime(message: ChatMessage): String {
     val format = FullFormat.withZone(ZoneId.systemDefault())
     val sent = "Sent " + format.format(Instant.parse(message.createdAt))
@@ -260,6 +262,9 @@ internal fun MessageBubble(
     val triggerPx = with(LocalDensity.current) { SwipeTriggerDp.dp.toPx() }
     val shape = RoundedCornerShape(OneTheme.radii.bubble8)
     val alarm = message.type == "alarm"
+    // Stickers draw bare (a reply quote still needs the bubble); photos sit in a thin frame with the time printed on them.
+    val sticker = !deleted && quote == null && isSticker(message)
+    val photo = !deleted && !sticker && message.type == "image"
     BackHandler(reacting) { reacting = false }
     LaunchedEffect(selected) { if (!selected) reacting = false }
 
@@ -349,20 +354,22 @@ internal fun MessageBubble(
             horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
         ) {
             Box {
+                val bubble = Modifier
+                    // Tail first so it is not clipped by the bubble shape (first bubble of a group).
+                    .bubbleTail(mine, colors.tail, groupStart)
+                    .clip(shape)
+                    .drawWithCache {
+                        // CSS 135deg: a fixed diagonal, independent of bubble aspect ratio.
+                        val half = (size.width + size.height) / 4f
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        val diagonal = Offset(half, half)
+                        val brush = Brush.linearGradient(listOf(colors.backgroundStart, colors.backgroundEnd), center - diagonal, center + diagonal)
+                        onDrawBehind { drawRect(brush) }
+                    }
+                    .then(if (currentMatch) Modifier.border(2.dp, c.accentOther, shape) else Modifier.border(1.dp, colors.edge, shape))
                 Column(
                     Modifier
-                        // Tail first so it is not clipped by the bubble shape (first bubble of a group).
-                        .bubbleTail(mine, colors.tail, groupStart)
-                        .clip(shape)
-                        .drawWithCache {
-                            // CSS 135deg: a fixed diagonal, independent of bubble aspect ratio.
-                            val half = (size.width + size.height) / 4f
-                            val center = Offset(size.width / 2f, size.height / 2f)
-                            val diagonal = Offset(half, half)
-                            val brush = Brush.linearGradient(listOf(colors.backgroundStart, colors.backgroundEnd), center - diagonal, center + diagonal)
-                            onDrawBehind { drawRect(brush) }
-                        }
-                        .then(if (currentMatch) Modifier.border(2.dp, c.accentOther, shape) else Modifier.border(1.dp, colors.edge, shape))
+                        .then(if (!sticker) bubble else if (currentMatch) Modifier.border(2.dp, c.accentOther, shape) else Modifier)
                         // .chat__message[data-type='alarm'] .chat__message-body { border-left: 4px solid var(--danger) }
                         .then(if (alarm) Modifier.drawBehind { drawRect(c.danger, size = Size(4.dp.toPx(), size.height)) } else Modifier)
                         .onGloballyPositioned { bubbleBox = it }
@@ -408,7 +415,11 @@ internal fun MessageBubble(
                         // Text bubbles shrink-wrap to their widest child so the quote can stretch to the same width.
                         // Cards (S4) keep their own sizing: they may contain subcomposition that has no intrinsics.
                         .then(if (message.type == "text" || deleted) Modifier.width(IntrinsicSize.Max) else Modifier)
-                        .padding(start = if (alarm) 12.5.dp else 8.5.dp, end = 8.5.dp, top = 6.dp, bottom = 6.dp),
+                        .then(when {
+                            sticker -> Modifier
+                            photo -> Modifier.padding(3.dp)
+                            else -> Modifier.padding(start = if (alarm) 12.5.dp else 8.5.dp, end = 8.5.dp, top = 6.dp, bottom = 6.dp)
+                        }),
                 ) {
                     CompositionLocalProvider(LocalContentColor provides colors.text, LocalBubbleColors provides colors,
                         LocalMessageSaveAction provides saveCopy) {
@@ -416,7 +427,8 @@ internal fun MessageBubble(
                         // Deleting fades the content swap and eases the bubble to its new size instead of popping.
                         AnimatedContent(deleted, transitionSpec = { fadeIn(tween(motion.base200)) togetherWith fadeOut(tween(motion.fast120)) },
                             label = "deleted") { isDeleted ->
-                        when {
+                        // AnimatedContent lays children out in a Box; the preview card must stack above the text, not on it.
+                        Column { when {
                             isDeleted -> TextWithMeta(
                                 text = AnnotatedString("This message was deleted"),
                                 textColor = colors.meta,
@@ -438,6 +450,23 @@ internal fun MessageBubble(
                                 ) { MetaRow(time, status, colors, palette, receipt = null) }
                             }
                             // Voice notes keep the time beside the duration line instead of on a row of its own.
+                            // Owner: time + ticks at the bottom-right of what I send, bottom-left of what I receive.
+                            // Sticker: a bubble-coloured pill hanging just under the sticker's corner. Photo: printed on the image.
+                            sticker -> Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
+                                card()
+                                Box(Modifier.offset(y = (-6).dp).clip(RoundedCornerShape(OneTheme.radii.pill22))
+                                    .background(colors.backgroundStart).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                    MetaRow(time, status, colors, palette, receipt = receipt)
+                                }
+                            }
+                            photo -> Box {
+                                card()
+                                Box(Modifier.align(if (mine) Alignment.BottomEnd else Alignment.BottomStart).padding(6.dp)
+                                    .clip(RoundedCornerShape(OneTheme.radii.pill22)).background(Color.Black.copy(alpha = .45f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                    MetaRow(time, status, colors.copy(meta = Color.White), palette, receipt = receipt)
+                                }
+                            }
                             message.type == "voice" -> Box {
                                 card()
                                 Box(Modifier.align(Alignment.BottomEnd)) { MetaRow(time, status, colors, palette, receipt = receipt) }
@@ -446,7 +475,7 @@ internal fun MessageBubble(
                                 card()
                                 Box(Modifier.align(Alignment.End).padding(top = 2.dp)) { MetaRow(time, status, colors, palette, receipt = receipt) }
                             }
-                        }
+                        } }
                         }
                         if (expanded) Text(remember(message.createdAt, message.editedAt) { fullTime(message) }, color = colors.meta, style = OneTextStyles.bubbleMeta)
                     }

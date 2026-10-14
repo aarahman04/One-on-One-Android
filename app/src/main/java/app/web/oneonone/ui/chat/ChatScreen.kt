@@ -30,6 +30,7 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -171,6 +172,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         vm.consumeShared()
     }
     val featureErrorNow by features.error.collectAsState()
+    val pendingMedia by features.pending.collectAsState()
     fun keepUri(uri: Uri, picked: String) {
         runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         features.clearError(); kind = picked; selected = uri.toString(); attachmentOpen = false
@@ -237,6 +239,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     LaunchedEffect(list, connection.id) {
         snapshotFlow { list.canScrollForward }.collect { if (it && pinned && !list.isScrollInProgress && query.isBlank()) scrollToEnd() }
     }
+    LaunchedEffect(pendingMedia.size) { if (pendingMedia.isNotEmpty()) { pinned = true; scrollToEnd() } }
     LaunchedEffect(messages.lastOrNull()?.id, messages.lastOrNull()?.tempId) {
         val mine = messages.lastOrNull()?.senderId == connection.myUserId
         if (messages.isNotEmpty() && (mine || (wasNearBottom && query.isBlank()))) { pinned = true; scrollToEnd() }
@@ -428,6 +431,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                                 }
                             })
                     }
+                    items(pendingMedia, key = { "pending-" + it.id }) { PendingMediaBubble(it, palette) }
                     item(key = "typing") { TypingBubble(otherTyping, palette) }
                 }
             }
@@ -466,10 +470,10 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         } }
         ChatComposer(
             draft = draft, onDraft = vm::draft,
-            canSend = !busy && !featureBusy,
+            canSend = !busy, // Text is queued instantly; an uploading voice note or sticker must not block it.
             recording = recording,
             onAttach = { more = false; attachmentOpen = !attachmentOpen },
-            onEmoji = { attachmentOpen = false; stickers.clearError(); composerEmoji = true },
+            onEmoji = { attachmentOpen = false; stickers.clearError(); features.clearError(); composerEmoji = true },
             onCamera = {
                 attachmentOpen = false; features.clearError()
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) takePhoto()
@@ -505,7 +509,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             vm.react(id, emoji, message?.reactions?.any { it.emoji == emoji && connection.myUserId in it.userIds } == true)
         })
     }
-    if (composerEmoji) ComposerEmojiSheet(onEmoji = { emoji -> vm.draft(draft + emoji) }, search = features::gifs, sending = featureBusy,
+    if (composerEmoji) ComposerStickerSheet(search = features::gifs, sending = featureBusy,
         onGif = { gif -> features.sendGif(connection, gif.id, replyTo) { composerEmoji = false; vm.reply(null) } },
         stickers = {
             StickerGrid(connection.myUserId, stickers, featureBusy,
@@ -514,7 +518,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                     stickers.used(sticker.id); composerEmoji = false; vm.reply(null)
                 } })
         },
-        onDismiss = { composerEmoji = false })
+        onDismiss = { composerEmoji = false }, error = featureErrorNow)
     if (stickerMaker) StickerMaker(stickers)
     if (report || reportMessage != null) ReportDialog(connection, reportMessage, features) { report = false; reportMessage = null }
     if (block) BlockDialog(connection, features, close = { block = false }, refresh = onRefresh)

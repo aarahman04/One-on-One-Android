@@ -1,6 +1,9 @@
 package app.web.oneonone.ui.chat
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloatAsState
@@ -168,12 +171,24 @@ internal fun ChatComposer(
     val focused by source.collectIsFocusedAsState()
     LaunchedEffect(focused) { if (focused) onFocus() }
     val textStyle = TextStyle(fontFamily = FontFamilies.Body, fontSize = 16.sp, lineHeight = 22.4.sp, color = c.text)
-    Row(
+    val motion = OneTheme.motion
+    // Recording slides in from the mic side and out the same way, so start/stop never pops.
+    AnimatedContent(
+        recording,
         modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(horizontal = 8.dp, vertical = 6.dp),
+        transitionSpec = {
+            val side = if (targetState) 1 else -1
+            (fadeIn(tween(200)) + slideInHorizontally(tween(260, easing = motion.standard)) { side * it / 4 }) togetherWith
+                (fadeOut(tween(140)) + slideOutHorizontally(tween(220, easing = motion.standard)) { -side * it / 8 }) using SizeTransform(clip = false)
+        },
+        label = "recording",
+    ) { rec ->
+    Row(
+        Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (recording) {
+        if (rec) {
             RecordingBar(elapsedSeconds, onStop, onDiscard)
             return@Row
         }
@@ -188,7 +203,7 @@ internal fun ChatComposer(
             verticalAlignment = Alignment.Bottom,
         ) {
             // 44dp pill: the 40dp buttons sit 2dp in from the bottom, so one line of text stays a slim pill.
-            OneIconButton(R.drawable.ic_emoji, "Emoji", onEmoji, Modifier.padding(bottom = 2.dp))
+            OneIconButton(R.drawable.ic_sticker, "Stickers and GIFs", onEmoji, Modifier.padding(bottom = 2.dp))
             BasicTextField(
                 value = draft,
                 onValueChange = onDraft,
@@ -237,6 +252,7 @@ internal fun ChatComposer(
             }
         }
         }
+    }
     }
 }
 

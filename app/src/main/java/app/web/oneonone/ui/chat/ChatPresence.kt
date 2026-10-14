@@ -1,11 +1,8 @@
 package app.web.oneonone.ui.chat
 
-import android.text.format.DateFormat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -47,8 +44,6 @@ internal fun chatPresence(
 
 @Composable
 internal fun rememberChatPresence(state: ConnectionState, lastReadAt: String?): ChatPresence {
-    val context = LocalContext.current
-    val locale = LocalConfiguration.current.locales[0]
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val now by produceState(Instant.now(), lastReadAt, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -58,6 +53,6 @@ internal fun rememberChatPresence(state: ConnectionState, lastReadAt: String?): 
             }
         }
     }
-    val pattern = DateFormat.getBestDateTimePattern(locale, if (DateFormat.is24HourFormat(context)) "Hm" else "hm")
-    return chatPresence(state, lastReadAt, now, ZoneId.systemDefault(), locale, pattern)
+    // Same 12-hour AM/PM clock as message times.
+    return chatPresence(state, lastReadAt, now, ZoneId.systemDefault(), Locale.ENGLISH, "h:mm a")
 }

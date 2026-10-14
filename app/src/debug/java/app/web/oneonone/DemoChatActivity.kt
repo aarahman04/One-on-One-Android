@@ -37,6 +37,13 @@ import app.web.oneonone.ui.theme.OneOnOneTheme
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import android.graphics.BitmapFactory
+import android.net.Uri
+import app.web.oneonone.data.media.MediaGateway
+import java.io.File
 import okhttp3.MediaType.Companion.toMediaType
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -69,7 +76,7 @@ class DemoChatActivity : ComponentActivity() {
     }
     private val chat: ChatViewModel by viewModels { viewModelFactory { initializer { ChatViewModel(service, account, launcher, createSavedStateHandle()) } } }
     private val features: FeatureViewModel by viewModels { viewModelFactory { initializer {
-        FeatureViewModel(service, account, MediaRepository(applicationContext, retrofit.create(AttachmentApi::class.java), json),
+        FeatureViewModel(service, account, DemoMedia(applicationContext, MediaRepository(applicationContext, retrofit.create(AttachmentApi::class.java), json)),
             DevicePreferences(applicationContext), createSavedStateHandle())
     } } }
     private val stickers: StickerViewModel by viewModels { viewModelFactory { initializer {
@@ -99,6 +106,47 @@ private object DemoSession : AccountSession {
     override suspend fun accessToken() = "demo"
     override suspend fun refreshToken(rejectedToken: String) = "demo"
     override suspend fun invalidate(rejectedToken: String) {}
+}
+
+/**
+ * Demo only: an "upload" copies the bytes into the app cache and its "signed URL" is that local file, so photos,
+ * stickers and voice notes render and play with no backend. Everything else is the real [MediaRepository].
+ */
+private class DemoMedia(private val context: Context, real: MediaGateway) : MediaGateway by real {
+    private val dir = File(context.cacheDir, "demo-media").apply { mkdirs() }
+
+    private suspend fun store(connection: String, bytes: ByteArray, extension: String): String {
+        delay(1_000) // A visible "Sending…" bubble, as on a real network.
+        val name = "${UUID.randomUUID()}.$extension"
+        File(dir, name).writeBytes(bytes)
+        return "$connection/$name"
+    }
+
+    override suspend fun uploadSticker(connection: String, file: File): JsonObject = withContext(Dispatchers.IO) {
+        val bytes = file.readBytes()
+        buildJsonObject {
+            put("path", store(connection, bytes, "webp")); put("mime", "image/webp"); put("size", bytes.size)
+            put("width", 512); put("height", 512)
+        }
+    }
+
+    override suspend fun upload(connection: String, kind: String, uri: Uri, duration: Double?): JsonObject = withContext(Dispatchers.IO) {
+        val bytes = checkNotNull(context.contentResolver.openInputStream(uri)).use { it.readBytes() }
+        val mime = if (kind == "voice") "audio/mp4" else context.contentResolver.getType(uri) ?: "image/jpeg"
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        buildJsonObject {
+            put("path", store(connection, bytes, if (kind == "voice") "m4a" else mime.substringAfter('/')))
+            put("mime", mime); put("size", bytes.size)
+            when (kind) {
+                "image" -> { put("width", bounds.outWidth); put("height", bounds.outHeight) }
+                "voice" -> put("duration", checkNotNull(duration))
+                "file" -> put("name", "attachment")
+            }
+        }
+    }
+
+    override suspend fun signedUrl(connection: String, path: String): String = File(dir, path.substringAfterLast('/')).absolutePath
 }
 
 private class DemoTransport(context: Context, private val json: Json, private val scope: CoroutineScope) : Transport {
@@ -149,6 +197,13 @@ private class DemoTransport(context: Context, private val json: Json, private va
             type = message.type, payload = message.payload, replyTo = message.replyTo, tempId = message.tempId)
         all[checkNotNull(saved.id)] = saved
         if (message.type == "text") scope.launch { alexResponds(saved) }
+        // Alex sends the same photo/sticker back, so both the sent and received layouts can be checked.
+        if (message.type == "image") scope.launch {
+            delay(1_200)
+            val echo = ChatMessage(id = UUID.randomUUID().toString(), senderId = ALEX, content = "", createdAt = Instant.now().toString(),
+                type = "image", payload = message.payload)
+            all[checkNotNull(echo.id)] = echo; incoming.emit(echo)
+        }
         return saved
     }
 

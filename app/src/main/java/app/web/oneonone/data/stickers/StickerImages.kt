@@ -75,6 +75,12 @@ internal fun cutOutSticker(context: Context, original: Bitmap): Bitmap? {
     }.also { check(!original.isRecycled) { "Couldn't keep the original photo." } }
 }
 
+internal fun trimSticker(source: Bitmap, trim: StickerTrim): Bitmap {
+    if (trim == StickerTrim()) return source
+    val (x, y, w, h) = stickerTrimPixels(source.width, source.height, trim)
+    return Bitmap.createBitmap(source, x, y, w, h)
+}
+
 internal fun renderSticker(source: Bitmap, crop: StickerCrop): Bitmap {
     val placement = stickerPlacement(source.width, source.height, crop)
     val result = createBitmap(STICKER_PX, STICKER_PX)
@@ -96,16 +102,36 @@ internal fun stickerWebP(bitmap: Bitmap): ByteArray = encodeStickerWebP { qualit
 }
 
 internal fun builtInStickers(context: Context): List<StickerAsset> = listOf(
-    Triple("love", "A little love", R.drawable.sticker_love),
-    Triple("shine", "You shine", R.drawable.sticker_shine),
-    Triple("hello", "Hello there", R.drawable.sticker_hello),
-    Triple("cat", "Cozy cat", R.drawable.sticker_cat),
-    Triple("grow", "Growing together", R.drawable.sticker_grow),
-    Triple("rest", "Rest well", R.drawable.sticker_rest),
-).map { (id, title, drawable) ->
+    Triple("signal-love", "A little love", R.drawable.sticker_love),
+    Triple("signal-shine", "You shine", R.drawable.sticker_shine),
+    Triple("signal-hello", "Hello there", R.drawable.sticker_hello),
+    Triple("signal-cat", "Cozy cat", R.drawable.sticker_cat),
+    Triple("signal-grow", "Growing together", R.drawable.sticker_grow),
+    Triple("signal-rest", "Rest well", R.drawable.sticker_rest),
+    Triple("cat-happy", "Happy cat", R.drawable.sticker_cat_happy),
+    Triple("cat-love", "Love you", R.drawable.sticker_cat_love),
+    Triple("cat-sad", "Miss you", R.drawable.sticker_cat_sad),
+    Triple("cat-grumpy", "Grumpy cat", R.drawable.sticker_cat_grumpy),
+    Triple("cat-sleepy", "Sleepy cat", R.drawable.sticker_cat_sleepy),
+).let { all -> all.mapIndexed { index, (id, title, drawable) ->
     val bitmap = createBitmap(STICKER_PX, STICKER_PX)
     try {
         checkNotNull(ResourcesCompat.getDrawable(context.resources, drawable, context.theme)).apply { setBounds(0, 0, STICKER_PX, STICKER_PX); draw(Canvas(bitmap)) }
-        StickerAsset(StickerEntry("signal-$id", 0, title = title, pack = "Little signals"), stickerWebP(bitmap))
+        // Sections list newest first, so a descending createdAt keeps the order written above.
+        StickerAsset(StickerEntry(id, (all.size - index).toLong(), title = title, pack = if (id.startsWith("cat-")) "Cats" else "Little signals"), stickerWebP(bitmap))
     } finally { bitmap.recycle() }
+} } + packStickers(context)
+
+/** Licensed Craftwork "Open Stickers": assets/stickers/packs/<Pack>/<NN>_<name>.webp, pre-encoded 512×512. */
+private fun packStickers(context: Context): List<StickerAsset> {
+    val root = "stickers/packs"
+    val files = context.assets.list(root).orEmpty().sorted().flatMap { pack ->
+        context.assets.list("$root/$pack").orEmpty().sorted().map { pack to it }
+    }
+    return files.mapIndexed { index, (pack, name) ->
+        val stem = name.removeSuffix(".webp")
+        val title = stem.substringAfter('_').replace('_', ' ').replaceFirstChar { it.uppercase() }
+        val bytes = context.assets.open("$root/$pack/$name").use { readBounded(it, STICKER_MAX_BYTES) }
+        StickerAsset(StickerEntry("${pack.lowercase()}-${stem.replace('_', '-')}", (files.size - index).toLong(), title = title, pack = pack), bytes)
+    }
 }

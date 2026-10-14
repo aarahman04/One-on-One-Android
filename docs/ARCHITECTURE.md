@@ -634,3 +634,34 @@ third-party pack-app reference under its
 Only the square 512 px and small WebP sizing concepts informed this in-app library.
 Its 96 px tray icon is a WhatsApp pack-provider convention and is not needed here.
 No WhatsApp code, artwork, content provider or integration is included.
+
+## Sticker/photo rendering and instant media sends (2026-10-14, 2.0.4)
+
+Built-in packs: Little signals and Cats (original vector drawings, rendered to WebP on first
+library creation) and Craftwork "Open Stickers" IT / Life / Nature / Shapes (owner holds a paid
+Craftwork licence; pre-encoded 512×512 WebP in `assets/stickers/packs`, copied as-is).
+Maker gains a free crop box (`StickerTrim`) applied before the square placement (`StickerCrop`).
+
+```mermaid
+flowchart LR
+  Tap[Sticker tap / voice stop / GIF tap] --> P[FeatureViewModel.pending += item]
+  P --> UI[ChatScreen: PendingMediaBubble at list end]
+  P --> Up[MediaGateway upload]
+  Up --> Send[MessageService.send -> Transport -> InternetTransport]
+  Send --> Done[pending -= item; real message replaces the placeholder]
+```
+
+```mermaid
+flowchart TD
+  M[image message] --> S{512x512 image/webp and no reply quote?}
+  S -- yes --> St[Bare sticker 150dp + bubble-coloured time pill under its corner]
+  S -- no --> Ph[Photo in a 3dp bubble frame + time/ticks scrim on the image]
+  St --> Side{mine?}
+  Ph --> Side
+  Side -- yes --> R[bottom-right]
+  Side -- no --> L[bottom-left]
+```
+
+Stickers are still ordinary `image` payloads (contract unchanged); detection by exact
+512×512 WebP is a client shortcut until the optional backend sticker flag (codex Prompt 2).
+All chat times use a 12-hour `h:mm a` clock in the device time zone.

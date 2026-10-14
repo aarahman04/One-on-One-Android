@@ -41,8 +41,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.emoji2.emojipicker.EmojiPickerView
 import app.web.oneonone.data.media.GifPage
 import app.web.oneonone.data.media.GifResult
 import app.web.oneonone.ui.components.OneTextField
@@ -52,43 +50,37 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
-/** Composer sheet: Emoji inserts into the draft; GIFs and stickers send ordinary images. */
+/** Composer sheet: Stickers first (emoji come from the keyboard), then GIFs. Both send ordinary images. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ComposerEmojiSheet(
-    onEmoji: (String) -> Unit,
+internal fun ComposerStickerSheet(
     search: suspend (String, Int) -> GifPage,
     onGif: (GifResult) -> Unit,
     sending: Boolean,
     stickers: @Composable () -> Unit,
     onDismiss: () -> Unit,
+    error: String? = null,
 ) {
     val c = OneTheme.colors
-    var tab by rememberSaveable { mutableIntStateOf(0) }
-    val pick by rememberUpdatedState(onEmoji)
+    var gifs by rememberSaveable { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.bgRaised, contentColor = c.text) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Emoji", "GIFs", "Stickers").forEachIndexed { index, label ->
-                val on = tab == index
-                Text(label,
-                    Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(OneTheme.radii.pill22))
-                        .background(if (on) c.accentYou.copy(alpha = .18f) else c.bg)
-                        .clickable(role = Role.Tab) { tab = index }
-                        .semantics { selected = on; contentDescription = label }
-                        .padding(horizontal = 8.dp, vertical = 12.dp),
-                    color = if (on) c.accentYou else c.textDim, style = OneTextStyles.menuItem,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            listOf("Stickers" to false, "GIFs" to true).forEach { (label, tab) ->
+                val on = gifs == tab
+                // 48dp touch target, slimmer 36dp pill drawn inside it.
+                Box(Modifier.weight(1f).height(48.dp).clickable(role = Role.Tab) { gifs = tab }.semantics { selected = on },
+                    contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(OneTheme.radii.pill22))
+                        .background(if (on) c.accentYou.copy(alpha = .18f) else c.bg), contentAlignment = Alignment.Center) {
+                        Text(label, color = if (on) c.accentYou else c.textDim, style = OneTextStyles.menuItem)
+                    }
+                }
             }
         }
+        // The chat's own notice sits behind this sheet, so a failed GIF/sticker send must show here.
+        error?.let { Text(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = c.danger, style = OneTextStyles.cardHint) }
         Box(Modifier.fillMaxWidth().height(380.dp)) {
-            when (tab) {
-            2 -> stickers()
-            1 -> GifGrid(search, onGif, sending)
-            else -> AndroidView(
-                factory = { context -> EmojiPickerView(context).apply { emojiGridColumns = 8; setOnEmojiPickedListener { pick(it.emoji) } } },
-                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-            )
-            }
+            if (gifs) GifGrid(search, onGif, sending) else stickers()
         }
     }
 }

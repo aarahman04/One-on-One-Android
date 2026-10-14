@@ -67,9 +67,11 @@ class FeaturesTest {
             closed = false
             vm.sendSticker(conn, File("sticker.webp"), null) { closed = true }
             runCurrent(); started.await()
+            // The sheet closes at once and a pending bubble shows while the upload runs.
+            assertTrue(closed); assertEquals("sticker", vm.pending.value.single().kind)
             service.activate(conn.copy(id = "other")); runCurrent()
             release.complete(Unit); runCurrent()
-            assertFalse(closed); assertEquals(1, transport.sends.size)
+            assertTrue(vm.pending.value.isEmpty()); assertEquals(1, transport.sends.size)
             assertEquals("Conversation changed while sending.", vm.error.value)
             vm.viewModelScope.cancel(); runCurrent(); service.deactivate()
         } finally { Dispatchers.resetMain() }

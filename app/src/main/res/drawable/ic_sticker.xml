@@ -1,11 +1,12 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:pathData="M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z"
+    <!-- Sticker with a peeled bottom-right corner. -->
+    <path android:pathData="M21 12V6a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h6z"
         android:strokeColor="@android:color/white" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M8 14s1.5 2 4 2 4-2 4-2"
+    <path android:pathData="M12 21v-4a5 5 0 0 1 5-5h4"
         android:strokeColor="@android:color/white" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M9 9L9.01 9"
+    <path android:pathData="M7.5 13.5s1.2 1.5 3 1.5"
         android:strokeColor="@android:color/white" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M15 9L15.01 9"
-        android:strokeColor="@android:color/white" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M8.5 8.5L8.51 8.5M14.5 8.5L14.51 8.5"
+        android:strokeColor="@android:color/white" android:strokeWidth="2.4" android:strokeLineCap="round" />
 </vector>
