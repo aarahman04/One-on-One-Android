@@ -180,7 +180,11 @@ private class DemoTransport(context: Context, private val json: Json, private va
 
     init {
         val first = msg(ALEX, "Hey! Did you see this? https://www.youtube.com/watch?v=dQw4w9WgXcQ", 180, id = "00000000-0000-4000-8000-0000000000b1")
-        val seed = if (storeScene == ".StoreStickersActivity") listOf(
+        val seed = if (storeScene == ".StoreAlarmActivity") listOf(
+            msg(ALEX, "Maya, can you call me? I need you right now.", 8),
+            msg(ME, "I'm here, Arjun. What's going on?", 7),
+            msg(ALEX, "Please call as soon as you see this.", 1),
+        ) else if (storeScene == ".StoreStickersActivity") listOf(
             msg(ALEX, "Maya, this is me when I see your name.", 8),
             msg(ME, "Arjun, you always make me smile.", 7),
         ) else if (storeScene != null) listOf(
@@ -202,9 +206,7 @@ private class DemoTransport(context: Context, private val json: Json, private va
         val card = when (storeScene) {
             ".StoreLetterActivity" -> msg(ME, "Thank you for turning ordinary days into something I look forward to. Here is to more walks, more stories, and more little moments with you.", 2)
                 .copy(type = "letter", payload = buildJsonObject { put("appearance", "dawn"); put("from", "Maya"); put("to", "Arjun") })
-            ".StoreCheckinActivity" -> msg(ALEX, "", 2).copy(type = "checkin", payload = buildJsonObject {
-                put("mood", "good"); put("note", "A good day, made better by you.")
-            })
+            ".StoreAlarmActivity" -> msg(ALEX, "", 0).copy(type = "alarm", payload = buildJsonObject {})
             ".StoreChoicesActivity" -> msg(ALEX, "", 2).copy(type = "thisorthat", payload = buildJsonObject {
                 put("optionA", "A sunset walk"); put("optionB", "A cosy movie night"); put("pickSender", "a"); put("pickRecipient", "a")
             })

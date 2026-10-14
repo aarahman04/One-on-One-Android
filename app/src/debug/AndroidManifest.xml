@@ -14,7 +14,7 @@
             android:exported="true" android:label="One on One" />
         <activity-alias android:name=".StoreLetterActivity" android:targetActivity=".DemoChatActivity"
             android:exported="true" android:label="One on One" />
-        <activity-alias android:name=".StoreCheckinActivity" android:targetActivity=".DemoChatActivity"
+        <activity-alias android:name=".StoreAlarmActivity" android:targetActivity=".DemoChatActivity"
             android:exported="true" android:label="One on One" />
         <activity-alias android:name=".StoreChoicesActivity" android:targetActivity=".DemoChatActivity"
             android:exported="true" android:label="One on One" />

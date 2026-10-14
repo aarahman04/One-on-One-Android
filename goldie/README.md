@@ -36,7 +36,7 @@ Screenshot alt text, in upload order:
 
 1. A private conversation between Maya and Arjun over a sunset wallpaper, with gold and blue message bubbles.
 2. A pastel letter to Arjun, signed by Maya, with the sunset chat behind it.
-3. Arjun shares a good mood and a note about his day in the conversation.
+3. An emergency alarm from Arjun appears in the foreground with a red banner and an acknowledgement control; a letter remains on the second phone in the duo layout.
 4. A shared choice reveals that both people picked a sunset walk over a movie night.
 5. A shared countdown tracks the time until the next adventure together.
 6. Maya and Arjun exchange heart and cat stickers over the sunset wallpaper.

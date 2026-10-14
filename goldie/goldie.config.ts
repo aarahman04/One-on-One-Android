@@ -53,9 +53,11 @@ export default {
       background: "linear-gradient(155deg, #323346 0%, #20283C 55%, #152131 100%)",
     },
     {
-      kind: "screenshot", id: "03-checkin", flow: "store-03-checkin",
-      headline: { "en-US": "How are you, really?" },
-      subhead: { "en-US": "Share your mood and the little things." },
+      kind: "screenshot", id: "03-alarm", flow: "store-03-alarm",
+      headline: { "en-US": "Be there when it matters" },
+      subhead: { "en-US": "Send an emergency alarm when you need them." },
+      layout: "duo-tilt",
+      secondScene: "02-letter",
     },
     {
       kind: "screenshot", id: "04-choices", flow: "store-04-choices",
