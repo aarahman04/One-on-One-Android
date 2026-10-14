@@ -20,5 +20,9 @@
             android:exported="true" android:label="One on One" />
         <activity-alias android:name=".StoreCountdownActivity" android:targetActivity=".DemoChatActivity"
             android:exported="true" android:label="One on One" />
+        <activity-alias android:name=".StoreStickersActivity" android:targetActivity=".DemoChatActivity"
+            android:exported="true" android:label="One on One" />
+        <activity android:name=".StoreCallActivity" android:exported="true" android:label="One on One"
+            android:theme="@style/Theme.OneOnOne" />
     </application>
 </manifest>

@@ -163,7 +163,7 @@ private fun animationsEnabled(): Boolean {
 }
 
 @Composable
-private fun CallContent(current: CallUi, route: AudioRoute, status: String, animate: Boolean, remoteLive: Boolean,
+internal fun CallContent(current: CallUi, route: AudioRoute, status: String, animate: Boolean, remoteLive: Boolean,
     onDecline: () -> Unit, onAccept: () -> Unit, onHangup: () -> Unit, onMute: () -> Unit,
     onSpeaker: () -> Unit, onCamera: () -> Unit, onFlip: () -> Unit,
     remote: @Composable () -> Unit, local: @Composable (Modifier) -> Unit, avatar: Pair<Any, String>? = null) {

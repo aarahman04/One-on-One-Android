@@ -18,6 +18,7 @@ import app.web.oneonone.call.CallLauncher
 import app.web.oneonone.data.DevicePreferences
 import app.web.oneonone.data.AccountMutationLock
 import app.web.oneonone.data.stickers.StickerLibrary
+import app.web.oneonone.data.stickers.builtInStickers
 import app.web.oneonone.data.api.AccountApi
 import app.web.oneonone.data.api.CurrentConnection
 import app.web.oneonone.data.auth.AccountSession
@@ -179,7 +180,10 @@ private class DemoTransport(context: Context, private val json: Json, private va
 
     init {
         val first = msg(ALEX, "Hey! Did you see this? https://www.youtube.com/watch?v=dQw4w9WgXcQ", 180, id = "00000000-0000-4000-8000-0000000000b1")
-        val seed = if (storeScene != null) listOf(
+        val seed = if (storeScene == ".StoreStickersActivity") listOf(
+            msg(ALEX, "Maya, this is me when I see your name.", 8),
+            msg(ME, "Arjun, you always make me smile.", 7),
+        ) else if (storeScene != null) listOf(
             msg(ALEX, "Hey Maya, made it home. How was your day?", 30),
             msg(ME, "Hey Arjun. A little busy. Your message made it better.", 28),
             msg(ALEX, "Saving a walk and a sunset for us.", 26),
@@ -212,6 +216,20 @@ private class DemoTransport(context: Context, private val json: Json, private va
         card?.let {
             validateFeaturePayload(CONNECTION, it.type, checkNotNull(it.payload))
             all[checkNotNull(it.id)] = it
+        }
+        if (storeScene == ".StoreStickersActivity") {
+            val assets = builtInStickers(context).filter { it.entry.id in setOf("cat-love", "cat-happy", "signal-love") }
+            check(assets.size == 3) { "Store sticker fixtures are missing." }
+            val dir = File(context.cacheDir, "demo-media").apply { mkdirs() }
+            assets.forEachIndexed { index, asset ->
+                val file = File(dir, "store-${asset.entry.id}.webp").apply { writeBytes(asset.bytes) }
+                val sticker = msg(if (index == 1) ME else ALEX, "", 3L - index).copy(type = "image", payload = buildJsonObject {
+                    put("path", "$CONNECTION/${file.name}"); put("mime", "image/webp"); put("size", file.length())
+                    put("width", 512); put("height", 512)
+                })
+                validateFeaturePayload(CONNECTION, sticker.type, sticker.payload)
+                all[checkNotNull(sticker.id)] = sticker
+            }
         }
     }
 

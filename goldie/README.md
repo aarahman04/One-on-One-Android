@@ -1,6 +1,6 @@
 # Google Play screenshots
 
-Five English phone screenshots, framed by goldie at 1080 × 1920. The native app uses its existing Love sunset wallpaper and matching bubble palette. The conversation is between Maya (female) and Arjun (male). All names, messages and feature cards are fictional demo content.
+Seven English screenshot scenes, framed by goldie at 1080 × 1920. Panorama layouts export two images for one scene. The native app uses its existing Love sunset wallpaper and matching bubble palette. The conversation is between Maya (female) and Arjun (male). All names, messages and feature cards are fictional demo content.
 
 The store activities exist only in debug builds. The normal demo keeps its original fixtures; release builds contain none of the store activities. Each flow restarts its explicit activity because the debug APK has two launcher activities, which argent cannot resolve automatically.
 
@@ -39,5 +39,9 @@ Screenshot alt text, in upload order:
 3. Arjun shares a good mood and a note about his day in the conversation.
 4. A shared choice reveals that both people picked a sunset walk over a movie night.
 5. A shared countdown tracks the time until the next adventure together.
+6. Maya and Arjun exchange heart and cat stickers over the sunset wallpaper.
+7. Arjun appears in a video call with Maya's camera inset and the app's microphone, speaker, camera and hang-up controls.
+
+The sticker scene uses the app's original Cats and Little signals artwork. The call scene reuses the production `CallContent` layout with a fixed demo duration and fictional video frames; it starts no microphone, camera or network connection. Portraits were created with the built-in imagegen tool and saved only in debug resources. Exact prompts and asset paths are in [caller-portraits.md](caller-portraits.md).
 
 The studio's developer, rating and age fields are preview copy, not a verified live store listing.

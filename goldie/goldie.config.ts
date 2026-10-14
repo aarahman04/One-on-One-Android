@@ -68,5 +68,19 @@ export default {
       headline: { "en-US": "Closer with every second" },
       subhead: { "en-US": "Count down to the moments that matter." },
     },
+    {
+      kind: "screenshot", id: "06-stickers", flow: "store-06-stickers",
+      headline: { "en-US": "A little more you" },
+      subhead: { "en-US": "Say it with cats, hearts and your own stickers." },
+      layout: "classic",
+      background: "linear-gradient(155deg, #263B3B 0%, #18323B 55%, #132231 100%)",
+    },
+    {
+      kind: "screenshot", id: "07-calls", flow: "store-07-calls",
+      headline: { "en-US": "Feel close, from anywhere" },
+      subhead: { "en-US": "Voice or video. Just the two of you." },
+      layout: "classic",
+      background: "linear-gradient(155deg, #373138 0%, #282D3D 55%, #172331 100%)",
+    },
   ],
 };
