@@ -1,0 +1,7 @@
+steps:
+  - tool: restart-app
+    args: { bundleId: app.web.oneonone, activity: .StoreCheckinActivity }
+  - await: { visible: { text: "A good day, made better by you." } }
+  - await: { visible: { text: Arjun } }
+  - await: { visible: { text: Message } }
+  - await: { idle: true }

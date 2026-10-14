@@ -1,0 +1,72 @@
+import { fileURLToPath } from "node:url";
+
+export default {
+  appRoot: fileURLToPath(new URL("../", import.meta.url)),
+  appPath: "../app/build/outputs/apk/debug/app-debug.apk",
+  bundleId: "app.web.oneonone",
+  android: {
+    appPath: "../app/build/outputs/apk/debug/app-debug.apk",
+    applicationId: "app.web.oneonone",
+  },
+  devices: ["pixel-10-pro"],
+  locales: ["en-US"],
+  appearance: "dark",
+  frame: { variant: {} },
+  theme: {
+    background: "linear-gradient(155deg, #122C32 0%, #102331 52%, #101725 100%)",
+    headlineColor: "#F2F7F5",
+    subheadColor: "#B9CFD0",
+    fontFamily: "Figtree, sans-serif",
+    fontFiles: [{
+      family: "Figtree",
+      files: {
+        400: "../app/src/main/res/font/figtree_regular.ttf",
+        600: "../app/src/main/res/font/figtree_semibold.ttf",
+        700: "../app/src/main/res/font/figtree_bold.ttf",
+      },
+    }],
+    copyHeightRatio: 0.23,
+    deviceWidthRatio: 0.85,
+    template: ["classic", "classic", "offset", "classic", "tilt"],
+  },
+  store: {
+    name: "One on One",
+    subtitle: { "en-US": "Stay close to your person" },
+    developer: "One on One",
+    category: "Communication",
+    rating: 0,
+    ratingCount: "Not rated",
+    ageRating: "18+",
+    price: "",
+    description: { "en-US": "A private space for two people. Share everyday messages, write letters, check in on each other, make playful choices and count down to your next moment together." },
+  },
+  scenes: [
+    {
+      kind: "screenshot", id: "01-chat", flow: "store-01-chat",
+      headline: { "en-US": "Your person. Your space." },
+      subhead: { "en-US": "A conversation made for just the two of you." },
+    },
+    {
+      kind: "screenshot", id: "02-letter", flow: "store-02-letter",
+      headline: { "en-US": "Say it with a letter" },
+      subhead: { "en-US": "Make room for words worth keeping." },
+      background: "linear-gradient(155deg, #323346 0%, #20283C 55%, #152131 100%)",
+    },
+    {
+      kind: "screenshot", id: "03-checkin", flow: "store-03-checkin",
+      headline: { "en-US": "How are you, really?" },
+      subhead: { "en-US": "Share your mood and the little things." },
+    },
+    {
+      kind: "screenshot", id: "04-choices", flow: "store-04-choices",
+      headline: { "en-US": "Little choices, together" },
+      subhead: { "en-US": "Pick your favourites. Reveal them together." },
+      background: "linear-gradient(155deg, #173A43 0%, #173246 55%, #162032 100%)",
+    },
+    {
+      kind: "screenshot", id: "05-countdown", flow: "store-05-countdown",
+      headline: { "en-US": "Closer with every second" },
+      subhead: { "en-US": "Count down to the moments that matter." },
+    },
+  ],
+};
