@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="96dp" android:height="96dp" android:viewportWidth="512" android:viewportHeight="512">
+    <!-- Original Cats artwork, created for One on One. -->
+    <path android:fillColor="#8A8494" android:strokeColor="#FFFFFFFF" android:strokeWidth="16" android:strokeLineJoin="round" android:pathData="M107,239 L98,91 L213,169 Q256,154 299,169 L414,91 L405,239 C437,347 360,417 256,417 C152,417 75,347 107,239 Z"/>
+    <path android:fillColor="#FFB9CC" android:pathData="M127,129 L177,178 L130,197 Z M385,129 L335,178 L382,197 Z"/>
+    <path android:strokeColor="#20334B" android:strokeWidth="10" android:strokeLineCap="round" android:pathData="M136,312 L64,297 M139,338 L64,350 M376,312 L448,297 M373,338 L448,350"/>
+    <path android:fillColor="#20334B" android:pathData="M240,300 L272,300 L256,317 Z"/>
+    <path android:strokeColor="#20334B" android:strokeWidth="14" android:strokeLineCap="round" android:pathData="M162,240 L214,262 M350,240 L298,262 M230,350 L282,350"/>
+    <path android:fillColor="#20334B" android:pathData="M180,280 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 Z M304,280 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 Z"/>
+    <path android:strokeColor="#FF5C5C" android:strokeWidth="14" android:strokeLineCap="round" android:pathData="M410,40 Q418,62 440,66 M470,40 Q462,62 440,66 M410,100 Q418,78 440,74 M470,100 Q462,78 440,74"/>
+</vector>

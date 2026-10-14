@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -24,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,8 +41,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.emoji2.emojipicker.EmojiPickerView
 import app.web.oneonone.data.media.GifPage
 import app.web.oneonone.data.media.GifResult
 import app.web.oneonone.ui.components.OneTextField
@@ -50,38 +50,37 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
-/** Composer sheet: Emoji (inserted into the draft) | GIFs (GIPHY, sent on tap). */
+/** Composer sheet: Stickers first (emoji come from the keyboard), then GIFs. Both send ordinary images. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ComposerEmojiSheet(
-    onEmoji: (String) -> Unit,
+internal fun ComposerStickerSheet(
     search: suspend (String, Int) -> GifPage,
     onGif: (GifResult) -> Unit,
     sending: Boolean,
+    stickers: @Composable () -> Unit,
     onDismiss: () -> Unit,
+    error: String? = null,
 ) {
     val c = OneTheme.colors
     var gifs by rememberSaveable { mutableStateOf(false) }
-    val pick by rememberUpdatedState(onEmoji)
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.bgRaised, contentColor = c.text) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Emoji" to false, "GIFs" to true).forEach { (label, tab) ->
+            listOf("Stickers" to false, "GIFs" to true).forEach { (label, tab) ->
                 val on = gifs == tab
-                Text(label,
-                    Modifier.clip(RoundedCornerShape(OneTheme.radii.pill22))
-                        .background(if (on) c.accentYou.copy(alpha = .18f) else c.bg)
-                        .clickable(role = Role.Tab) { gifs = tab }
-                        .semantics { selected = on }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = if (on) c.accentYou else c.textDim, style = OneTextStyles.menuItem)
+                // 48dp touch target, slimmer 36dp pill drawn inside it.
+                Box(Modifier.weight(1f).height(48.dp).clickable(role = Role.Tab) { gifs = tab }.semantics { selected = on },
+                    contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(OneTheme.radii.pill22))
+                        .background(if (on) c.accentYou.copy(alpha = .18f) else c.bg), contentAlignment = Alignment.Center) {
+                        Text(label, color = if (on) c.accentYou else c.textDim, style = OneTextStyles.menuItem)
+                    }
+                }
             }
         }
+        // The chat's own notice sits behind this sheet, so a failed GIF/sticker send must show here.
+        error?.let { Text(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = c.danger, style = OneTextStyles.cardHint) }
         Box(Modifier.fillMaxWidth().height(380.dp)) {
-            if (gifs) GifGrid(search, onGif, sending)
-            else AndroidView(
-                factory = { context -> EmojiPickerView(context).apply { emojiGridColumns = 8; setOnEmojiPickedListener { pick(it.emoji) } } },
-                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-            )
+            if (gifs) GifGrid(search, onGif, sending) else stickers()
         }
     }
 }

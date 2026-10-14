@@ -1,14 +1,14 @@
 ﻿# Native Android release checklist
 
-Prepared 2026-10-07 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **10** /
-versionName **2.0.3** (next build); the Gradle fallback stays 5 / 2.0.0-dev. Nothing has been uploaded to Play by this work.
+Prepared 2026-10-07 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **11** /
+versionName **2.0.4** (next build); the Gradle fallback stays 5 / 2.0.0-dev. Nothing has been uploaded to Play by this work.
 
 ## Release history
 
-Latest signed build: **2.0.2 / versionCode 9** (2026-10-13, workflow run [38377404608](https://github.com/aarahman04/One-on-One-Android/actions/runs/38377404608); see
-`docs/PROGRESS.md` → Releases). Previous: 2.0.1 / 8 (2026-10-13), 2.0.0 / 7 (2026-10-10), 1.0.5 / 6 (2026-10-10), 1.0.4 / 5 (2026-10-09). Version name/code are passed as `android-build`
-workflow inputs at dispatch (defaults 10 / 2.0.3; Gradle fallback 5 / 2.0.0-dev). Next build:
-**2.0.3 / versionCode 10**; the upload after it must use versionCode **11 or higher**. Full table: `docs/PROGRESS.md` → Releases.
+Latest signed build: **2.0.3 / versionCode 10** (2026-10-14, workflow run [38487293539](https://github.com/aarahman04/One-on-One-Android/actions/runs/38487293539); see
+`docs/PROGRESS.md` → Releases). Previous: 2.0.2 / 9 (2026-10-13), 2.0.1 / 8 (2026-10-13), 2.0.0 / 7 (2026-10-10), 1.0.5 / 6 (2026-10-10), 1.0.4 / 5 (2026-10-09). Version name/code are passed as `android-build`
+workflow inputs at dispatch (defaults 11 / 2.0.4; Gradle fallback 5 / 2.0.0-dev). Next build:
+**2.0.4 / versionCode 11**; the upload after it must use versionCode **12 or higher**. Full table: `docs/PROGRESS.md` → Releases.
 
 A4 (alarm, PR #8), A5 (calls, PR #9) and the S1–S5 restyle (PRs #10–#14) are now
 merged; the A7-era notes below that call them pending are historical. Owner Xiaomi

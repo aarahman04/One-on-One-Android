@@ -17,6 +17,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import javax.inject.Inject
+import java.io.File
+import java.util.UUID
 
 @HiltViewModel
 class FeatureViewModel @Inject constructor(
@@ -55,6 +57,14 @@ class FeatureViewModel @Inject constructor(
             }
         }
     } }
+    /** Voice/sticker/GIF still uploading: drawn at once as a "Sending…" bubble so a send never looks stuck. */
+    data class PendingMedia(val id: String, val kind: String, val file: File? = null, val duration: Double? = null)
+    private val mutablePending = MutableStateFlow(emptyList<PendingMedia>())
+    val pending = mutablePending.asStateFlow()
+    private suspend fun <T> showing(item: PendingMedia, block: suspend () -> T): T {
+        mutablePending.update { it + item }
+        try { return block() } finally { mutablePending.update { list -> list.filterNot { it.id == item.id } } }
+    }
     fun clearError() { mutableError.value = null }
     fun showError(value: String) { mutableError.value = value }
     private fun action(block: suspend () -> Unit) = viewModelScope.launch {
@@ -82,12 +92,26 @@ class FeatureViewModel @Inject constructor(
         if (kind == "voice") discardVoice()
     }
     suspend fun gifs(query: String, offset: Int) = media.searchGifs(query, offset)
+    // GIFs and stickers close the sheet at once; the pending bubble (and any error notice) shows in the chat.
     fun sendGif(connection: CurrentConnection, id: String, reply: String?, onDone: () -> Unit) = action {
         val session = ChatSession(connection.myUserId, connection.id)
         check(service.active.value == session) { "Conversation changed." }
-        val payload = media.attachGif(connection.id, id)
-        check(service.active.value == session) { "Conversation changed while sending." }
-        service.send("", "image", payload, reply); onDone()
+        onDone()
+        showing(PendingMedia(UUID.randomUUID().toString(), "gif")) {
+            val payload = media.attachGif(connection.id, id)
+            check(service.active.value == session) { "Conversation changed while sending." }
+            service.send("", "image", payload, reply)
+        }
+    }
+    fun sendSticker(connection: CurrentConnection, file: File, reply: String?, onDone: () -> Unit) = action {
+        val session = ChatSession(connection.myUserId, connection.id)
+        check(service.active.value == session) { "Conversation changed." }
+        onDone()
+        showing(PendingMedia(UUID.randomUUID().toString(), "sticker", file)) {
+            val payload = media.uploadSticker(connection.id, file)
+            check(service.active.value == session) { "Conversation changed while sending." }
+            service.send("", "image", payload, reply)
+        }
     }
     fun location(connection: CurrentConnection, reply: String?, onDone: () -> Unit) = action {
         val session = ChatSession(connection.myUserId, connection.id)
@@ -122,11 +146,13 @@ class FeatureViewModel @Inject constructor(
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { mutableError.value = userError(error); return@launch }
             if (clip == null) { mutableError.value = "Record for at least one second."; return@launch }
-            mutableBusy.first { !it }
-            action {
-                discardVoice(); saved["voicePath"] = clip.file.absolutePath; saved["voiceDuration"] = clip.duration
-                try { sendMedia(connection, "voice", Uri.fromFile(clip.file), reply) } catch (error: Exception) { discardVoice(); throw error }
-                onDone()
+            showing(PendingMedia(UUID.randomUUID().toString(), "voice", duration = clip.duration)) {
+                mutableBusy.first { !it }
+                action {
+                    discardVoice(); saved["voicePath"] = clip.file.absolutePath; saved["voiceDuration"] = clip.duration
+                    try { sendMedia(connection, "voice", Uri.fromFile(clip.file), reply) } catch (error: Exception) { discardVoice(); throw error }
+                    onDone()
+                }.join()
             }
         }
     }

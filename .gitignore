@@ -12,3 +12,8 @@ keystore.properties
 *.hprof
 captures/
 .DS_Store
+
+# Owner's local design/source folders (never commit)
+/Image ref for design fixes (dont commit this folder)/
+/icons/
+/stickers/

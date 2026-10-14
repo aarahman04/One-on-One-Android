@@ -81,6 +81,7 @@ import app.web.oneonone.ui.theme.OneColors
 import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
+import app.web.oneonone.ui.chat.StickerViewModel
 import app.web.oneonone.push.PushRegistration
 import kotlinx.coroutines.delay
 import java.time.LocalDate
@@ -98,7 +99,7 @@ import kotlinx.coroutines.launch
 internal const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
 @Composable
-fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, featureViewModel: FeatureViewModel, profile: ProfileViewModel, pushRegistration: PushRegistration) {
+fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, featureViewModel: FeatureViewModel, profile: ProfileViewModel, pushRegistration: PushRegistration, stickers: StickerViewModel) {
     val state by viewModel.state.collectAsState()
     val nav = rememberNavController()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -134,7 +135,7 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
                 LaunchedEffect(connection.myAvatarId, connection.otherAvatarId) { profile.load() }
                 key(connection.myUserId, connection.id) {
                     ProvideChatTextScale(textStep) {
-                        ChatScreen(connection, chatViewModel, featureViewModel, onSettings = { nav.navigate("settings") }, onAccount = { nav.navigate("account") }, onRefresh = { viewModel.refresh() }, accountError = state.error,
+                        ChatScreen(connection, chatViewModel, featureViewModel, stickers, onSettings = { nav.navigate("settings") }, onAccount = { nav.navigate("account") }, onRefresh = { viewModel.refresh() }, accountError = state.error,
                             partnerAvatar = connection.otherAvatarId?.let { id -> avatars.other?.let { it to "avatar:$id" } })
                     }
                 }

@@ -16,6 +16,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.time.Instant
+import java.io.File
 
 private fun obj(vararg pairs: Pair<String, Any>) = buildJsonObject { pairs.forEach { (k, v) ->
     when (v) { is Number -> put(k, v); is Boolean -> put(k, v); else -> put(k, v.toString()) }
@@ -24,6 +25,8 @@ private class FakeMedia : MediaGateway {
     var savedText = ""
     var discarded = 0
     override suspend fun upload(connection: String, kind: String, uri: Uri, duration: Double?) = error("offline")
+    var stickerUpload: suspend (String, File) -> JsonObject = { _, _ -> error("offline") }
+    override suspend fun uploadSticker(connection: String, file: File) = stickerUpload(connection, file)
     override suspend fun signedUrl(connection: String, path: String) = error("offline")
     override suspend fun download(connection: String, payload: JsonObject): Uri = error("offline")
     override suspend fun location() = obj("lat" to 20.0, "lng" to 70.0)
@@ -40,6 +43,40 @@ private class FakeMedia : MediaGateway {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FeaturesTest {
+    @Test fun stickersUseNormalImagePayloadAndCannotSendAfterConversationChanges() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val session = FakeSession(); val transport = FakeTransport()
+            val service = MessageService(transport, MemoryMessageStore(), session, Json, backgroundScope)
+            val conn = connection("active", true)
+            service.activate(conn); runCurrent()
+            val payload = obj("path" to "connection/sticker.webp", "mime" to "image/webp", "size" to 900,
+                "width" to 512, "height" to 512)
+            val media = FakeMedia().apply { stickerUpload = { _, _ -> payload } }
+            val vm = FeatureViewModel(service, FakeAccountApi(session), media, FakeDeviceStore(), SavedStateHandle())
+            runCurrent(); var closed = false
+            vm.sendSticker(conn, File("sticker.webp"), "original") { closed = true }
+            runCurrent()
+            assertTrue(closed)
+            val sent = transport.sends.single()
+            assertEquals("image", sent.type); assertEquals("", sent.content); assertEquals("original", sent.replyTo)
+            assertEquals(setOf("path", "mime", "size", "width", "height"), sent.payload?.keys)
+            assertEquals(payload, sent.payload)
+            val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+            media.stickerUpload = { _, _ -> started.complete(Unit); release.await(); payload }
+            closed = false
+            vm.sendSticker(conn, File("sticker.webp"), null) { closed = true }
+            runCurrent(); started.await()
+            // The sheet closes at once and a pending bubble shows while the upload runs.
+            assertTrue(closed); assertEquals("sticker", vm.pending.value.single().kind)
+            service.activate(conn.copy(id = "other")); runCurrent()
+            release.complete(Unit); runCurrent()
+            assertTrue(vm.pending.value.isEmpty()); assertEquals(1, transport.sends.size)
+            assertEquals("Conversation changed while sending.", vm.error.value)
+            vm.viewModelScope.cancel(); runCurrent(); service.deactivate()
+        } finally { Dispatchers.resetMain() }
+    }
+
     @Test fun lateEnqueueCompletesBeforeTeardownPurgesOutbox() = runTest {
         val fake = FakeSession(); val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
         val auth = object : app.web.oneonone.data.auth.AccountSession by fake {

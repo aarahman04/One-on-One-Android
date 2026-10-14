@@ -50,6 +50,7 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }
 coil-cache-control = { module = "io.coil-kt.coil3:coil-network-cache-control", version.ref = "coil" }
+mediapipe-segmenter = { module = "com.google.mediapipe:tasks-vision", version = "1.1.0" }
 junit = { module = "junit:junit", version = "4.13.2" }
 orgjson = { module = "org.json:json", version = "20250517" }
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version = "1.11.0" }

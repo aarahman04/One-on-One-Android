@@ -546,3 +546,122 @@ flowchart LR
     PVM -- "GET /api/me/avatars (yours + live partner only)" --> BE2
     Header[ChatHeader] -->|"PartnerPhoto (device-only) → otherAvatar → initial"| PVM
 ```
+
+### Sticker maker and account library (2026-10-14, Prompt 1)
+
+The third composer tab uses the existing theme and inherits ProvideChatTextScale.
+PickVisualMedia supplies a content URI; StickerViewModel retains the URI permission,
+mode and normalized crop in SavedStateHandle. Decode applies the existing EXIF
+orientation helper and bounds the longer side to 1024 px. CPU segmentation,
+pixel re-encoding and file/index work run off the main thread. A missed subject or
+segmenter failure keeps Original available and explains the fallback.
+MediaPipe owns a private input bitmap copy; closing MPImage cannot recycle the
+Original bitmap still displayed by the maker.
+
+```mermaid
+flowchart LR
+    Sheet[ComposerEmojiSheet · Stickers] --> SVM[StickerViewModel / saved URI-mode-crop]
+    SVM --> Picker[PickVisualMedia / private bounded pixels]
+    Picker --> Segment[MediaPipe CPU / bundled DeepLab-v3]
+    Segment --> Crop[Original or Cut-out / normalized square crop]
+    Crop --> WebP[512×512 alpha WebP / quality 100 to 80 / ≤100000 bytes]
+    SVM --> Library[StickerLibrary / atomic JSON and WebP files]
+    Library --> Files[filesDir/stickers/ownerId]
+    Account[AccountRepository sign-out or deletion] --> Lock[Shared AccountMutationLock]
+    SVM --> Lock
+    Lock --> Clear[Clear index and files before removing credentials]
+    Sheet --> FVM[FeatureViewModel.sendSticker]
+    FVM --> Media[MediaGateway.uploadSticker / raw image-webp attachment]
+    FVM --> MS[MessageService / normal image payload and replyTo]
+    MS --> Transport --> InternetTransport
+```
+
+The JSON index contains id, createdAt, lastUsedAt, favourite, a display title and
+an optional local pack name. Favourites and My stickers sort newest first; Recent
+contains the last 16 used, with deterministic ties. One original six-vector pack,
+Little signals, is rendered to WebP on an account's first library load. Deleting a
+built-in is persistent because an existing empty index is never reseeded. Account
+mutations and library edits share the same lock, with signed-in owner checks, so a
+late save cannot recreate files after sign-out. Cleanup follows successful push
+unregistration or successful server account deletion; failed requests preserve data.
+Malformed indexes are reported without overwriting them.
+Indexes have a 1 MiB ceiling, checked before writing; approaching a few thousand
+stickers would justify replacing JSON with Room.
+
+Sticker uploads validate the private file scope, WebP format, 512×512 dimensions,
+100000-byte cap and server response. The attachment endpoint and message payload
+remain exactly contract §2/§4: type image, {path, mime, size, width, height}.
+The ordinary photo uploader still strips EXIF; the already-encoded sticker File
+path preserves alpha. Received images and delete-for-everyone use existing behavior.
+
+#### Background-removal choice, licence and attribution
+
+Decision: the only added dependency is com.google.mediapipe:tasks-vision:1.1.0,
+using the bundled float32 DeepLab-v3 v1 model on CPU. First-use segmentation works
+without Play services or a model download. No photo is sent for segmentation.
+This accepts a larger APK to meet the strict offline requirement.
+
+| Comparison | MediaPipe Image Segmenter + DeepLab-v3 | ML Kit Subject Segmentation |
+| --- | --- | --- |
+| People | Person is a supported category. The 257×257 confidence mask is enlarged with filtered soft alpha; fine hair needs device review. | Designed to isolate prominent people, including multiple subjects and separate subject masks. |
+| Pets | The bundled labels include cat, dog, bird, cow, horse and sheep. Fur and small subjects need device review. | Designed for prominent pets as well as people. |
+| Objects | Fixed VOC categories such as bottle, chair, vehicle and plant; unrecognized objects may need Original. | Designed for prominent objects, without this app's fixed VOC label filter. |
+| Licence | SDK and TensorFlow model: Apache-2.0; attribution and licence bundled below. | Google APIs Terms of Service plus ML Kit terms; models are related software under those terms. |
+| Size and availability | Model: 2,780,176 bytes plus SDK native libraries; actual universal debug APK delta is in PROGRESS. | Google's documented app increase is about 200 KB; its model must first be downloaded through Play services. Inference is local afterward. |
+
+This is a comparison of documented capabilities and expected limitations, not a
+measured head-to-head quality result. People, pet fur and object edge quality on
+Xiaomi hardware remain in the device checklist.
+
+Sources: [MediaPipe models and categories](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter),
+[Android execution guide](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter/android),
+[TensorFlow model catalogue and licence](https://www.kaggle.com/models/tensorflow/deeplabv3),
+[MediaPipe licence](https://github.com/google-ai-edge/mediapipe/blob/master/LICENSE),
+[ML Kit subject capabilities](https://developers.google.com/ml-kit/vision/subject-segmentation),
+[ML Kit installation and size](https://developers.google.com/ml-kit/vision/subject-segmentation/android),
+[ML Kit terms](https://developers.google.com/ml-kit/terms).
+
+Attribution: MediaPipe Authors and TensorFlow Authors. The pinned model is
+[DeepLab-v3 float32 v1](https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite),
+SHA-256 ff36e24d40547fe9e645e2f4e8745d1876d6e38b332d39a82f0bf0f5d1d561b3.
+The APK includes stickers/APACHE-2.0.txt and stickers/NOTICE.txt alongside the model.
+Little signals' love, star, wave, cat, sprout and moon paths were drawn specifically
+for this change; no third-party artwork is used.
+
+[WhatsApp/stickers](https://github.com/WhatsApp/stickers) was reviewed as a
+third-party pack-app reference under its
+[BSD-3-Clause licence](https://github.com/WhatsApp/stickers/blob/main/LICENSE).
+Only the square 512 px and small WebP sizing concepts informed this in-app library.
+Its 96 px tray icon is a WhatsApp pack-provider convention and is not needed here.
+No WhatsApp code, artwork, content provider or integration is included.
+
+## Sticker/photo rendering and instant media sends (2026-10-14, 2.0.4)
+
+Built-in packs: Little signals and Cats (original vector drawings, rendered to WebP on first
+library creation) and Craftwork "Open Stickers" IT / Life / Nature / Shapes (owner holds a paid
+Craftwork licence; pre-encoded 512×512 WebP in `assets/stickers/packs`, copied as-is).
+Maker gains a free crop box (`StickerTrim`) applied before the square placement (`StickerCrop`).
+
+```mermaid
+flowchart LR
+  Tap[Sticker tap / voice stop / GIF tap] --> P[FeatureViewModel.pending += item]
+  P --> UI[ChatScreen: PendingMediaBubble at list end]
+  P --> Up[MediaGateway upload]
+  Up --> Send[MessageService.send -> Transport -> InternetTransport]
+  Send --> Done[pending -= item; real message replaces the placeholder]
+```
+
+```mermaid
+flowchart TD
+  M[image message] --> S{512x512 image/webp and no reply quote?}
+  S -- yes --> St[Bare sticker 150dp + bubble-coloured time pill under its corner]
+  S -- no --> Ph[Photo in a 3dp bubble frame + time/ticks scrim on the image]
+  St --> Side{mine?}
+  Ph --> Side
+  Side -- yes --> R[bottom-right]
+  Side -- no --> L[bottom-left]
+```
+
+Stickers are still ordinary `image` payloads (contract unchanged); detection by exact
+512×512 WebP is a client shortcut until the optional backend sticker flag (codex Prompt 2).
+All chat times use a 12-hour `h:mm a` clock in the device time zone.

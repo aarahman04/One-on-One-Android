@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="96dp" android:height="96dp" android:viewportWidth="512" android:viewportHeight="512">
+    <!-- Original Little signals artwork, created for One on One. -->
+    <path android:fillColor="#FF7E95" android:strokeColor="#FFFFFFFF" android:strokeWidth="16" android:strokeLineJoin="round" android:pathData="M256,420 C215,386 88,292 88,204 C88,99 217,80 256,169 C295,80 424,99 424,204 C424,292 297,386 256,420 Z"/>
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="14" android:strokeLineCap="round" android:pathData="M130,203 C129,166 151,149 181,153"/>
+    <path android:strokeColor="#79C0FF" android:strokeWidth="18" android:strokeLineCap="round" android:pathData="M53,149 L39,128 M449,112 L467,91 M449,340 L475,349 M69,346 L45,360"/>
+</vector>
