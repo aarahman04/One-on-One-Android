@@ -12,6 +12,8 @@ object NotificationChannels {
     const val MESSAGES = "messages"
     /** Silent: AlarmService's MediaPlayer (USAGE_ALARM, looping) owns the sound and vibration. */
     const val ALARM_RING = "alarm_ring"
+    /** Low importance, silent: the ring's notification while the chat is open (the in-app banner acknowledges). */
+    const val ALARM_RING_QUIET = "alarm_ring_quiet"
     /** Own alarm sound: used only when a foreground-service start is refused and nothing else rings. */
     const val ALARM_FALLBACK = "alarm_fallback"
     const val CALLS = "calls"
@@ -36,6 +38,11 @@ object NotificationChannels {
                 setSound(null, null)
                 enableVibration(false)
                 setBypassDnd(true)
+            },
+            NotificationChannel(ALARM_RING_QUIET, "Emergency alarms (chat open)", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Shown while an alarm rings with the chat already open"
+                setSound(null, null)
+                enableVibration(false)
             },
             NotificationChannel(ALARM_FALLBACK, "Emergency alarms (backup)", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Used when the alarm can't start its own ringing"

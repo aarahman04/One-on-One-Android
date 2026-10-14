@@ -5,6 +5,8 @@ import androidx.work.*
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
@@ -18,6 +20,11 @@ class OneOnOneMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) { registration.schedule(token) }
     override fun onMessageReceived(message: RemoteMessage) {
         router.route(message.data) { push ->
+            // Inside the high-priority FCM window (onMessageReceived runs off the main thread): show now. WorkManager was the
+            // only path and Xiaomi/Doze defer even expedited work, so notifications arrived late or not at all in the background.
+            val shown = runCatching { runBlocking { withTimeoutOrNull(8_000) { deliverMessagePush(this@OneOnOneMessagingService, push); true } } }
+                .getOrNull() == true
+            if (shown) return@route
             val request = OneTimeWorkRequestBuilder<MessageNotificationWorker>()
                 .setInputData(workDataOf("push" to json.encodeToString(push)))
             // API 31+ expedited jobs avoid background delays without adding an A3 foreground service.

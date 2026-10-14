@@ -277,6 +277,12 @@ class MessageService @Inject constructor(
         val session = checkNotNull(active.value) { "No active connection." }
         store.reconcile(session.ownerId, session.connectionId, transport.delete(messageId))
     }
+    /** A send that never reached the server (failed / delivery unknown): remove it locally. Never one still in flight. */
+    suspend fun discardUnsent(tempId: String) = sending.withLock {
+        val session = active.value ?: return@withLock
+        store.pending(session.ownerId, session.connectionId)
+            .find { it.tempId == tempId && it.status in setOf("failed", "unknown") }?.let { store.discard(it) }
+    }
     suspend fun pin(messageId: String?) { mutablePin.value = transport.pin(messageId); lastPinEvent = System.currentTimeMillis() }
     /** The connection poll is the fallback for a missed pin:update; a live event in the last 10 s wins. */
     fun syncPin(connection: CurrentConnection) {

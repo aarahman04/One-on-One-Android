@@ -513,3 +513,36 @@ flowchart LR
     IT -- "GET /api/link-preview" --> API[Backend unfurl<br/>SSRF-guarded]
     API -->|title + base64 image| MS -->|cached per URL| UI
 ```
+
+### Alarm "Silence" = acknowledgment, message push delivered inline (2026-10-14, round 2)
+
+```mermaid
+sequenceDiagram
+    participant FCM
+    participant MS as OneOnOneMessagingService
+    participant AC as AlarmCoordinator
+    participant AS as AlarmService
+    participant Svc as MessageService
+    FCM->>MS: message push
+    MS->>MS: deliverMessagePush (≤8 s, in the FCM window)
+    MS-->>MS: on failure/timeout: MessageNotificationWorker (retry)
+    FCM->>AC: alarm raise
+    AC->>AS: ring (quiet channel if the chat is open: banner is the ack UI)
+    AS-->>AC: FGS refused: insistent backup notification; full-screen tap promotes it to a real ring
+    Note over AS: user taps Silence on the notification
+    AS->>AC: silenced(alarmId) → HandledAlarms.pendingAcks
+    AC->>Svc: send alarm {ack} (temp id silence-<id>) once a chat session is active and the raise is still Live
+```
+
+### GIPHY GIFs and profile photos (2026-10-14)
+
+```mermaid
+flowchart LR
+    Sheet[ComposerEmojiSheet · GIFs] --> FVM[FeatureViewModel] --> MG[MediaRepository]
+    MG -- "GET /api/gifs" --> BE[Backend gifService] -- "API key (server env)" --> G[(GIPHY API)]
+    MG -- "POST /connections/:id/gifs {id}" --> BE -- "fetch *.giphy.com, GIF magic, ≤10 MiB" --> ST[(private attachments bucket)]
+    BE -->|"{path, mime, size, width, height}"| MG --> MS[MessageService.send type=image]
+    Settings[Settings · Your photo] --> PVM[ProfileViewModel] -- "PUT/DELETE /api/me/avatar" --> BE2[avatarService] --> ST
+    PVM -- "GET /api/me/avatars (yours + live partner only)" --> BE2
+    Header[ChatHeader] -->|"PartnerPhoto (device-only) → otherAvatar → initial"| PVM
+```

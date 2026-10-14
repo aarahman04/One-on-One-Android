@@ -74,7 +74,10 @@ class ChatViewModel @Inject constructor(
     }
     fun startEdit(id: String, content: String) { saved["replyTo"] = null; saved["editing"] = id; draft(content) }
     fun cancelEdit() { saved["editing"] = null; draft("") }
-    fun delete(ids: List<String>) = action { ids.forEach { service.delete(it) } }
+    fun delete(ids: List<String>, unsent: List<String> = emptyList()) = action {
+        unsent.forEach { service.discardUnsent(it) }
+        ids.forEach { service.delete(it) }
+    }
     fun pin(id: String?) = action { service.pin(id) }
     fun syncPin(connection: CurrentConnection) = service.syncPin(connection)
     suspend fun linkPreview(url: String) = service.linkPreview(url)

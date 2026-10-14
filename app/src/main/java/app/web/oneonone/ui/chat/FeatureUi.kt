@@ -11,8 +11,13 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -43,6 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import app.web.oneonone.ui.components.*
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
@@ -350,20 +356,22 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                 "location" -> {
                     val lat = payload.number("lat"); val lng = payload.number("lng")
                     if (lat != null && lng != null && lat.isFinite() && lng.isFinite() && lat in -90.0..90.0 && lng in -180.0..180.0) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(64.dp).clip(RoundedCornerShape(OneTheme.radii.sm6)).background(OneTheme.colors.bg)) {
                                 AsyncImage(if (LocalInspectionMode.current) null else locationTile(lat, lng), "Map preview of shared location", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                                     placeholder = ColorPainter(OneTheme.colors.bgRaised))
                                 Text("📍", Modifier.align(Alignment.Center), fontSize = 20.sp)
                             }
-                            CardHeading("📍", "Snapshot, not live tracking")
+                            Text("Snapshot, not live tracking", Modifier.weight(1f).padding(end = 4.dp), style = OneTextStyles.cardHeading,
+                                color = LocalBubbleColors.current.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                         Text("© OpenStreetMap contributors", style = MaterialTheme.typography.labelSmall)
                         CardHint("$lat, $lng${payload.number("accuracy")?.let { " · ±${it.toInt()} m" } ?: ""}")
-
-                        FlowRow {
-                            CardAction("View map", onClick = { uriHandler.openUri("https://www.google.com/maps/search/?api=1&query=$lat,$lng") }, location = true)
-                            CardAction("Directions", onClick = { uriHandler.openUri("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng") }, location = true)
+                        Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            CardAction("Directions", onClick = { uriHandler.openUri("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng") },
+                                Modifier.defaultMinSize(minHeight = 48.dp), location = true)
+                            CardAction("View map", onClick = { uriHandler.openUri("https://www.google.com/maps/search/?api=1&query=$lat,$lng") },
+                                Modifier.defaultMinSize(minHeight = 48.dp), location = true)
                         }
                     } else Text("Location unavailable")
                 }
@@ -386,15 +394,26 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                             .semantics { contentDescription = if (running) "Pause voice note" else "Play voice note" },
                             shape = CircleShape, color = LocalBubbleColors.current.text.copy(alpha = .18f)) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(painterResource(if (running) R.drawable.ic_pause else R.drawable.ic_play), null,
-                                    Modifier.size(24.dp).offset(x = if (running) 0.dp else 2.dp), tint = LocalBubbleColors.current.text)
+                                val fast = OneTheme.motion.fast120
+                                AnimatedContent(running, transitionSpec = { (fadeIn(tween(fast)) + scaleIn(tween(fast), initialScale = .6f)) togetherWith
+                                    (fadeOut(tween(fast)) + scaleOut(tween(fast), targetScale = .6f)) }, label = "playPause") { isRunning ->
+                                    Icon(painterResource(if (isRunning) R.drawable.ic_pause else R.drawable.ic_play), null,
+                                        Modifier.size(24.dp).offset(x = if (isRunning) 0.dp else 2.dp), tint = LocalBubbleColors.current.text)
+                                }
                             }
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            LinearProgressIndicator(progress = { playbackProgress(elapsed, length) },
-                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
-                                color = LocalBubbleColors.current.text, trackColor = LocalBubbleColors.current.text.copy(alpha = .25f),
-                                gapSize = 0.dp, drawStopIndicator = {})
+                            val bar = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape)
+                            // Still uploading (no server id yet, not failed): indeterminate instead of a static empty bar.
+                            if (message.id == null && message.deliveryState != "failed")
+                                LinearProgressIndicator(modifier = bar, color = LocalBubbleColors.current.text,
+                                    trackColor = LocalBubbleColors.current.text.copy(alpha = .25f), gapSize = 0.dp)
+                            else {
+                                val progress by animateFloatAsState(playbackProgress(elapsed, length), tween(OneTheme.motion.base200), label = "voiceProgress")
+                                LinearProgressIndicator(progress = { progress }, modifier = bar,
+                                    color = LocalBubbleColors.current.text, trackColor = LocalBubbleColors.current.text.copy(alpha = .25f),
+                                    gapSize = 0.dp, drawStopIndicator = {})
+                            }
                             Text(playbackTime(if (active) elapsed else length), color = LocalBubbleColors.current.meta,
                                 style = OneTextStyles.bubbleMeta)
                         }

@@ -1,5 +1,12 @@
 package app.web.oneonone
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import java.io.File
+import app.web.oneonone.ui.chat.PartnerPhoto
 import android.content.Intent
 import android.os.Build
 import android.media.AudioManager
@@ -19,6 +26,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.web.oneonone.ui.chat.SharedContent
@@ -34,6 +42,7 @@ import androidx.compose.foundation.layout.Box
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import app.web.oneonone.ui.AppNavigation
+import app.web.oneonone.ui.ProfileViewModel
 import app.web.oneonone.ui.AppViewModel
 import app.web.oneonone.ui.BootRoute
 import app.web.oneonone.ui.chat.ChatViewModel
@@ -49,6 +58,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: AppViewModel by viewModels()
     private val chatViewModel: ChatViewModel by viewModels()
     private val featureViewModel: FeatureViewModel by viewModels()
+    private val profileViewModel: ProfileViewModel by viewModels()
     @Inject lateinit var pushRegistration: PushRegistration
     @Inject lateinit var calls: CallManager
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,8 +99,18 @@ class MainActivity : ComponentActivity() {
             OneOnOneTheme(darkTheme = dark) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Box {
-                        AppNavigation(viewModel, chatViewModel, featureViewModel, pushRegistration)
-                        CallOverlay(calls)
+                        AppNavigation(viewModel, chatViewModel, featureViewModel, profileViewModel, pushRegistration)
+                        val connection = state.connection
+                        val avatars by profileViewModel.urls.collectAsState()
+                        val inCall by remember { calls.state.map { it !is CallUi.Idle } }.collectAsState(false)
+                        // Read when a call starts, so a photo changed in the chat is picked up. Off the main thread.
+                        val ownPhoto by produceState<File?>(null, connection?.id, inCall) {
+                            value = if (connection == null || !inCall) null else withContext(Dispatchers.IO) {
+                                PartnerPhoto.file(this@MainActivity, connection.myUserId, connection.id).takeIf { it.isFile && it.length() > 0 }
+                            }
+                        }
+                        CallOverlay(calls, avatar = ownPhoto?.let { it to "${it.path}@${it.lastModified()}" }
+                            ?: connection?.otherAvatarId?.let { id -> avatars.other?.let { it to "avatar:$id" } })
                     }
                 }
             }
@@ -144,8 +164,14 @@ class MainActivity : ComponentActivity() {
         val token = intent.getStringExtra(AlarmService.EXTRA_TOKEN)
         val show = intent.getBooleanExtra(AlarmService.EXTRA_SHOW, false)
         val alarmId = intent.getStringExtra(AlarmService.EXTRA_ALARM_ID)?.takeIf { it.length <= 64 }
-        listOf(AlarmService.EXTRA_TOKEN, AlarmService.EXTRA_SHOW, AlarmService.EXTRA_ALARM_ID).forEach(intent::removeExtra)
-        if (show && AlarmService.tokenValid(token) && alarmId != null) showOverLock(true)
+        val raisedAt = intent.getLongExtra(AlarmService.EXTRA_RAISED_AT, 0L)
+        listOf(AlarmService.EXTRA_TOKEN, AlarmService.EXTRA_SHOW, AlarmService.EXTRA_ALARM_ID, AlarmService.EXTRA_RAISED_AT).forEach(intent::removeExtra)
+        if (!show || !AlarmService.tokenValid(token) || alarmId == null) return
+        showOverLock(true)
+        // Backup notification only (service start was refused in the background): now in the foreground, ring for real.
+        if (AlarmService.fallbackId == alarmId && raisedAt > 0) runCatching {
+            ContextCompat.startForegroundService(this, AlarmService.ringIntent(this, alarmId, raisedAt))
+        }
     }
 
     private fun showOverLock(on: Boolean) {

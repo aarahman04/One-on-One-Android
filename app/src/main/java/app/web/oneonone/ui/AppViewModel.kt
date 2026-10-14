@@ -66,6 +66,8 @@ class AppViewModel @Inject constructor(
     val state = mutable.asStateFlow()
     val darkTheme = preferences.theme.map { it == "dark" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+    val chatTextStep = preferences.chatTextStep.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 1)
+    fun setChatTextStep(step: Int) { viewModelScope.launch { preferences.setChatTextStep(step) } }
     private val operation = Mutex()
     private var poll: Job? = null
 

@@ -63,6 +63,20 @@ object AlarmPolicy {
     fun confirmedAcks(messages: List<ChatMessage>): Set<String> =
         messages.filter { it.id != null }.mapNotNull { ackOf(it) }.toSet()
 
+    /**
+     * Alarms silenced from the notification: which acks to send now and which to forget.
+     * Ack only while the server still accepts it (Live/Failed); a raise not in the list yet is kept for a later pass.
+     */
+    fun silencedAcks(pending: List<String>, messages: List<ChatMessage>, now: Long): Pair<List<String>, List<String>> {
+        val send = mutableListOf<String>()
+        val drop = mutableListOf<String>()
+        pending.forEach { id ->
+            val raise = messages.firstOrNull { it.id == id && isRaise(it) } ?: return@forEach
+            if (cardState(raise, messages, now) in setOf(AlarmCardState.Live, AlarmCardState.Failed)) send += id else drop += id
+        }
+        return send to drop
+    }
+
     /** Whether a raise (from any source) may start ringing. */
     fun shouldRing(handled: Boolean, raisedAtMs: Long, now: Long): Boolean =
         !handled && now - raisedAtMs <= WINDOW_MS

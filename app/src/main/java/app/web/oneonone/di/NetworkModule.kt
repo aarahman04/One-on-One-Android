@@ -3,6 +3,7 @@ package app.web.oneonone.di
 import app.web.oneonone.BuildConfig
 import app.web.oneonone.data.api.AccountApi
 import app.web.oneonone.data.api.BearerInterceptor
+import app.web.oneonone.data.api.ProfileApi
 import app.web.oneonone.data.auth.AuthRepository
 import app.web.oneonone.data.auth.AccountSession
 import app.web.oneonone.data.DevicePreferences
@@ -37,4 +38,5 @@ object NetworkModule {
         .client(client).addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
     @Provides @Singleton fun accountApi(retrofit: Retrofit): AccountApi = retrofit.create(AccountApi::class.java)
+    @Provides @Singleton fun profileApi(retrofit: Retrofit): ProfileApi = retrofit.create(ProfileApi::class.java)
 }

@@ -3,11 +3,17 @@ package app.web.oneonone.alarm
 import android.content.Context
 import androidx.core.content.ContextCompat
 import app.web.oneonone.data.chat.MessageService
+import app.web.oneonone.data.model.ChatMessage
 import app.web.oneonone.push.handlers.AlarmPushHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,6 +31,7 @@ class AlarmCoordinator @Inject constructor(
     private val messages: MessageService,
     private val scope: CoroutineScope,
 ) : AlarmPushHandler {
+    private val acking = Mutex()
 
     fun start() {
         scope.launch {
@@ -33,7 +40,25 @@ class AlarmCoordinator @Inject constructor(
                 val now = System.currentTimeMillis()
                 AlarmPolicy.confirmedAcks(list).forEach { stop(it) }
                 AlarmPolicy.raisesToRing(list, session.ownerId, now).forEach { (id, at) -> raise(id, at) }
+                sendSilencedAcks(list)
             }
+        }
+    }
+
+    /** "Silence" on the notification is the acknowledgment: the ring is already stopped, the ack follows through MessageService. */
+    fun silenced(alarmId: String) {
+        handled.addPendingAck(alarmId)
+        scope.launch { if (messages.active.value != null) sendSilencedAcks(messages.messages.first()) }
+    }
+
+    // shortcut: with no chat session (process woken only by FCM) the ack waits until the app next opens the chat.
+    private suspend fun sendSilencedAcks(list: List<ChatMessage>) = acking.withLock {
+        val (send, drop) = AlarmPolicy.silencedAcks(handled.pendingAcks(), list, System.currentTimeMillis())
+        drop.forEach(handled::removePendingAck)
+        send.forEach { id ->
+            // Fixed temp id: a second pass before the queued ack shows up in the list is deduped by MessageService.
+            runCatching { messages.send("", "alarm", JsonObject(mapOf("ack" to JsonPrimitive(id))), replyTo = id, clientTempId = "silence-$id") }
+                .onSuccess { handled.removePendingAck(id) }
         }
     }
 
@@ -46,11 +71,13 @@ class AlarmCoordinator @Inject constructor(
     fun raise(alarmId: String, raisedAt: Long) {
         if (!AlarmPolicy.shouldRing(handled.contains(alarmId), raisedAt, System.currentTimeMillis())) return
         if (AlarmService.ringing.value == alarmId) return
+        // Chat open on screen: the red banner is the acknowledgment UI, so the ring's notification stays quiet.
+        val inChat = messages.active.value?.let { messages.isChatResumed(it.connectionId) } == true
         try {
-            ContextCompat.startForegroundService(context, AlarmService.ringIntent(context, alarmId, raisedAt))
+            ContextCompat.startForegroundService(context, AlarmService.ringIntent(context, alarmId, raisedAt, inChat))
         } catch (refused: IllegalStateException) {
             // ForegroundServiceStartNotAllowedException (API 31+) outside an FCM high-priority window.
-            AlarmService.postFallback(context, alarmId)
+            AlarmService.postFallback(context, alarmId, raisedAt)
         }
     }
 

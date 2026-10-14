@@ -1038,3 +1038,70 @@ Xiaomi checklist (after deploy):
 - [ ] YouTube / Spotify / Instagram / Amazon links show cards on both phones.
 - [ ] /location indoors sends a snapshot within ~20 s.
 
+
+## Chat polish round 2 (2026-10-14, branch `feat/chat-polish-round2`, not committed)
+
+Plan and task allocation: `docs/MASTER-PLAN-2026-10-14.md`. Android only; no backend change; no new dependency.
+- Alarm: notification "Silence" now sends the contract ack (queued until a chat session exists, only while the raise is
+  still Live), so the chat doesn't ask again. While the chat is open the ring's notification is quiet (low-importance
+  channel, no full-screen) and the red banner is the ack UI. Backup notification (service start refused in background)
+  is INSISTENT: before, its channel sound played once — the "rings a few seconds then stops" bug. Opening it from the
+  full-screen intent promotes it to the real looping ring. `AlarmPolicyTest` covers which silenced acks are sent.
+- Notifications: message pushes are shown inside `onMessageReceived` (≤8 s) instead of always through WorkManager, which
+  Xiaomi/Doze defer; the worker stays as the retry path.
+- Delete: failed / unknown unsent bubbles (text or media) can be deleted locally ("Delete", only this phone). Server
+  delete for media already removes the file (contract §8); the 30-minute rule is unchanged.
+- Composer: emoji (left, inserts into the draft), paperclip + camera (right; camera hides while typing), animated
+  send↔mic swap with the arrow rotating in. Camera uses TakePicture into cache/shared → same preview-and-send as a photo.
+- Reactions: the full picker sheet moved from the lazy row to ChatScreen (a row recomposing/leaving composition lost
+  it) and reads the latest callback.
+- Bubbles: animated tick → double → read; deleted swap fades; WhatsApp-style curved tail, also on the typing bubble;
+  reply time/ticks pinned bottom-right when the quote is wider than the text.
+- Voice: play/pause icon crossfade, smoothed progress, indeterminate bar while uploading.
+- Location card: Directions left / View map right, label no longer touches the edge.
+- GIFs: coil-gif decoder registered — GIF photos (picked from the gallery, `image/gif`) now animate for both sides.
+- Settings: Chat text size (S/M/L/XL, 0.9–1.3×), device-wide, applied to the chat screen only. `ChatTextScaleTest`.
+- Their photo (menu → Set their photo): private avatar for the other person, stored only on this phone (512 px JPEG,
+  `files/partner_photos`, leftovers of other connections deleted). `PartnerPhotoTest`.
+
+Not done (see master plan): GIF search, sticker maker/library, your own profile photo (backend gap), list smoothness audit.
+
+Xiaomi checklist:
+- [ ] Alarm, app in background: tap Silence → ring stops at once; sender sees "acknowledged" (immediately if the app process is alive, else on next open); opening the chat shows no Acknowledge banner.
+- [ ] Alarm with the chat open: rings, no heads-up/full-screen, banner Acknowledge stops it on both.
+- [ ] Alarm with app swiped away + battery saver: rings continuously (not a few seconds); full-screen tap keeps ringing.
+- [ ] Message from B while A is in another app / screen off: notification within seconds.
+- [ ] Composer: emoji left, clip + camera right, camera hides when typing; send/mic swap animates.
+- [ ] Camera: first use asks permission, photo shows preview, sends; deny shows the message.
+- [ ] Long press → + → pick any emoji: reaction appears on both phones.
+- [ ] Ticks animate sent → delivered → read. Voice: icon morphs, bar moves smoothly; uploading shows moving bar.
+- [ ] Reply with a long quote and short text: time + ticks bottom-right.
+- [ ] Location card: buttons spaced left/right; label not cramped.
+- [ ] Send a GIF from Gallery: animates on both phones; delete it within 30 min: gone for both.
+- [ ] Turn airplane mode on, send a photo, let it fail; select it → Delete removes it.
+- [ ] Settings → Chat text size XL: bubbles, times, reply previews, composer readable, nothing clipped.
+- [ ] Menu → Set their photo: header shows it; other phone unchanged; Remove restores the initial.
+
+## GIPHY + profile photo (2026-10-14, same branch; backend branch `feat/profile-photo-gif`)
+
+Backend (web repo, worktree `../One-on-One-pfp-gif`): migration 037 (`users.avatar_path`), `PUT/DELETE /api/me/avatar`,
+`GET /api/me/avatars`, `GET /api/gifs`, `POST /api/connections/:id/gifs`; `CurrentConnection.myAvatarId/otherAvatarId`.
+Contract §9 (copied here).
+- Composer emoji sheet has Emoji | GIFs tabs. GIFs: trending, search (350 ms debounce), infinite scroll, "Powered by GIPHY".
+  Tap sends: the server fetches the GIF from GIPHY and stores it as this chat's attachment, then a normal image message.
+- Settings → Your photo: add / change / remove (downscaled 512 px JPEG, EXIF-rotated, metadata dropped). Seen only by you and
+  your live connection. Chat header: your private photo for them → their photo → initial.
+- Call screen shows the same photo as the chat header (private one → theirs → initial).
+- Not done: web client avatars/GIF picker (owner: leave the web client for now).
+
+Deploy order: run `037_user_avatar.sql` in Supabase → set `GIPHY_API_KEY` on Railway → deploy the backend → install the app.
+(Backend without the migration keeps working: photos are just absent.)
+
+Emulator/Xiaomi checklist:
+- [ ] Settings → Your photo → Add: shows in Settings; other phone's chat header shows it within one refresh.
+- [ ] Set their photo (menu) on A: A sees the private one, not B's real photo; Remove → B's real photo returns.
+- [ ] Remove your photo: other phone falls back to the initial.
+- [ ] Emoji sheet → GIFs: trending loads, search "cat" works, scroll loads more, tap sends; both phones animate it.
+- [ ] GIF while replying: sent as a reply. Delete it within 30 min: gone for both.
+- [ ] Without GIPHY_API_KEY: GIFs tab shows "Couldn't load GIFs…", no crash.
+- [ ] Voice and video call (ringing, connected, audio-only): the partner's photo fills the avatar circle.

@@ -51,6 +51,12 @@ val OneTypography = Typography(
     labelSmall = body(11f),
 )
 
+/** Chat text size steps: Small / Default / Large / Extra large. */
+val ChatTextScales = listOf(0.9f, 1f, 1.15f, 1.3f)
+const val DEFAULT_CHAT_TEXT_STEP = 1
+
+fun chatTextScale(step: Int): Float = ChatTextScales[step.coerceIn(0, ChatTextScales.lastIndex)]
+
 object OneTextStyles {
     /** Uppercase is applied by the caller; color = muted. */
     val eyebrow = body(13f).copy(letterSpacing = .08.em)

@@ -1,5 +1,10 @@
 package app.web.oneonone.ui.call
 
+import androidx.compose.ui.layout.ContentScale
+import java.io.File
+import coil3.request.ImageRequest
+import coil3.request.CachePolicy
+import coil3.compose.AsyncImage
 import android.Manifest
 import android.animation.ValueAnimator
 import android.database.ContentObserver
@@ -79,7 +84,7 @@ import org.webrtc.VideoTrack
 
 /** Full-screen call UI drawn over the whole app whenever a call is not idle. */
 @Composable
-fun CallOverlay(calls: CallManager) {
+fun CallOverlay(calls: CallManager, avatar: Pair<Any, String>? = null) {
     val state by calls.state.collectAsState()
     val session by calls.session.collectAsState()
     val route by calls.route.collectAsState()
@@ -111,7 +116,8 @@ fun CallOverlay(calls: CallManager) {
         onMute = { calls.toggleMute() }, onSpeaker = { calls.toggleSpeaker() },
         onCamera = { calls.toggleCamera() }, onFlip = { calls.switchCamera() },
         remote = { remote?.let { VideoView(it, Modifier.fillMaxSize(), mirror = false) } },
-        local = { modifier -> if (local != null) VideoView(checkNotNull(local), modifier, mirror = true, overlay = true) })
+        local = { modifier -> if (local != null) VideoView(checkNotNull(local), modifier, mirror = true, overlay = true) },
+        avatar = avatar)
 }
 
 /**
@@ -160,7 +166,7 @@ private fun animationsEnabled(): Boolean {
 private fun CallContent(current: CallUi, route: AudioRoute, status: String, animate: Boolean, remoteLive: Boolean,
     onDecline: () -> Unit, onAccept: () -> Unit, onHangup: () -> Unit, onMute: () -> Unit,
     onSpeaker: () -> Unit, onCamera: () -> Unit, onFlip: () -> Unit,
-    remote: @Composable () -> Unit, local: @Composable (Modifier) -> Unit) {
+    remote: @Composable () -> Unit, local: @Composable (Modifier) -> Unit, avatar: Pair<Any, String>? = null) {
     val c = OneTheme.colors
     val motion = OneTheme.motion
     val enabled = animate && !LocalInspectionMode.current
@@ -220,6 +226,15 @@ private fun CallContent(current: CallUi, route: AudioRoute, status: String, anim
                 }.clip(CircleShape).background(c.bgRaised).border(1.dp, ringColor, CircleShape), contentAlignment = Alignment.Center) {
                     Text(peerOf(current).take(1).uppercase(), style = OneTextStyles.callName.copy(fontSize = avatarFont, lineHeight = 70.sp),
                         color = if (connected) c.accentOther else c.textDim)
+                    // Same photo as the chat header (your private one for them → theirs); the initial stays underneath.
+                    if (avatar != null) {
+                        val context = LocalContext.current
+                        val request = remember(avatar.second) {
+                            ImageRequest.Builder(context).data(avatar.first).memoryCacheKey(avatar.second).diskCacheKey(avatar.second)
+                                .diskCachePolicy(if (avatar.first is File) CachePolicy.DISABLED else CachePolicy.ENABLED).build()
+                        }
+                        AsyncImage(request, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                    }
                 }
             } else Spacer(Modifier.height(24.dp))
             if (current !is CallUi.Ended) Surface(Modifier.widthIn(max = 400.dp).fillMaxWidth(), color = c.bgRaised,

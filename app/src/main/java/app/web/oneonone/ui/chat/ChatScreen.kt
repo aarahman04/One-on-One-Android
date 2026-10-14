@@ -1,6 +1,9 @@
 package app.web.oneonone.ui.chat
 
 import android.Manifest
+import androidx.core.content.FileProvider
+import java.io.File
+import java.util.UUID
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -79,9 +82,11 @@ import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import java.time.Instant
@@ -95,7 +100,8 @@ internal fun receiptLabel(message: ChatMessage, readAt: String?, deliveredAt: St
 }
 
 @Composable
-fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: FeatureViewModel, onSettings: () -> Unit, onAccount: () -> Unit, onRefresh: () -> Unit, accountError: String? = null) {
+fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: FeatureViewModel, onSettings: () -> Unit, onAccount: () -> Unit, onRefresh: () -> Unit, accountError: String? = null,
+               partnerAvatar: Pair<String, String>? = null) {
     val context = LocalContext.current
     val messages by vm.messages.collectAsState()
     val draft by vm.draft.collectAsState()
@@ -156,7 +162,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val otherTyping by vm.otherTyping.collectAsState()
     val pinState by vm.pin.collectAsState()
     LaunchedEffect(connection.pinnedMessageId, connection.pinnedAt) { vm.syncPin(connection) }
-    var confirmDelete by remember { mutableStateOf<List<String>?>(null) }
+    var confirmDelete by remember { mutableStateOf<List<ChatMessage>?>(null) }
     val shared by vm.shared.collectAsState()
     LaunchedEffect(shared) {
         val content = shared ?: return@LaunchedEffect
@@ -171,6 +177,38 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) keepUri(uri, "image") }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) keepUri(uri, "file") }
+    // Camera: a photo into cache/shared (FileProvider "attachments"), then the same preview-and-send as a picked photo.
+    var cameraUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+        cameraUri?.let { uri -> if (taken) { features.clearError(); kind = "image"; selected = uri } }
+        cameraUri = null
+    }
+    fun takePhoto() {
+        val file = File(File(context.cacheDir, "shared").apply { mkdirs() }, "camera-${UUID.randomUUID()}.jpg")
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        cameraUri = uri.toString()
+        runCatching { camera.launch(uri) }.onFailure { cameraUri = null; features.showError("No camera app is available.") }
+    }
+    // CAMERA is declared (video calls), so TakePicture needs it granted first.
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) takePhoto() else features.showError("Camera access was denied. Allow it in App info → Permissions to take photos.")
+    }
+    // Your private photo for them (this phone only). Read/written off the main thread.
+    var partnerPhoto by remember(connection.id) { mutableStateOf<File?>(null) }
+    var photoVersion by remember { mutableIntStateOf(0) }
+    LaunchedEffect(connection.id, connection.myUserId, photoVersion) {
+        partnerPhoto = withContext(Dispatchers.IO) { PartnerPhoto.current(context, connection.myUserId, connection.id) }
+    }
+    val photoScope = rememberCoroutineScope()
+    fun updatePartnerPhoto(change: () -> Unit) = photoScope.launch {
+        runCatching { withContext(Dispatchers.IO) { change() } }.onFailure { features.showError(it.message ?: "Couldn't save that photo.") }
+        photoVersion++
+    }
+    val partnerPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) updatePartnerPhoto { PartnerPhoto.save(context, connection.myUserId, connection.id, uri) }
+    }
+    var reactingTo by remember { mutableStateOf<String?>(null) }
+    var composerEmoji by remember { mutableStateOf(false) }
     var elapsed by remember { mutableIntStateOf(0) }
     LaunchedEffect(recording) { elapsed = 0; while (recording) { delay(1_000); elapsed++ } }
     val sendRecording: () -> Unit = { features.stopAndSend(connection, replyTo) { vm.reply(null) } }
@@ -247,10 +285,12 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             val now = System.currentTimeMillis()
             fun recentMine(m: ChatMessage) = m.id != null && m.senderId == connection.myUserId && m.deletedAt == null &&
                 m.type !in setOf("call", "system", "alarm") && now - Instant.parse(m.createdAt).toEpochMilli() <= EditWindowMs
+            fun unsentMine(m: ChatMessage) = m.id == null && m.tempId != null && m.senderId == connection.myUserId && m.deliveryState in setOf("failed", "unknown")
             SelectionBar(
                 onEdit = single?.takeIf { recentMine(it) && it.type == "text" }?.let { m -> { vm.startEdit(checkNotNull(m.id), m.content); clearSelection()
                     runCatching { composerFocus.requestFocus(); keyboard?.show() } } },
-                onDelete = picked.takeIf { it.isNotEmpty() && it.all(::recentMine) }?.let { all -> { confirmDelete = all.mapNotNull { it.id } } },
+                // Unsent (failed / unknown) bubbles, text or media, can be removed too; they only exist on this phone.
+                onDelete = picked.takeIf { it.isNotEmpty() && it.all { m -> recentMine(m) || unsentMine(m) } }?.let { all -> { confirmDelete = all } },
                 count = selectedKeys.size,
                 onClose = clearSelection,
                 onReply = single?.takeIf { it.id != null && it.type != "call" && it.deletedAt == null }?.let { { startReply(it.id); clearSelection() } },
@@ -293,8 +333,12 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                     onReport = { features.clearError(); report = true; more = false },
                     onBlock = { features.clearError(); block = true; more = false },
                     onLeave = { leave = true; more = false },
+                    onPhoto = { more = false; partnerPhotoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onRemovePhoto = partnerPhoto?.let { { more = false; updatePartnerPhoto { PartnerPhoto.remove(context, connection.myUserId, connection.id) } } },
                 )
             },
+            // Your private photo for them wins, then their own photo, then the initial.
+            photo = partnerPhoto?.let { it to "${it.path}@${it.lastModified()}" } ?: partnerAvatar,
         )
         }
         Reveal(search) { ChatSearchBar(query, { query = it }, count = if (matches.isEmpty()) "0/0" else "${current + 1}/${matches.size}",
@@ -365,6 +409,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                                 if (message.type != "text" || message.deletedAt != null) null
                                 else messageLinks(message.content).firstOrNull { !it.second.startsWith("tel:") }?.second
                             }?.let { url -> { LinkPreviewCard(url, vm::linkPreview) } },
+                            onMoreReactions = { reactingTo = message.id },
                             onReact = { emoji -> selectedKeys = emptyList(); vm.react(checkNotNull(message.id), emoji,
                                 message.reactions.any { it.emoji == emoji && connection.myUserId in it.userIds }) },
                             onRetry = { if (message.deliveryState == "unknown") duplicate = message.tempId else message.tempId?.let { vm.retry(it) } },
@@ -422,6 +467,12 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             canSend = !busy && !featureBusy,
             recording = recording,
             onAttach = { more = false; attachmentOpen = !attachmentOpen },
+            onEmoji = { attachmentOpen = false; composerEmoji = true },
+            onCamera = {
+                attachmentOpen = false; features.clearError()
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) takePhoto()
+                else cameraPermission.launch(Manifest.permission.CAMERA)
+            },
             onMic = {
                 attachmentOpen = false; features.clearError()
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) features.record(sendRecording)
@@ -445,6 +496,16 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         if (type == "location") LocationConfirmation(connection, features, replyTo, close)
         else FeatureComposer(type, connection, features, replyTo, close)
     }
+    reactingTo?.let { id ->
+        EmojiPickerSheet(onDismiss = { reactingTo = null }, onPick = { emoji ->
+            reactingTo = null; selectedKeys = emptyList()
+            val message = messages.find { it.id == id }
+            vm.react(id, emoji, message?.reactions?.any { it.emoji == emoji && connection.myUserId in it.userIds } == true)
+        })
+    }
+    if (composerEmoji) ComposerEmojiSheet(onEmoji = { emoji -> vm.draft(draft + emoji) }, search = features::gifs, sending = featureBusy,
+        onGif = { gif -> features.sendGif(connection, gif.id, replyTo) { composerEmoji = false; vm.reply(null) } },
+        onDismiss = { composerEmoji = false })
     if (report || reportMessage != null) ReportDialog(connection, reportMessage, features) { report = false; reportMessage = null }
     if (block) BlockDialog(connection, features, close = { block = false }, refresh = onRefresh)
     if (alarm) FeatureModal(onDismissRequest = { alarm = false }, title = { Text("Send an emergency alarm?") },
@@ -456,11 +517,11 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         text = { Text("Its delivery is unknown. Check the conversation first; resending can create a duplicate.") },
         confirmButton = { PrimaryButton("Resend", onClick = { vm.retry(tempId, true); duplicate = null }) },
         dismissButton = { SecondaryButton("Cancel", onClick = { duplicate = null }) }) }
-    confirmDelete?.let { ids ->
+    confirmDelete?.let { picked ->
         FeatureModal(onDismissRequest = { confirmDelete = null },
-            title = { Text(if (ids.size > 1) "Delete ${ids.size} messages?" else "Delete message?") },
-            text = { Text("They'll be deleted for both of you. This can't be undone.") },
-            confirmButton = { DangerButton("Delete for everyone", onClick = { vm.delete(ids); confirmDelete = null; clearSelection() }) },
+            title = { Text(if (picked.size > 1) "Delete ${picked.size} messages?" else "Delete message?") },
+            text = { Text(if (picked.all { it.id == null }) "They were never sent, so only this phone has them." else "They'll be deleted for both of you. This can't be undone.") },
+            confirmButton = { DangerButton(if (picked.all { it.id == null }) "Delete" else "Delete for everyone", onClick = { vm.delete(picked.mapNotNull { it.id }, picked.filter { it.id == null }.mapNotNull { it.tempId }); confirmDelete = null; clearSelection() }) },
             dismissButton = { SecondaryButton("Cancel", onClick = { confirmDelete = null }) })
     }
     if (nickname) NicknameDialog(connection, busy, onDismiss = { nickname = false }) {

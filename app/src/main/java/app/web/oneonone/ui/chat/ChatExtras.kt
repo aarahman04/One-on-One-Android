@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -140,9 +141,11 @@ internal fun safeWebUrl(value: String): String? =
 @Composable
 internal fun EmojiPickerSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) {
     val c = OneTheme.colors
+    // The view's listener is set once in factory: read the latest callback, not the first composition's.
+    val pick by rememberUpdatedState(onPick)
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.bgRaised, contentColor = c.text) {
         AndroidView(
-            factory = { context -> EmojiPickerView(context).apply { emojiGridColumns = 8; setOnEmojiPickedListener { onPick(it.emoji) } } },
+            factory = { context -> EmojiPickerView(context).apply { emojiGridColumns = 8; setOnEmojiPickedListener { pick(it.emoji) } } },
             modifier = Modifier.fillMaxWidth().height(380.dp).padding(horizontal = 8.dp),
         )
     }
@@ -156,7 +159,7 @@ internal fun TypingBubble(visible: Boolean, palette: BubblePalette) {
         val transition = rememberInfiniteTransition(label = "typing")
         Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp).semantics { contentDescription = "Typing" }) {
             Row(
-                Modifier.clip(RoundedCornerShape(OneTheme.radii.bubble8)).background(colors.backgroundStart)
+                Modifier.bubbleTail(false, colors.backgroundStart).clip(RoundedCornerShape(OneTheme.radii.bubble8)).background(colors.backgroundStart)
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                 verticalAlignment = Alignment.CenterVertically,

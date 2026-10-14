@@ -23,10 +23,25 @@ class HandledAlarms @Inject constructor(@ApplicationContext context: Context) {
         prefs.edit { putString(KEY, ids.takeLast(MAX).joinToString(",")) }
     }
 
-    private fun ids(): List<String> = prefs.getString(KEY, "").orEmpty().split(',').filter { it.isNotBlank() }
+    private fun ids(): List<String> = list(KEY)
+
+    /** Alarms silenced from the notification whose ack still has to reach the server (sent once a chat session is active). */
+    @Synchronized fun pendingAcks(): List<String> = list(PENDING)
+
+    @Synchronized fun addPendingAck(alarmId: String) {
+        prefs.edit { putString(PENDING, (list(PENDING).filter { it != alarmId } + alarmId).takeLast(MAX_PENDING).joinToString(",")) }
+    }
+
+    @Synchronized fun removePendingAck(alarmId: String) {
+        prefs.edit { putString(PENDING, list(PENDING).filter { it != alarmId }.joinToString(",")) }
+    }
+
+    private fun list(key: String): List<String> = prefs.getString(key, "").orEmpty().split(',').filter { it.isNotBlank() }
 
     private companion object {
         const val KEY = "ids"
+        const val PENDING = "pending_acks"
         const val MAX = 50
+        const val MAX_PENDING = 10
     }
 }

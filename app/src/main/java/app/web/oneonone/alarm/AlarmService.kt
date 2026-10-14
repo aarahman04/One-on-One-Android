@@ -37,6 +37,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class AlarmService : Service() {
     @Inject lateinit var handled: HandledAlarms
+    @Inject lateinit var coordinator: AlarmCoordinator
 
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
@@ -46,8 +47,11 @@ class AlarmService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val alarmId = intent?.getStringExtra(EXTRA_ALARM_ID)
         when (intent?.action) {
-            ACTION_RING -> if (alarmId != null) ring(alarmId, intent.getLongExtra(EXTRA_RAISED_AT, System.currentTimeMillis()))
-            ACTION_STOP -> {
+            ACTION_RING -> if (alarmId != null) ring(alarmId, intent.getLongExtra(EXTRA_RAISED_AT, System.currentTimeMillis()),
+                intent.getBooleanExtra(EXTRA_QUIET, false))
+            ACTION_STOP, ACTION_SILENCE -> {
+                // Silence from the notification is the acknowledgment; no second tap in the chat.
+                if (intent.action == ACTION_SILENCE && alarmId != null) coordinator.silenced(alarmId)
                 // A stop for an older alarm must not silence the live one.
                 if (alarmId == null || ringingId.value == null || alarmId == ringingId.value) {
                     alarmId?.let { handled.add(it) }
@@ -60,7 +64,7 @@ class AlarmService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun ring(alarmId: String, raisedAt: Long) {
+    private fun ring(alarmId: String, raisedAt: Long, quiet: Boolean) {
         val remaining = raisedAt + AlarmPolicy.WINDOW_MS - System.currentTimeMillis()
         if (handled.contains(alarmId) || remaining <= 0) {
             if (ringingId.value == null) stopSelf()
@@ -70,7 +74,7 @@ class AlarmService : Service() {
         activeToken = UUID.randomUUID().toString()
         ringingId.value = alarmId
         fallbackId = null // the service notification replaces it (same id)
-        val notification = buildNotification(this, alarmId, fallback = false)
+        val notification = buildNotification(this, alarmId, raisedAt, fallback = false, quiet = quiet)
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification,
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
         startSound()
@@ -128,6 +132,8 @@ class AlarmService : Service() {
     companion object {
         const val ACTION_RING = "app.web.oneonone.alarm.RING"
         const val ACTION_STOP = "app.web.oneonone.alarm.STOP"
+        const val ACTION_SILENCE = "app.web.oneonone.alarm.SILENCE"
+        private const val EXTRA_QUIET = "quiet"
         const val EXTRA_ALARM_ID = "alarmId"
         const val EXTRA_RAISED_AT = "raisedAt"
         // MainActivity extra for the tap and full-screen intents: open the chat over the lock screen. Opening never
@@ -150,20 +156,20 @@ class AlarmService : Service() {
 
         fun tokenValid(token: String?): Boolean = activeToken != null && activeToken == token
 
-        fun ringIntent(context: Context, alarmId: String, raisedAt: Long) =
+        fun ringIntent(context: Context, alarmId: String, raisedAt: Long, quiet: Boolean = false) =
             Intent(context, AlarmService::class.java).setAction(ACTION_RING)
-                .putExtra(EXTRA_ALARM_ID, alarmId).putExtra(EXTRA_RAISED_AT, raisedAt)
+                .putExtra(EXTRA_ALARM_ID, alarmId).putExtra(EXTRA_RAISED_AT, raisedAt).putExtra(EXTRA_QUIET, quiet)
 
         fun stopIntent(context: Context, alarmId: String?) =
             Intent(context, AlarmService::class.java).setAction(ACTION_STOP).apply { alarmId?.let { putExtra(EXTRA_ALARM_ID, it) } }
 
         /** Used when a foreground-service start is refused: a loud notification instead of the player. */
-        internal fun postFallback(context: Context, alarmId: String) {
+        internal fun postFallback(context: Context, alarmId: String, raisedAt: Long) {
             activeToken = UUID.randomUUID().toString()
             fallbackId = alarmId
             runCatching {
                 context.getSystemService(NotificationManager::class.java)
-                    ?.notify(NOTIFICATION_ID, buildNotification(context, alarmId, fallback = true))
+                    ?.notify(NOTIFICATION_ID, buildNotification(context, alarmId, raisedAt, fallback = true))
             } // POST_NOTIFICATIONS denied: nothing more we can do
         }
 
@@ -177,18 +183,22 @@ class AlarmService : Service() {
             context.getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
         }
 
-        internal fun buildNotification(context: Context, alarmId: String, fallback: Boolean): Notification {
+        internal fun buildNotification(context: Context, alarmId: String, raisedAt: Long, fallback: Boolean, quiet: Boolean = false): Notification {
             val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             // Own action + request code: PendingIntent identity ignores extras, so without them this
             // would overwrite (or be overwritten by) the message notification's MainActivity intent.
             fun activity(code: Int, extra: String) = PendingIntent.getActivity(context, code,
                 Intent(context, MainActivity::class.java).setAction("app.web.oneonone.alarm.$extra")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    .putExtra(extra, true).putExtra(EXTRA_TOKEN, activeToken).putExtra(EXTRA_ALARM_ID, alarmId),
+                    .putExtra(extra, true).putExtra(EXTRA_TOKEN, activeToken).putExtra(EXTRA_ALARM_ID, alarmId)
+                    .putExtra(EXTRA_RAISED_AT, raisedAt),
                 flags)
-            val silence = PendingIntent.getService(context, 2_003, stopIntent(context, alarmId), flags)
-            return NotificationCompat.Builder(context,
-                if (fallback) NotificationChannels.ALARM_FALLBACK else NotificationChannels.ALARM_RING)
+            val silence = PendingIntent.getService(context, 2_003, stopIntent(context, alarmId).setAction(ACTION_SILENCE), flags)
+            return NotificationCompat.Builder(context, when {
+                fallback -> NotificationChannels.ALARM_FALLBACK
+                quiet -> NotificationChannels.ALARM_RING_QUIET
+                else -> NotificationChannels.ALARM_RING
+            })
                 .setSmallIcon(R.drawable.ic_stat_notify)
                 .setContentTitle(context.getString(R.string.alarm_title))
                 .setContentText(context.getString(R.string.alarm_text))
@@ -199,9 +209,11 @@ class AlarmService : Service() {
                 .setAutoCancel(fallback)
                 .setTimeoutAfter(AlarmPolicy.WINDOW_MS)
                 .setContentIntent(activity(2_001, EXTRA_SHOW))
-                .setFullScreenIntent(activity(2_002, EXTRA_SHOW), true)
+                .apply { if (!quiet) setFullScreenIntent(activity(2_002, EXTRA_SHOW), true) }
                 .addAction(0, context.getString(R.string.alarm_silence), silence)
                 .build()
+                // A channel sound plays once: without INSISTENT the backup alarm rang for a few seconds and stopped.
+                .apply { if (fallback) this.flags = this.flags or Notification.FLAG_INSISTENT }
         }
     }
 }

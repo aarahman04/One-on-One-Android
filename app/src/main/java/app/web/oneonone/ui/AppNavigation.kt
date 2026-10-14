@@ -1,5 +1,8 @@
 package app.web.oneonone.ui
 
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.compose.rememberLauncherForActivityResult
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -71,6 +74,7 @@ import app.web.oneonone.data.api.CurrentConnection
 import app.web.oneonone.data.api.Me
 import app.web.oneonone.ui.components.*
 import app.web.oneonone.ui.theme.OneOnOneTheme
+import app.web.oneonone.ui.theme.ProvideChatTextScale
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 import app.web.oneonone.ui.theme.OneColors
@@ -94,7 +98,7 @@ import kotlinx.coroutines.launch
 internal const val LEGAL_ORIGIN = "https://one-on-one-mu.vercel.app"
 
 @Composable
-fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, featureViewModel: FeatureViewModel, pushRegistration: PushRegistration) {
+fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, featureViewModel: FeatureViewModel, profile: ProfileViewModel, pushRegistration: PushRegistration) {
     val state by viewModel.state.collectAsState()
     val nav = rememberNavController()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -124,8 +128,15 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
         composable("home") {
             val connection = state.connection
             if (state.route == BootRoute.Chat && connection != null) {
+                val textStep by viewModel.chatTextStep.collectAsState()
+                val avatars by profile.urls.collectAsState()
+                // Signed URLs last an hour: refetch when a photo changes or the chat is entered again.
+                LaunchedEffect(connection.myAvatarId, connection.otherAvatarId) { profile.load() }
                 key(connection.myUserId, connection.id) {
-                    ChatScreen(connection, chatViewModel, featureViewModel, onSettings = { nav.navigate("settings") }, onAccount = { nav.navigate("account") }, onRefresh = { viewModel.refresh() }, accountError = state.error)
+                    ProvideChatTextScale(textStep) {
+                        ChatScreen(connection, chatViewModel, featureViewModel, onSettings = { nav.navigate("settings") }, onAccount = { nav.navigate("account") }, onRefresh = { viewModel.refresh() }, accountError = state.error,
+                            partnerAvatar = connection.otherAvatarId?.let { id -> avatars.other?.let { it to "avatar:$id" } })
+                    }
                 }
                 val context = LocalContext.current
                 val reminder by viewModel.notificationReminder.collectAsState()
@@ -149,7 +160,18 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
             val theme = if (dark) "Dark" else "Light"
             val summary = if (connection == null) theme else
                 "$theme · " + when (connection.wallpaper) { "love" -> "Love wallpaper"; "samurai" -> "Samurai wallpaper"; else -> "No wallpaper" }
+            val avatars by profile.urls.collectAsState()
+            val photoBusy by profile.busy.collectAsState()
+            val photoError by profile.error.collectAsState()
+            val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                if (uri != null) profile.upload(uri) { viewModel.refresh() }
+            }
+            LaunchedEffect(connection?.myAvatarId) { profile.load() }
             SettingsScreen(state, chat = connection != null, appearanceSummary = summary,
+                textStep = viewModel.chatTextStep.collectAsState().value, onTextStep = viewModel::setChatTextStep,
+                photo = YourPhoto(avatars.mine, connection?.myAvatarId?.let { "avatar:$it" } ?: "avatar:none", photoBusy, photoError,
+                    onPick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onRemove = { profile.remove { viewModel.refresh() } }),
                 onAppearance = { appearance = true }, onExport = { export = true },
                 onNotifications = { nav.navigate("notifications") }, onAccount = { nav.navigate("account") }, onBack = { nav.popBackStack() })
             if (appearance) AppearanceDialog(connection, featureViewModel, { viewModel.refresh() }) { appearance = false }

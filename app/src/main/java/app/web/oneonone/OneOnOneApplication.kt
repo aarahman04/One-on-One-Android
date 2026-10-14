@@ -2,8 +2,11 @@ package app.web.oneonone
 
 import android.app.Application
 import android.content.Context
+import android.os.Build
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import coil3.gif.AnimatedImageDecoder
+import coil3.gif.GifDecoder
 import coil3.network.cachecontrol.CacheControlCacheStrategy
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import okhttp3.OkHttpClient
@@ -28,6 +31,8 @@ class OneOnOneApplication : Application(), SingletonImageLoader.Factory {
     }
     @OptIn(coil3.annotation.ExperimentalCoilApi::class)
     override fun newImageLoader(context: Context) = ImageLoader.Builder(context).components {
+        // GIF messages animate (coil-gif was installed but unregistered, so they showed one still frame).
+        add(if (Build.VERSION.SDK_INT >= 28) AnimatedImageDecoder.Factory() else GifDecoder.Factory())
         add(OkHttpNetworkFetcherFactory(callFactory = {
             // Media/map requests never use the authenticated API interceptor.
             OkHttpClient.Builder().addInterceptor { chain ->

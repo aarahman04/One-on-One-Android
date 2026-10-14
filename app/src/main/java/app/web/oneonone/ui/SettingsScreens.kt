@@ -35,11 +35,24 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.ContentScale
 import app.web.oneonone.BuildConfig
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import app.web.oneonone.R
 import app.web.oneonone.data.api.BlockedUser
 import app.web.oneonone.data.api.Me
 import app.web.oneonone.ui.components.*
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import app.web.oneonone.ui.theme.DEFAULT_CHAT_TEXT_STEP
+import app.web.oneonone.ui.theme.chatTextScale
 import app.web.oneonone.ui.theme.OneOnOneTheme
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
@@ -55,8 +68,13 @@ internal fun SettingsScreen(
     onNotifications: () -> Unit,
     onAccount: () -> Unit,
     onBack: () -> Unit,
+    textStep: Int = DEFAULT_CHAT_TEXT_STEP,
+    onTextStep: (Int) -> Unit = {},
+    photo: YourPhoto? = null,
 ) {
     SettingsScaffold("Settings", onBack, busy = state.busy) {
+        if (photo != null) SettingsGroup("Your photo") { YourPhotoRow(photo) }
+        if (chat) SettingsGroup("Chat text size") { ChatTextSize(textStep, onTextStep) }
         if (chat) SettingsGroup("Chat") {
             SettingsRow(R.drawable.ic_palette, "Appearance", subtitle = appearanceSummary, trailing = SettingsTrailing.Chevron, onClick = onAppearance)
             SettingsRow(R.drawable.ic_download, "Export conversation", subtitle = "Save as text, JSON or HTML", trailing = SettingsTrailing.Chevron, onClick = onExport)
@@ -72,6 +90,66 @@ internal fun SettingsScreen(
         SettingsGroup("About") {
             SettingsRow(R.drawable.ic_info, "App version", trailing = SettingsTrailing.Value(BuildConfig.VERSION_NAME))
         }
+    }
+}
+
+/** Your profile photo: seen by you and your connection only. */
+internal class YourPhoto(val url: String?, val key: String?, val busy: Boolean, val error: String?, val onPick: () -> Unit, val onRemove: () -> Unit)
+
+@Composable
+private fun YourPhotoRow(photo: YourPhoto) {
+    val c = OneTheme.colors
+    Column(Modifier.padding(OneTheme.spacing.lg16), verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.md12)) {
+            Box(Modifier.size(56.dp).clip(CircleShape).background(c.accentYou.copy(alpha = .18f).compositeOver(c.bg)), contentAlignment = Alignment.Center) {
+                Icon(painterResource(R.drawable.ic_user), null, tint = c.accentYou, modifier = Modifier.size(26.dp))
+                if (photo.url != null) {
+                    val context = LocalContext.current
+                    val request = remember(photo.key) {
+                        ImageRequest.Builder(context).data(photo.url).memoryCacheKey(photo.key).diskCacheKey(photo.key).build()
+                    }
+                    AsyncImage(request, "Your photo", Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Only you and your connection see it.", style = OneTextStyles.cardHint, color = c.textDim)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
+            SecondaryButton(if (photo.url == null) "Add photo" else "Change", onClick = photo.onPick, enabled = !photo.busy)
+            if (photo.url != null) SecondaryButton("Remove", onClick = photo.onRemove, enabled = !photo.busy)
+        }
+        photo.error?.let { Text(it, style = OneTextStyles.cardHint, color = c.danger) }
+    }
+}
+
+private val textStepNames = listOf("Small", "Default", "Large", "Extra large")
+private val textStepLabels = listOf("S", "M", "L", "XL")
+
+/** Segmented S/M/L/XL picker with a live preview bubble. Fixed 40dp segments; the preview wraps so nothing clips at 1.3. */
+@Composable
+private fun ChatTextSize(step: Int, onStep: (Int) -> Unit) {
+    val c = OneTheme.colors
+    val current = step.coerceIn(0, textStepNames.lastIndex)
+    Column(Modifier.padding(OneTheme.spacing.lg16), verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.md12)) {
+        Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
+            textStepLabels.forEachIndexed { i, label ->
+                val on = i == current
+                Box(
+                    Modifier.weight(1f).defaultMinSize(minHeight = OneTheme.sizes.touch40).clip(RoundedCornerShape(OneTheme.radii.md10))
+                        .background(if (on) c.accentYou.copy(alpha = .18f).compositeOver(c.bgRaised) else c.bg)
+                        .border(1.dp, if (on) c.accentYou else c.border, RoundedCornerShape(OneTheme.radii.md10))
+                        .selectable(selected = on, role = Role.RadioButton, onClick = { onStep(i) })
+                        .semantics { contentDescription = "Chat text size: ${textStepNames[i]}" },
+                    contentAlignment = Alignment.Center,
+                ) { Text(label, style = OneTextStyles.cardHeading, color = if (on) c.accentYou else c.textDim) }
+            }
+        }
+        val scale = chatTextScale(current)
+        val style = OneTextStyles.bubbleText
+        Text("This is how your messages will look.",
+            Modifier.clip(RoundedCornerShape(OneTheme.radii.md10)).background(c.bg).padding(horizontal = 12.dp, vertical = 8.dp),
+            style = style.copy(fontSize = style.fontSize * scale, lineHeight = style.lineHeight * scale), color = c.text)
     }
 }
 

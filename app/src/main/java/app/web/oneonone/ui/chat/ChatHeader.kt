@@ -57,7 +57,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import app.web.oneonone.R
+import coil3.compose.AsyncImage
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import java.io.File
 import app.web.oneonone.ui.components.OneIconButton
 import app.web.oneonone.ui.components.OneMenu
 import app.web.oneonone.ui.components.OneMenuItem
@@ -75,6 +81,8 @@ internal fun ChatHeader(
     onCall: () -> Unit,
     onMore: () -> Unit,
     menu: @Composable () -> Unit,
+    /** Image model (File or URL) to its memory-cache key; null shows the initial. */
+    photo: Pair<Any, String>? = null,
 ) {
     val c = OneTheme.colors
     Row(
@@ -93,6 +101,16 @@ internal fun ChatHeader(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(title.trim().firstOrNull()?.uppercase() ?: "?", color = c.accentYou, fontSize = 20.sp)
+                // Your private photo for them over the initial (shown only on this phone).
+                if (photo != null) {
+                    val context = LocalContext.current
+                    // Keyed by content (file time / avatar id), not by path or the hourly-changing signed URL.
+                    val request = remember(photo.second) {
+                        ImageRequest.Builder(context).data(photo.first).memoryCacheKey(photo.second).diskCacheKey(photo.second)
+                            .diskCachePolicy(if (photo.first is File) CachePolicy.DISABLED else CachePolicy.ENABLED).build()
+                    }
+                    AsyncImage(request, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                }
             }
             Column(Modifier.weight(1f, fill = false)) {
                 Text(title, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -170,11 +188,15 @@ internal fun ChatMenu(
     onReport: () -> Unit,
     onBlock: () -> Unit,
     onLeave: () -> Unit,
+    onPhoto: () -> Unit = {},
+    onRemovePhoto: (() -> Unit)? = null,
 ) {
     var danger by remember { mutableStateOf(false) }
     OneMenu(expanded, onDismiss) {
         OneMenuItem("Search", onClick = onSearch)
         OneMenuItem("Nickname", onClick = onNickname)
+        OneMenuItem(if (onRemovePhoto == null) "Set their photo" else "Change their photo", onClick = onPhoto)
+        onRemovePhoto?.let { OneMenuItem("Remove their photo", onClick = it) }
         OneMenuItem("Settings", onClick = onSettings)
         OneMenuItem("Account", onClick = onAccount)
         HorizontalDivider(Modifier.padding(vertical = 4.dp), color = OneTheme.colors.border)

@@ -9,7 +9,10 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 
 val BrandGreen = Color(0xFF7EE787)
@@ -50,6 +53,14 @@ private val OneShapes = Shapes(
     medium = RoundedCornerShape(10.dp),
     large = RoundedCornerShape(16.dp),
 )
+
+/** Scales every sp in [content] (bubbles, meta, reply previews, composer) by the user's chat text step, on top of the system font scale. */
+@Composable
+fun ProvideChatTextScale(step: Int, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    val scaled = remember(density, step) { Density(density.density, density.fontScale * chatTextScale(step)) }
+    CompositionLocalProvider(LocalDensity provides scaled, content = content)
+}
 
 @Composable
 fun OneOnOneTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {

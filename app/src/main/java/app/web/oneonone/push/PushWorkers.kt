@@ -64,30 +64,36 @@ class PushRegistrationWorker(context: Context, params: WorkerParameters) : Corou
     }
 }
 
+/** Checks and shows one message notification. Throws on a network failure so the caller can retry. */
+internal suspend fun deliverMessagePush(context: Context, push: MessagePush) {
+    val dependencies = dependencies(context)
+    val owner = dependencies.auth().accessToken()?.let(::tokenSubject) ?: return
+    val connection = try { dependencies.api().current().connection ?: return }
+    catch (error: HttpException) { if (error.code() in setOf(401, 403, 404, 409)) return else throw error }
+    if (!shouldNotify(push, connection, dependencies.messages().isChatResumed(push.connectionId))) return
+    if (!dependencies.notifications().allowed()) return
+    if (dependencies.auth().accessToken()?.let(::tokenSubject) != owner) return
+    if (dependencies.preferences().claimNotification(push.messageId) &&
+        !dependencies.messages().isChatResumed(push.connectionId) &&
+        dependencies.auth().accessToken()?.let(::tokenSubject) == owner) {
+        dependencies.notifications().show(push, owner)
+    }
+}
+
 class MessageNotificationWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val dependencies = dependencies(applicationContext)
         return try {
-            val owner = dependencies.auth().accessToken()?.let(::tokenSubject) ?: return Result.success()
             val push = inputData.getString("push")?.let { dependencies.json().decodeFromString<MessagePush>(it) }
             if (push == null) {
+                if (dependencies.auth().accessToken() == null) return Result.success()
                 dependencies.notifications().generic(inputData.getString("title").orEmpty(), inputData.getString("body").orEmpty())
                 return Result.success()
             }
-            val connection = dependencies.api().current().connection ?: return Result.success()
-            if (!shouldNotify(push, connection, dependencies.messages().isChatResumed(push.connectionId))) return Result.success()
-            if (!dependencies.notifications().allowed()) return Result.success()
-            if (dependencies.auth().accessToken()?.let(::tokenSubject) != owner) return Result.success()
-            if (dependencies.preferences().claimNotification(push.messageId) &&
-                !dependencies.messages().isChatResumed(push.connectionId) &&
-                dependencies.auth().accessToken()?.let(::tokenSubject) == owner) {
-                dependencies.notifications().show(push, owner)
-            }
+            deliverMessagePush(applicationContext, push)
             Result.success()
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) {
-            if (error is HttpException && error.code() in setOf(401, 403, 404, 409)) Result.success() else Result.retry()
-        }
+        catch (error: Exception) { Result.retry() }
     }
 }
 

@@ -3,12 +3,14 @@ package app.web.oneonone.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.time.Instant
 import javax.inject.Inject
@@ -32,6 +34,9 @@ interface DeviceStore {
     suspend fun setTheme(value: String)
     suspend fun letterSignature(): String
     suspend fun saveLetterSignature(value: String)
+    /** Chat text size step (0..3, 1 = default); see ChatTextScales. */
+    val chatTextStep: Flow<Int> get() = flowOf(1)
+    suspend fun setChatTextStep(value: Int) {}
 }
 
 @Singleton
@@ -43,6 +48,7 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     private val onboarding = booleanPreferencesKey("notificationOnboardingSeen")
     private val handledPushes = stringPreferencesKey("handledMessagePushes")
     private val themeKey = stringPreferencesKey("appearanceTheme")
+    private val textStepKey = intPreferencesKey("chatTextStep")
     private val signature = stringPreferencesKey("letterFrom")
     private val reminderAt = longPreferencesKey("notificationReminderAt")
     override val theme = store.data.map { it[themeKey] ?: "dark" }
@@ -50,6 +56,8 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
         require(value in setOf("light", "dark"))
         store.edit { it[themeKey] = value }
     }
+    override val chatTextStep = store.data.map { (it[textStepKey] ?: 1).coerceIn(0, 3) }
+    override suspend fun setChatTextStep(value: Int) { store.edit { it[textStepKey] = value.coerceIn(0, 3) } }
     override suspend fun letterSignature() = store.data.first()[signature].orEmpty()
     override suspend fun saveLetterSignature(value: String) { store.edit { it[signature] = value.trim().take(40) } }
     override suspend fun gates() = store.data.first().let { Gates(it[age] == true, it[consent] != null) }

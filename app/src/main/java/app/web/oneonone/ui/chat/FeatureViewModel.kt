@@ -81,6 +81,14 @@ class FeatureViewModel @Inject constructor(
         service.send("", kind, payload, reply)
         if (kind == "voice") discardVoice()
     }
+    suspend fun gifs(query: String, offset: Int) = media.searchGifs(query, offset)
+    fun sendGif(connection: CurrentConnection, id: String, reply: String?, onDone: () -> Unit) = action {
+        val session = ChatSession(connection.myUserId, connection.id)
+        check(service.active.value == session) { "Conversation changed." }
+        val payload = media.attachGif(connection.id, id)
+        check(service.active.value == session) { "Conversation changed while sending." }
+        service.send("", "image", payload, reply); onDone()
+    }
     fun location(connection: CurrentConnection, reply: String?, onDone: () -> Unit) = action {
         val session = ChatSession(connection.myUserId, connection.id)
         check(service.active.value == session) { "Conversation changed." }

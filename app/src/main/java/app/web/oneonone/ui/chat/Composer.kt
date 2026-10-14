@@ -1,6 +1,16 @@
 package app.web.oneonone.ui.chat
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -38,11 +48,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -127,7 +140,7 @@ internal fun SlashMenu(names: List<String>, maxHeight: androidx.compose.ui.unit.
 }
 
 /**
- * .chat__input-bar: [ pill: paperclip + growing text ] and a 48dp send circle (text present) or mic (empty).
+ * .chat__input-bar: [ pill: emoji + growing text + paperclip + camera ] and a 48dp send circle (text present) or mic (empty).
  * While [recording] the row is a [trash | dot + timer | stop] bar instead.
  * Pure presentation: every action is a callback supplied by ChatScreen.
  */
@@ -146,6 +159,8 @@ internal fun ChatComposer(
     onDiscard: () -> Unit = {},
     onFocus: () -> Unit = {},
     focusRequester: FocusRequester = remember { FocusRequester() },
+    onEmoji: () -> Unit = {},
+    onCamera: () -> Unit = {},
 ) {
     val c = OneTheme.colors
     val pillShape = RoundedCornerShape(OneTheme.radii.pill22)
@@ -172,8 +187,8 @@ internal fun ChatComposer(
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // 44dp pill: the 40dp attach button sits 2dp in from the bottom, so one line of text stays a slim pill.
-            OneIconButton(R.drawable.ic_paperclip, "Attach", onAttach, Modifier.padding(bottom = 2.dp))
+            // 44dp pill: the 40dp buttons sit 2dp in from the bottom, so one line of text stays a slim pill.
+            OneIconButton(R.drawable.ic_emoji, "Emoji", onEmoji, Modifier.padding(bottom = 2.dp))
             BasicTextField(
                 value = draft,
                 onValueChange = onDraft,
@@ -188,9 +203,21 @@ internal fun ChatComposer(
                     }
                 },
             )
+            OneIconButton(R.drawable.ic_paperclip, "Attach", onAttach, Modifier.padding(bottom = 2.dp))
+            AnimatedVisibility(draft.isBlank(), enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
+                OneIconButton(R.drawable.ic_camera, "Take photo", onCamera, Modifier.padding(bottom = 2.dp))
+            }
         }
-        if (draft.isNotBlank()) {
+        AnimatedContent(
+            draft.isNotBlank(),
+            transitionSpec = { (scaleIn(tween(150), .6f) + fadeIn(tween(150))) togetherWith (scaleOut(tween(150), .6f) + fadeOut(tween(150))) },
+            label = "send-mic",
+        ) { hasText ->
+        if (hasText) {
             val sendSource = remember { MutableInteractionSource() }
+            var shown by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { shown = true }
+            val arrow by animateFloatAsState(if (shown) 0f else -45f, tween(200), label = "arrow")
             Box(
                 Modifier
                     .size(ComposerHeight)
@@ -202,12 +229,13 @@ internal fun ChatComposer(
                     .semantics { contentDescription = "Send" },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(painterResource(R.drawable.ic_send), null, tint = c.sendFg, modifier = Modifier.size(20.dp))
+                Icon(painterResource(R.drawable.ic_send), null, tint = c.sendFg, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = arrow })
             }
         } else {
             Box(Modifier.size(ComposerHeight), contentAlignment = Alignment.Center) {
                 OneIconButton(R.drawable.ic_mic, "Record voice note", onMic)
             }
+        }
         }
     }
 }

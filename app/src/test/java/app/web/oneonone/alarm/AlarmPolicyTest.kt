@@ -83,4 +83,14 @@ class AlarmPolicyTest {
         assertFalse(AlarmPolicy.shouldRing(handled = true, raisedAtMs = now - 1_000, now = now))
         assertFalse(AlarmPolicy.shouldRing(handled = false, raisedAtMs = now - AlarmPolicy.WINDOW_MS - 1, now = now))
     }
+
+    @Test fun `silenced alarm acks only while live, keeps unknown raises for later`() {
+        val live = raise("r1")
+        val acked = raise("r2")
+        val expired = raise("r3", agoMs = AlarmPolicy.WINDOW_MS + 1)
+        val list = listOf(live, acked, ack("r2"), expired)
+        val (send, drop) = AlarmPolicy.silencedAcks(listOf("r1", "r2", "r3", "r9"), list, now)
+        assertEquals(listOf("r1"), send)
+        assertEquals(listOf("r2", "r3"), drop)
+    }
 }

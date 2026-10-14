@@ -54,7 +54,13 @@ import javax.inject.Singleton
 @Serializable data class UploadedAttachment(val path: String, val mime: String, val size: Int)
 @Serializable data class SignedPaths(val paths: List<String>)
 @Serializable data class SignedUrls(val urls: Map<String, String>)
+@Serializable data class GifResult(val id: String, val title: String = "", val previewUrl: String, val width: Int, val height: Int)
+@Serializable data class GifPage(val results: List<GifResult>, val next: Int? = null)
+@Serializable data class GifId(val id: String)
 interface AttachmentApi {
+    // GIPHY through the backend (contract §9): search/trending, then the server stores the chosen GIF as an attachment.
+    @GET("api/gifs") suspend fun gifs(@Query("q") query: String, @Query("offset") offset: Int): GifPage
+    @POST("api/connections/{id}/gifs") suspend fun gif(@Path("id") connection: String, @Body id: GifId): JsonObject
     @POST("api/connections/{id}/attachments") suspend fun upload(
         @Path("id") connection: String, @Query("kind") kind: String, @Body bytes: RequestBody,
     ): UploadedAttachment
@@ -70,11 +76,18 @@ interface MediaGateway {
     suspend fun stopRecording(): VoiceClip?
     fun releaseRecording()
     suspend fun discardVoice(path: String?)
+    suspend fun searchGifs(query: String, offset: Int): GifPage = error("Not supported.")
+    /** A ready `image` payload for GIPHY gif [id], stored server-side as this connection's attachment. */
+    suspend fun attachGif(connection: String, id: String): JsonObject = error("Not supported.")
     suspend fun save(uri: Uri, text: String)
     suspend fun saveAttachment(connection: String, payload: JsonObject, destination: Uri)
     fun playbackFocus(onLost: () -> Unit): Boolean
     fun abandonPlaybackFocus()
 }
+
+internal fun isGiphyMedia(url: String): Boolean = url.toHttpUrlOrNull()?.let {
+    it.isHttps && it.port == 443 && (it.host == "giphy.com" || it.host.endsWith(".giphy.com"))
+} == true
 
 internal fun readBounded(input: InputStream, maximum: Int): ByteArray {
     val output = ByteArrayOutputStream()
@@ -300,6 +313,15 @@ class MediaRepository @Inject constructor(
     }
     override fun releaseRecording() = synchronized(this) {
         recorder?.release(); recorder = null; recordingFile?.delete(); recordingFile = null
+    }
+    override suspend fun searchGifs(query: String, offset: Int): GifPage = api.gifs(query.trim().take(50), offset.coerceAtLeast(0))
+        // Trust boundary: only https GIPHY media hosts are loaded by the grid.
+        .let { page -> page.copy(results = page.results.filter { isGiphyMedia(it.previewUrl) && it.width in 1..2_000 && it.height in 1..2_000 }) }
+    override suspend fun attachGif(connection: String, id: String): JsonObject {
+        require(id.matches(Regex("[A-Za-z0-9]{1,64}"))) { "Invalid GIF." }
+        val payload = api.gif(connection, GifId(id))
+        validateFeaturePayload(connection, "image", payload)
+        return payload
     }
     override suspend fun discardVoice(path: String?) = withContext(Dispatchers.IO) {
         path?.let { File(it) }?.takeIf { it.parentFile?.canonicalFile == File(context.cacheDir, "recordings").canonicalFile }?.delete()

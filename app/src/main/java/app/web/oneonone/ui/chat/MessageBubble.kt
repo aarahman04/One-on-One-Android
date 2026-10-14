@@ -144,6 +144,27 @@ internal val LocalMessageSaveAction = staticCompositionLocalOf<androidx.compose.
 internal data class BubbleQuote(val author: String, val snippet: String)
 
 private val TailSize = 6.dp
+/**
+ * WhatsApp-style notch at the top outer corner: a small concave-curved wedge that starts inside the bubble
+ * (the bubble paints over that part) so it blends with the rounded corner. Also used by the typing bubble.
+ */
+internal fun Modifier.bubbleTail(mine: Boolean, color: Color, enabled: Boolean = true): Modifier =
+    if (!enabled) this else drawBehind {
+        val t = TailSize.toPx()
+        val inset = 8.dp.toPx()
+        val tail = Path().apply {
+            if (mine) {
+                moveTo(size.width - inset, 0f); lineTo(size.width + t, 0f)
+                quadraticTo(size.width + t * .25f, t * .3f, size.width, t * 1.5f); lineTo(size.width - inset, t * 1.5f)
+            } else {
+                moveTo(inset, 0f); lineTo(-t, 0f)
+                quadraticTo(-t * .25f, t * .3f, 0f, t * 1.5f); lineTo(inset, t * 1.5f)
+            }
+            close()
+        }
+        drawPath(tail, color)
+    }
+
 private const val SwipeTriggerDp = 60
 private const val SwipeMaxDp = 80
 
@@ -212,6 +233,8 @@ internal fun MessageBubble(
     myReaction: String? = null,
     saveCopy: MutableState<(() -> Unit)?> = remember { mutableStateOf(null) },
     preview: (@Composable () -> Unit)? = null,
+    // The full picker lives in ChatScreen: a sheet owned by a lazy row was lost when the row recomposed or left composition.
+    onMoreReactions: () -> Unit = {},
 ) {
     val c = OneTheme.colors
     val motion = OneTheme.motion
@@ -226,7 +249,6 @@ internal fun MessageBubble(
     val failed = message.id == null && message.deliveryState == "failed"
     val status = if (mine && message.type != "call" && !failed) receiptOf(receipt) else Receipt.None
     var reacting by remember { mutableStateOf(false) }
-    var picking by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val canReply = message.id != null && message.type != "call" && !deleted
     val scope = rememberCoroutineScope()
@@ -329,18 +351,8 @@ internal fun MessageBubble(
             Box {
                 Column(
                     Modifier
-                        // Tail first so it is not clipped by the bubble shape: a 6dp right triangle at the top outer
-                        // corner on the first bubble of a group (global.css L1489-1505).
-                        .drawBehind {
-                            if (!groupStart) return@drawBehind
-                            val t = TailSize.toPx()
-                            val tail = Path().apply {
-                                if (mine) { moveTo(size.width, 0f); lineTo(size.width + t, 0f); lineTo(size.width, t) }
-                                else { moveTo(0f, 0f); lineTo(-t, 0f); lineTo(0f, t) }
-                                close()
-                            }
-                            drawPath(tail, colors.tail)
-                        }
+                        // Tail first so it is not clipped by the bubble shape (first bubble of a group).
+                        .bubbleTail(mine, colors.tail, groupStart)
                         .clip(shape)
                         .drawWithCache {
                             // CSS 135deg: a fixed diagonal, independent of bubble aspect ratio.
@@ -401,8 +413,11 @@ internal fun MessageBubble(
                     CompositionLocalProvider(LocalContentColor provides colors.text, LocalBubbleColors provides colors,
                         LocalMessageSaveAction provides saveCopy) {
                         if (quote != null) QuoteBlock(quote, colors, Modifier.onGloballyPositioned { quoteBox = it })
+                        // Deleting fades the content swap and eases the bubble to its new size instead of popping.
+                        AnimatedContent(deleted, transitionSpec = { fadeIn(tween(motion.base200)) togetherWith fadeOut(tween(motion.fast120)) },
+                            label = "deleted") { isDeleted ->
                         when {
-                            deleted -> TextWithMeta(
+                            isDeleted -> TextWithMeta(
                                 text = AnnotatedString("This message was deleted"),
                                 textColor = colors.meta,
                                 description = "Deleted message, $time",
@@ -432,12 +447,12 @@ internal fun MessageBubble(
                                 Box(Modifier.align(Alignment.End).padding(top = 2.dp)) { MetaRow(time, status, colors, palette, receipt = receipt) }
                             }
                         }
+                        }
                         if (expanded) Text(remember(message.createdAt, message.editedAt) { fullTime(message) }, color = colors.meta, style = OneTextStyles.bubbleMeta)
                     }
                 }
                 if (reacting) ReactionBar(colors, mine, myReaction, onPick = { onReact(it); reacting = false }, onDismiss = { reacting = false },
-                    onMore = { reacting = false; picking = true })
-                if (picking) EmojiPickerSheet(onPick = { onReact(it); picking = false }, onDismiss = { picking = false })
+                    onMore = { reacting = false; onMoreReactions() })
             }
             // Plain emoji tucked 3dp under the bubble, inset 10dp from its outer edge (L955-985). The row grows/shrinks
             // in smoothly, each new emoji pops with a spring, and a count change slides.
@@ -593,12 +608,18 @@ private fun MetaRow(time: String, status: Receipt, colors: BubbleColors, palette
     Row(Modifier.clearAndSetSemantics { if (receipt != null) contentDescription = "$time, $receipt" }, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(time, color = colors.meta, style = OneTextStyles.bubbleMeta)
         if (status != Receipt.None) {
-            Icon(
-                painterResource(if (status == Receipt.Delivered || status == Receipt.Read) R.drawable.ic_tick_double else R.drawable.ic_tick_single),
-                contentDescription = null,
-                tint = if (status == Receipt.Read) palette.read else palette.ticks,
-                modifier = Modifier.size(width = 14.dp, height = 13.dp).alpha(if (status == Receipt.Pending) .7f else 1f),
-            )
+            val motion = OneTheme.motion
+            val tint by animateColorAsState(if (status == Receipt.Read) palette.read else palette.ticks, tween(motion.base200), label = "tick")
+            // Cross-fade + slight scale when the glyph changes (pending -> sent -> double); the blue tint eases separately.
+            AnimatedContent(status, transitionSpec = { (fadeIn(tween(motion.base200)) + scaleIn(tween(motion.base200), initialScale = .7f)) togetherWith fadeOut(tween(motion.fast120)) },
+                label = "receipt") { shown ->
+                Icon(
+                    painterResource(if (shown == Receipt.Delivered || shown == Receipt.Read) R.drawable.ic_tick_double else R.drawable.ic_tick_single),
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(width = 14.dp, height = 13.dp).alpha(if (shown == Receipt.Pending) .7f else 1f),
+                )
+            }
         }
     }
 }
@@ -615,7 +636,9 @@ private class TextLayoutHolder { var result: TextLayoutResult? = null }
 private fun TextWithMeta(text: AnnotatedString, textColor: Color, description: String, holder: TextLayoutHolder,
                          onTextPositioned: (LayoutCoordinates) -> Unit = {}, italic: Boolean = false, meta: @Composable () -> Unit) {
     val policy = remember(holder) { TextWithMetaPolicy(holder) }
+    // fillMaxWidth: under a wider reply quote the meta must still sit at the bubble's right edge, not the text's.
     Layout(
+        modifier = Modifier.fillMaxWidth(),
         content = {
             Text(text, color = textColor, style = if (italic) OneTextStyles.bubbleText.copy(fontStyle = FontStyle.Italic) else OneTextStyles.bubbleText, onTextLayout = { holder.result = it },
                 modifier = Modifier.onGloballyPositioned(onTextPositioned).semantics { contentDescription = description })
