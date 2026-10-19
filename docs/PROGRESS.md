@@ -7,10 +7,11 @@ Branch `feat/letter-audio`. Client only; no backend, contract or versionCode cha
 - Letter PDF: signature is unbreakable and always on the last page foot, kept with at
   least the last 3 body lines. A letter that overflows one page only by the signature
   steps 20 -> 18 -> 17pt to fit one page (pure `planLetterPages`/`chooseLetterSize`,
-  unit tested). On-screen `LetterBody` scales margins/type/spacing from the PDF's A4
-  points (no shrink step in the preview; it does not paginate).
+  unit tested). On-screen `LetterBody` keeps readable sizes (18sp body) on a scrollable
+  A4-height page; it does not mirror the PDF's line breaks.
 - Letter reciter: speaker button in the viewer title (TextToSpeech, lazy init, stops and
   shuts down on close); friendly in-modal notice if TTS is unavailable.
+- Picking a slash command (tap or send) now clears the "/" draft and closes the menu (pre-existing on main).
 - `/audio`: client-only dictation (SpeechRecognizer, system dialog fallback), text is
   appended to the composer draft and sent through the normal path. Not a message type.
 - /ask meta stays at the bubble end for text-only cards; /thisorthat tiles; swipe-to-reply
@@ -23,7 +24,7 @@ revealed tiles, swipe-to-reply. Not checked on a phone: PDF output, /audio, ligh
 ### Xiaomi checklist
 
 - Full-page letter keeps the signature with the body on page 1; page 2 never starts with the signature alone.
-- Downloaded PDF matches the preview.
+- On-screen letter is readable; the downloaded PDF paginates on its own.
 - Speaker reads the letter, tapping again stops it, closing the viewer stops it.
 - `/audio` fills the composer; denying the microphone shows a friendly message.
 - /ask time and ticks sit bottom-right on mine.

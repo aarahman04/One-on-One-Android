@@ -208,16 +208,13 @@ private fun moodEmoji(mood: String) = listOf("😄", "🙂", "😐", "😔", "�
 @Composable internal fun LetterBody(message: ChatMessage) {
     val maxHeight = with(LocalDensity.current) { (LocalWindowInfo.current.containerSize.height * .62f).toDp() }
     BoxWithConstraints(Modifier.widthIn(max = 560.dp).fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState())) {
-        // Margins, type and spacing are the PDF's A4 points (595 wide, 64 margin, 20pt) scaled to this width, so lines break alike.
-        val scale = maxWidth.value / 595f
-        val density = LocalDensity.current
+        // Readable on-screen sizes; the PDF paginates and sizes itself (LetterLayout).
+        val style = TextStyle(fontFamily = FontFamilies.Letter, fontSize = 18.sp, lineHeight = 28.sp, color = Color.Black)
         Column(Modifier.fillMaxWidth().heightIn(min = maxWidth * 1.414f).shadow(2.dp, RoundedCornerShape(2.dp)).background(Color.White)
-            .padding((64 * scale).dp), verticalArrangement = Arrangement.spacedBy((18 * scale).dp)) {
-            val style = TextStyle(fontFamily = FontFamilies.Letter, fontSize = with(density) { (20 * scale).dp.toSp() },
-                lineHeight = with(density) { (32 * scale).dp.toSp() }, color = Color.Black)
-            Text(letterDate(message), Modifier.align(Alignment.End), style = style)
+            .padding(horizontal = 28.dp, vertical = 36.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Text(letterDate(message), Modifier.align(Alignment.End), style = style.copy(fontSize = 15.sp))
             Text("Dear ${message.payload.text("to")},", style = style)
-            Text(message.content, Modifier.padding(start = (28 * scale).dp), style = style)
+            Text(message.content, Modifier.padding(start = 28.dp), style = style)
             // Signature sits at the foot of the page, so even a one-line letter reads as a full page.
             Spacer(Modifier.weight(1f))
             Text("With love,\n${message.payload.text("from")}", Modifier.align(Alignment.End), style = style, textAlign = TextAlign.End)

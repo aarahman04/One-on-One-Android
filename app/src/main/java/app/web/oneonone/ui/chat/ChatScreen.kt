@@ -274,8 +274,9 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     // /audio dictates into the draft; it is never a message type.
     val (dictation, beginDictation) = rememberDictation(
         onText = { text -> vm.draft(if (draft.isBlank()) text else draft.trimEnd() + " " + text) }, onError = features::showError)
-    val runCommand = { name: String -> features.clearError()
-        if (name == "audio") { vm.draft(""); if (!recording) beginDictation() } else if (name == "alarm") alarm = true else command = name }
+    // Picking a command consumes the "/" draft, which also closes the slash menu.
+    val runCommand = { name: String -> features.clearError(); vm.draft("")
+        if (name == "audio") { if (!recording) beginDictation() } else if (name == "alarm") alarm = true else command = name }
     Column(Modifier.fillMaxSize().drawWithContent {
         drawContent()
         if (alarmGlow > 0f) {
