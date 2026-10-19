@@ -75,6 +75,9 @@ class FakeTransport : Transport {
     override val state = MutableStateFlow(ConnectionState.Offline)
     override val incoming = MutableSharedFlow<ChatMessage>(extraBufferCapacity = 32)
     override val receipts = MutableSharedFlow<ReceiptUpdate>(extraBufferCapacity = 32)
+    override val presence = MutableSharedFlow<PresenceUpdate>(extraBufferCapacity = 32)
+    val presenceCalls = mutableListOf<Boolean>()
+    override fun presence(active: Boolean) { presenceCalls += active }
     override val reactions = MutableSharedFlow<ReactionUpdate>(extraBufferCapacity = 32)
     override val ended = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val sends = mutableListOf<SendMessage>()
@@ -108,6 +111,41 @@ class FakeTransport : Transport {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MessageServiceTest {
+    @Test fun reconnectPresenceDoesNotWaitForHistoryToFinish() = runTest {
+        val transport = FakeTransport().apply { history = { _, _ -> awaitCancellation() } }
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        service.visible(true)
+        service.activate(connection("active", true)); runCurrent()
+        assertEquals(listOf(true), transport.presenceCalls)
+        transport.state.value = ConnectionState.Offline; runCurrent()
+        transport.state.value = ConnectionState.Connected; runCurrent()
+        assertEquals(listOf(true, true), transport.presenceCalls)
+        service.deactivate()
+    }
+
+    @Test fun presenceFollowsVisibilityReconnectAndConversationTeardown() = runTest {
+        val transport = FakeTransport()
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        service.visible(true)
+        service.activate(connection("active", true)); runCurrent()
+        assertEquals(listOf(true), transport.presenceCalls)
+        service.visible(true)
+        service.visible(false); runCurrent()
+        assertEquals(listOf(true, false), transport.presenceCalls)
+        transport.presence.emit(PresenceUpdate("other", true)); runCurrent()
+        assertTrue(service.presence.value!!.online)
+        transport.presence.emit(PresenceUpdate("me", false)); runCurrent()
+        assertTrue(service.presence.value!!.online)
+        transport.state.value = ConnectionState.Offline; runCurrent()
+        assertNull(service.presence.value)
+        service.visible(true)
+        transport.state.value = ConnectionState.Connected; runCurrent()
+        assertEquals(listOf(true, false, true), transport.presenceCalls)
+        service.deactivate(); runCurrent()
+        assertEquals(false, transport.presenceCalls.last())
+        assertNull(service.presence.value)
+    }
+
     @Test fun visibleChatHeartbeatsWithoutDuplicatingRecentReadsAndStopsWhenHidden() = runTest {
         val transport = FakeTransport()
         val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)

@@ -1,5 +1,21 @@
 # Native Android architecture
 
+## Live presence (2026-10-19)
+
+InternetTransport carries `{userId, online, lastSeenAt}` on the existing socket.
+MessageService sends foreground state on visibility changes/reconnect and clears
+partner state on disconnect/session teardown. The header prefers a snapshot,
+retaining receipt fallback when none exists and own-network status priority.
+
+```mermaid
+flowchart LR
+  LC[ChatScreen lifecycle] --> VM[ChatViewModel.visible]
+  VM --> MS[MessageService -> Transport -> InternetTransport]
+  MS --> S[Backend validates membership; aggregates active sockets]
+  S --> F[PresenceUpdate -> MessageService -> ViewModel]
+  F --> H[Header: presence first, receipt fallback]
+```
+
 ## A0 — implemented scaffold
 
 Single app module, single exported Activity, Kotlin + Compose + Material 3,

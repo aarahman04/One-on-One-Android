@@ -30,6 +30,7 @@ class ChatViewModel @Inject constructor(
     val messages = service.messages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val connectionState = service.connectionState
     val receipts = service.receipts
+    val presence = service.presence
     val ended = service.ended
     val draft = saved.getStateFlow("draft", "")
     val replyTo = saved.getStateFlow<String?>("replyTo", null)

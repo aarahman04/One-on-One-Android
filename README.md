@@ -99,7 +99,9 @@ Material 3, Navigation, Hilt + KSP, Retrofit/OkHttp/serialization, Socket.IO 2.x
 (v4-server compatible), supabase-kt Auth + Credential Manager, Room, DataStore,
 WorkManager, Firebase Messaging, Stream WebRTC, Coil and MediaPipe. A0–A7 and the
 S1–S5 restyle are merged, including alarms and calls. Owner feedback for 2.0.5 is
-in [PR #27](https://github.com/aarahman04/One-on-One-Android/pull/27), pending review.
+in [PR #27](https://github.com/aarahman04/One-on-One-Android/pull/27), merged.
+Live socket presence is the follow-up on `feat/live-presence`, with release inputs
+kept at **12 / 2.0.5** by owner request.
 
 The backend remains in the read-only sibling web repo. Its
 `docs/API-CONTRACT.md` is the only API authority. The copy here is a reference

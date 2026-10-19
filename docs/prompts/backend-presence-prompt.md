@@ -1,8 +1,10 @@
 # Backend prompt: instant presence (One-on-One web repo)
 
-Status: proposal preserved from the 2026-10-19 handoff. Neither the backend event
-nor Android event integration has shipped in this branch. The web repo's
-`docs/API-CONTRACT.md` remains authoritative.
+Status: original proposal preserved from the 2026-10-19 handoff. Backend/web and
+Android implementations now exist on their respective `feat/live-presence`
+branches; deployment/release is tracked in each repo's progress document.
+The web repo's `docs/API-CONTRACT.md` remains authoritative. The sketch below is
+historical; use the implemented handler rather than copying it verbatim.
 
 No database or Supabase change is needed. Presence lives in server memory and is never stored.
 

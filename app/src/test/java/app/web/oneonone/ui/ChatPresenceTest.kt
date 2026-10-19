@@ -2,6 +2,7 @@ package app.web.oneonone.ui
 
 import app.web.oneonone.data.chat.newerTime
 import app.web.oneonone.data.realtime.ConnectionState
+import app.web.oneonone.data.model.PresenceUpdate
 import app.web.oneonone.ui.chat.ChatPresence
 import app.web.oneonone.ui.chat.chatPresence
 import org.junit.Assert.*
@@ -11,6 +12,16 @@ import java.time.ZoneId
 import java.util.Locale
 
 class ChatPresenceTest {
+    @Test fun explicitPresenceWinsOverReadAgeAndOwnSocketStillTakesPriority() {
+        fun live(online: Boolean, read: String?, seen: String? = null, state: ConnectionState = ConnectionState.Connected) =
+            chatPresence(state, read, now, ZoneId.of("UTC"), Locale.US, "HH:mm", presence = PresenceUpdate("other", online, seen))
+        assertEquals(ChatPresence("Online", true), live(true, null))
+        assertEquals(ChatPresence("Last seen today at 12:00"), live(false, now.toString()))
+        assertEquals(ChatPresence("Last seen today at 08:05"), live(false, now.toString(), "2026-10-10T08:05:00Z"))
+        assertEquals(ChatPresence("Offline"), live(false, null))
+        assertEquals(ChatPresence("Waiting for network"), live(true, null, state = ConnectionState.Offline))
+    }
+
     private val now = Instant.parse("2026-10-10T12:00:00Z")
     private fun presence(lastRead: String?, state: ConnectionState = ConnectionState.Connected,
                          locale: Locale = Locale.US, pattern: String = "HH:mm", zone: ZoneId = ZoneId.of("UTC")) =
