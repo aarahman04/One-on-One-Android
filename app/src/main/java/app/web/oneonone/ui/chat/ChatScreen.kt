@@ -271,7 +271,12 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         infiniteRepeatable(tween(900, easing = OneTheme.motion.standard), RepeatMode.Reverse), label = "alarm-glow-alpha").value else 0f
     val danger = OneTheme.colors.danger
     val slash = if (recording) emptyList() else slashMatches(draft)
-    val runCommand = { name: String -> features.clearError(); if (name == "alarm") alarm = true else command = name }
+    // /audio dictates into the draft; it is never a message type.
+    val (dictation, beginDictation) = rememberDictation(
+        onText = { text -> vm.draft(if (draft.isBlank()) text else draft.trimEnd() + " " + text) }, onError = features::showError)
+    // Picking a command consumes the "/" draft, which also closes the slash menu.
+    val runCommand = { name: String -> features.clearError(); vm.draft("")
+        if (name == "audio") { if (!recording) beginDictation() } else if (name == "alarm") alarm = true else command = name }
     Column(Modifier.fillMaxSize().drawWithContent {
         drawContent()
         if (alarmGlow > 0f) {
@@ -416,6 +421,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                                 else messageLinks(message.content).firstOrNull { !it.second.startsWith("tel:") }?.second
                             }?.let { url -> { LinkPreviewCard(url, vm::linkPreview) } },
                             onMoreReactions = { reactingTo = message.id },
+                            partnerName = connection.otherNickname ?: "Your partner",
                             onReact = { emoji -> selectedKeys = emptyList(); vm.react(checkNotNull(message.id), emoji,
                                 message.reactions.any { it.emoji == emoji && connection.myUserId in it.userIds }) },
                             onRetry = { if (message.deliveryState == "unknown") duplicate = message.tempId else message.tempId?.let { vm.retry(it) } },
@@ -469,7 +475,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             val original = messages.find { it.id == id }
             ReplyBar(authorOf(original, connection).ifEmpty { "Earlier message" }, original?.let(::messageSummary) ?: "earlier message") { vm.reply(null) }
         } }
-        ChatComposer(
+        if (dictation.listening) DictationBar(dictation.partial, onStop = dictation::stop, onCancel = dictation::cancel)
+        else ChatComposer(
             draft = draft, onDraft = vm::draft,
             canSend = !busy, // Text is queued instantly; an uploading voice note or sticker must not block it.
             recording = recording,

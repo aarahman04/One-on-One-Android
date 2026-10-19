@@ -92,6 +92,7 @@ private val CommandDescriptions = mapOf(
     "thisorthat" to "A playful pick, revealed together",
     "alarm" to "Emergency — alert them right now",
     "location" to "Share where you are right now",
+    "audio" to "Speak and turn it into text",
 )
 
 /** "Message", alternating with a "Try /letter"-style hint so people find the slash commands. */

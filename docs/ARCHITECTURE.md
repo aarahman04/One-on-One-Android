@@ -1,5 +1,20 @@
 # Native Android architecture
 
+## Letter pagination, dictation, swipe (2026-10-19)
+
+`writeLetterPdf` measures the letter at a font size, `chooseLetterSize` picks the first
+size that fits one page, and `planLetterPages` keeps the signature with the last body
+lines. `/audio` is handled in ChatScreen's `runCommand` and never reaches MessageService.
+`replySwipe` claims the pointer only for a clearly horizontal drag.
+
+```mermaid
+flowchart LR
+  L[Letter] --> M[LetterMetrics per size] --> P[planLetterPages] --> PDF[PdfDocument pages]
+  A["/audio"] --> D[Dictation: SpeechRecognizer] --> DR[Composer draft] --> S[Normal send path]
+  G[Pointer events] --> C{claimsReplySwipe} -->|horizontal| R[Reply]
+  C -->|vertical or diagonal| LC[LazyColumn scroll]
+```
+
 ## Live presence (2026-10-19)
 
 InternetTransport carries `{userId, online, lastSeenAt}` on the existing socket.

@@ -47,13 +47,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -131,6 +131,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -191,6 +192,7 @@ internal fun Modifier.bubbleTail(mine: Boolean, color: Color, enabled: Boolean =
 
 private const val SwipeTriggerDp = 60
 private const val SwipeMaxDp = 80
+private const val SwipeFlingDp = 700
 
 /** Cap a child's width to a fraction of the space it is offered (web: .chat__message-body max-width 80%). */
 private fun Modifier.maxWidthFraction(fraction: Float) = layout { measurable, constraints ->
@@ -260,6 +262,7 @@ internal fun MessageBubble(
     preview: (@Composable () -> Unit)? = null,
     // The full picker lives in ChatScreen: a sheet owned by a lazy row was lost when the row recomposed or left composition.
     onMoreReactions: () -> Unit = {},
+    partnerName: String = "Your partner",
 ) {
     val c = OneTheme.colors
     val motion = OneTheme.motion
@@ -274,6 +277,7 @@ internal fun MessageBubble(
     val failed = message.id == null && message.deliveryState == "failed"
     val status = if (mine && message.type != "call" && !failed) receiptOf(receipt) else Receipt.None
     var reacting by remember { mutableStateOf(false) }
+    var showReactors by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val canReply = message.id != null && message.type != "call" && !deleted
     val scope = rememberCoroutineScope()
@@ -282,10 +286,17 @@ internal fun MessageBubble(
     val currentOnQuote by rememberUpdatedState(onQuote)
     val currentSelecting by rememberUpdatedState(selecting)
     var dragPx by remember { mutableFloatStateOf(0f) }
+    var settling by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val triggerPx = with(LocalDensity.current) { SwipeTriggerDp.dp.toPx() }
+    val limitPx = with(LocalDensity.current) { SwipeMaxDp.dp.toPx() }
+    val flingPx = with(LocalDensity.current) { SwipeFlingDp.dp.toPx() }
     val shape = RoundedCornerShape(OneTheme.radii.bubble8)
     val alarm = message.type == "alarm"
     val alarmAck = alarm && app.web.oneonone.alarm.AlarmPolicy.ackOf(message) != null
+    // Text-only cards shrink-wrap like text bubbles, so the time/ticks stay at the bubble's end when a quote or the tap-to-expand line widens it.
+    // The unanswered received /ask holds a text field, which has no use for intrinsics.
+    val plainCard = !deleted && message.type in setOf("ask", "thisorthat", "checkin", "countdown", "letter") &&
+        !(message.type == "ask" && !mine && message.payload?.get("answerB") == null)
     // Stickers draw bare (a reply quote still needs the bubble); photos sit in a thin frame with the time printed on them.
     val sticker = !deleted && quote == null && isSticker(message)
     val photo = !deleted && !sticker && message.type == "image"
@@ -339,28 +350,20 @@ internal fun MessageBubble(
                 scaleY = scaleX
                 transformOrigin = TransformOrigin(if (mine) 1f else 0f, 1f)
             }
-            .pointerInput(canReply, selecting) {
-                if (!canReply || selecting) return@pointerInput
-                val trigger = SwipeTriggerDp.dp.toPx()
-                val limit = SwipeMaxDp.dp.toPx()
-                // Right-swipe = reply (web: 60 trigger / 80 max). Settles back whichever way it ends.
-                fun settle() { scope.launch { animate(dragPx, 0f, animationSpec = tween(motion.base200, easing = motion.standard)) { v, _ -> dragPx = v } } }
-                detectHorizontalDragGestures(
-                    onDragEnd = { if (dragPx >= trigger) currentOnReply(); settle() },
-                    onDragCancel = { settle() },
-                ) { change, dx ->
-                    change.consume()
-                    val before = dragPx
-                    dragPx = (dragPx + dx).coerceIn(0f, limit)
-                    if (before < trigger && dragPx >= trigger) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-            },
+            .replySwipe(canReply && !selecting, mine, triggerPx, limitPx, flingPx,
+                onDrag = { settling?.cancel(); dragPx = it },
+                onTrigger = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                // Settles back whichever way it ends.
+                onEnd = { reply ->
+                    if (reply) currentOnReply()
+                    settling = scope.launch { animate(dragPx, 0f, animationSpec = spring(dampingRatio = .8f, stiffness = Spring.StiffnessMediumLow)) { v, _ -> dragPx = v } }
+                }),
     ) {
-        if (dragPx > 0f) {
-            val progress = (dragPx / triggerPx).coerceIn(0f, 1f)
-            val ready = dragPx >= triggerPx
+        if (dragPx != 0f) {
+            val progress = (abs(dragPx) / triggerPx).coerceIn(0f, 1f)
+            val ready = abs(dragPx) >= triggerPx
             Box(
-                Modifier.align(Alignment.CenterStart).padding(start = 6.dp).size(30.dp)
+                Modifier.align(if (mine) Alignment.CenterEnd else Alignment.CenterStart).padding(horizontal = 6.dp).size(30.dp)
                     .graphicsLayer { alpha = progress; scaleX = .6f + .4f * progress; scaleY = scaleX }
                     .clip(CircleShape).background(if (ready) c.accentOther else c.bgRaised),
                 contentAlignment = Alignment.Center,
@@ -371,9 +374,8 @@ internal fun MessageBubble(
         Column(
             Modifier
                 .align(if (mine) Alignment.CenterEnd else Alignment.CenterStart)
-                // Web swipes every row to the right. A right-aligned (mine) bubble has no room, so it only nudges into the 6dp row padding;
-                // the reply icon and the 60dp trigger still give the feedback.
-                .graphicsLayer { translationX = if (mine) minOf(dragPx, 6.dp.toPx()) else dragPx }
+                // Partner's bubbles swipe right, mine swipe left; the reply icon waits on the side being revealed.
+                .graphicsLayer { translationX = dragPx }
                 .maxWidthFraction(.8f),
             horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
         ) {
@@ -438,7 +440,7 @@ internal fun MessageBubble(
                         }
                         // Text bubbles shrink-wrap to their widest child so the quote can stretch to the same width.
                         // Cards (S4) keep their own sizing: they may contain subcomposition that has no intrinsics.
-                        .then(if (message.type == "text" || deleted || alarmAck) Modifier.width(IntrinsicSize.Max) else Modifier)
+                        .then(if (message.type == "text" || deleted || alarmAck || plainCard) Modifier.width(IntrinsicSize.Max) else Modifier)
                         .then(when {
                             sticker -> Modifier
                             photo -> Modifier.padding(3.dp)
@@ -453,7 +455,7 @@ internal fun MessageBubble(
                             label = "deleted") { isDeleted ->
                         // AnimatedContent lays children out in a Box; the preview card must stack above the text, not on it.
                         // An alarm ack row spans the bubble (quote width) so its time/ticks sit at the same edge as text bubbles.
-                        Column(if (alarmAck) Modifier.fillMaxWidth() else Modifier) { when {
+                        Column(if (alarmAck || plainCard) Modifier.fillMaxWidth() else Modifier) { when {
                             isDeleted -> TextWithMeta(
                                 text = AnnotatedString("This message was deleted"),
                                 textColor = colors.meta,
@@ -508,33 +510,43 @@ internal fun MessageBubble(
                 if (reacting) ReactionBar(colors, mine, myReaction, onPick = { onReact(it); reacting = false }, onDismiss = { reacting = false },
                     onMore = { reacting = false; onMoreReactions() })
             }
-            // Plain emoji tucked 3dp under the bubble, inset 10dp from its outer edge (L955-985). The row grows/shrinks
-            // in smoothly, each new emoji pops with a spring, and a count change slides.
+            if (showReactors) ReactorsSheet(message.reactions, myReaction, partnerName, onRemove = { onReact(it); showReactors = false },
+                onAdd = { showReactors = false; reacting = true }, onDismiss = { showReactors = false })
+            // WhatsApp-style pill: every reaction in one rounded chip overlapping the bubble's bottom edge, inset 10dp from its
+            // outer edge, ringed in the chat background so it looks cut out. It grows/shrinks in smoothly and each new emoji
+            // pops with a spring. Tapping the pill lists who reacted.
             val reactions = if (deleted) emptyList() else message.reactions
             var lastReactions by remember { mutableStateOf(reactions) }
             if (reactions.isNotEmpty()) lastReactions = reactions
             val origin = TransformOrigin(if (mine) 1f else 0f, 0f)
-            AnimatedVisibility(reactions.isNotEmpty(), Modifier.offset(y = (-3).dp),
+            val total = lastReactions.sumOf { it.userIds.size }
+            val reactionLabel = "Reactions: " + lastReactions.joinToString(", ") { r ->
+                r.emoji + " by " + if (r.emoji == myReaction) (if (r.userIds.size > 1) "you and $partnerName" else "you") else partnerName
+            }
+            AnimatedVisibility(reactions.isNotEmpty(),
+                Modifier.layout { measurable, constraints ->
+                    // Drawn 8dp up over the bubble, but only the rest is reserved below it.
+                    val lift = 8.dp.roundToPx(); val placeable = measurable.measure(constraints)
+                    layout(placeable.width, (placeable.height - lift).coerceAtLeast(0)) { placeable.place(0, -lift) }
+                },
                 enter = fadeIn(tween(180)) + expandVertically(tween(220, easing = motion.standard), expandFrom = Alignment.Top) +
                     scaleIn(spring(dampingRatio = .6f, stiffness = Spring.StiffnessMediumLow), initialScale = .5f, transformOrigin = origin),
                 exit = fadeOut(tween(160)) + shrinkVertically(tween(220, easing = motion.standard), shrinkTowards = Alignment.Top) +
                     scaleOut(tween(180), targetScale = .5f, transformOrigin = origin)) {
-                Row(Modifier.padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    lastReactions.forEach { reaction ->
-                        key(reaction.emoji) {
-                            val pop = remember { Animatable(.4f) }
-                            LaunchedEffect(Unit) { pop.animateTo(1f, spring(dampingRatio = .5f, stiffness = Spring.StiffnessMedium)) }
-                            AnimatedContent(if (reaction.userIds.size > 1) "${reaction.emoji} ${reaction.userIds.size}" else reaction.emoji,
-                                Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value; alpha = pop.value.coerceIn(0f, 1f) },
-                                transitionSpec = { (fadeIn(tween(160)) + slideInVertically { it / 2 }) togetherWith fadeOut(tween(120)) },
-                                label = "reaction") { label ->
-                                Text(label,
-                                    modifier = Modifier.clickable(role = Role.Button) { onReact(reaction.emoji) }.padding(vertical = 2.dp),
-                                    color = c.text,
-                                    style = OneTextStyles.bubbleText,
-                                )
+                Box(Modifier.padding(horizontal = 10.dp)) {
+                    Row(Modifier.shadow(2.dp, CircleShape).background(c.bgRaised, CircleShape).border(2.dp, c.bg, CircleShape)
+                        .clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Show who reacted") { showReactors = true }
+                        .padding(horizontal = 6.dp, vertical = 2.dp).semantics(mergeDescendants = true) { contentDescription = reactionLabel },
+                        horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        lastReactions.forEach { reaction ->
+                            key(reaction.emoji) {
+                                val pop = remember { Animatable(.4f) }
+                                LaunchedEffect(Unit) { pop.animateTo(1f, spring(dampingRatio = .5f, stiffness = Spring.StiffnessMedium)) }
+                                Text(reaction.emoji, Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value; alpha = pop.value.coerceIn(0f, 1f) },
+                                    color = c.text, style = OneTextStyles.bubbleText.copy(fontSize = 15.sp))
                             }
                         }
+                        if (total > 1) Text(total.toString(), color = c.textDim, style = OneTextStyles.bubbleMeta)
                     }
                 }
             }
@@ -734,4 +746,33 @@ private class TextWithMetaPolicy(private val holder: TextLayoutHolder) : Measure
 
     override fun IntrinsicMeasureScope.maxIntrinsicHeight(measurables: List<IntrinsicMeasurable>, width: Int) =
         measurables[0].maxIntrinsicHeight(width)
+}
+
+/** Who reacted with what; my own row removes it, the partner's is read-only, and "Add reaction" reopens the quick bar. */
+@Composable
+private fun ReactorsSheet(reactions: List<app.web.oneonone.data.model.ReactionSummary>, myReaction: String?, partnerName: String,
+    onRemove: (String) -> Unit, onAdd: () -> Unit, onDismiss: () -> Unit) {
+    val c = OneTheme.colors
+    app.web.oneonone.ui.components.OneModal(onDismiss, placement = app.web.oneonone.ui.components.ModalPlacement.Bottom) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Reactions", color = c.text, style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(bottom = 8.dp))
+            reactions.forEach { r ->
+                val mine = r.emoji == myReaction
+                if (mine) ReactorRow(r.emoji, "You", "Tap to remove", Modifier.clickable(role = Role.Button, onClickLabel = "Remove your reaction") { onRemove(r.emoji) })
+                if (r.userIds.size > (if (mine) 1 else 0)) ReactorRow(r.emoji, partnerName, null, Modifier)
+            }
+            ReactorRow(null, "+ Add reaction", null, Modifier.clickable(role = Role.Button, onClick = onAdd))
+        }
+    }
+}
+
+@Composable
+private fun ReactorRow(emoji: String?, name: String, hint: String?, modifier: Modifier) {
+    val c = OneTheme.colors
+    Row(modifier.fillMaxWidth().defaultMinSize(minHeight = OneTheme.sizes.touch40).padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (emoji != null) Text(emoji, style = OneTextStyles.bubbleText.copy(fontSize = 22.sp))
+        Text(name, Modifier.weight(1f), color = if (emoji == null) c.accentOther else c.text, style = OneTextStyles.menuItem)
+        if (hint != null) Text(hint, color = c.muted, style = OneTextStyles.cardHint)
+    }
 }
