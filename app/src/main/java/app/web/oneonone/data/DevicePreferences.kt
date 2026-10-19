@@ -37,6 +37,9 @@ interface DeviceStore {
     suspend fun saveLetterSignature(value: String)
     /** Chat text size step (0..3, 1 = default); see ChatTextScales. */
     val chatTextStep: Flow<Int> get() = flowOf(1)
+    /** Id of the connection [owner]'s partner left, as last seen from the server; survives process death. */
+    suspend fun endedConnection(owner: String): String? = null
+    suspend fun saveEndedConnection(owner: String, id: String?) {}
     suspend fun setChatTextStep(value: Int) {}
 }
 
@@ -53,6 +56,12 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     private val textStepKey = intPreferencesKey("chatTextStep")
     private val signature = stringPreferencesKey("letterFrom")
     private val reminderAt = longPreferencesKey("notificationReminderAt")
+    private val endedKey = stringPreferencesKey("endedConnection")
+    override suspend fun endedConnection(owner: String) =
+        store.data.first()[endedKey]?.split('|')?.takeIf { it.size == 2 && it[0] == owner }?.get(1)
+    override suspend fun saveEndedConnection(owner: String, id: String?) { store.edit {
+        if (id == null) it.remove(endedKey) else it[endedKey] = "$owner|$id"
+    } }
     override val theme = store.data.map { it[themeKey] ?: "dark" }
     override suspend fun setTheme(value: String) {
         require(value in setOf("light", "dark"))

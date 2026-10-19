@@ -1,10 +1,12 @@
 package app.web.oneonone.data.transport
 
 import app.web.oneonone.data.model.*
+import app.web.oneonone.data.realtime.ConnectionState
 import app.web.oneonone.data.realtime.RealtimeSocket
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
+import java.io.IOException
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -17,6 +19,7 @@ interface ChatApi {
         @Path("id") id: String, @Query("before") before: String?, @Query("after") after: String?,
     ): MessagePage
     @POST("api/connections/{id}/read") suspend fun read(@Path("id") id: String)
+    @POST("api/connections/{id}/delivered") suspend fun delivered(@Path("id") id: String)
     @GET("api/link-preview") suspend fun linkPreview(@Query("url") url: String): LinkPreviewResult
 }
 
@@ -57,7 +60,19 @@ class InternetTransport @Inject constructor(
     )
     override suspend fun history(connectionId: String, before: String?, after: String?) =
         api.history(connectionId, before, after).messages
-    override suspend fun markRead(connectionId: String) = api.read(connectionId)
+    override suspend fun markRead(connectionId: String) {
+        // Socket read is one hop to the sender's receipt:update; REST covers a closed socket or an older server (no ack).
+        if (state.value == ConnectionState.Connected) {
+            val ack = try { realtime.emitWithAck("message:read", JSONObject().put("connectionId", connectionId), timeoutMs = 2_000) }
+                catch (_: IOException) { null }
+            if (ack != null) {
+                check(ack.optBoolean("ok") && !ack.has("error")) { ack.optString("error", "Couldn't mark as read.") }
+                return
+            }
+        }
+        api.read(connectionId)
+    }
+    override suspend fun markDelivered(connectionId: String) = api.delivered(connectionId)
     override suspend fun react(messageId: String, emoji: String, remove: Boolean) {
         require(emoji.isNotBlank() && emoji.length <= 32) // server checks it is a single emoji
         val ack = realtime.emitWithAck(if (remove) "reaction:remove" else "reaction:add",

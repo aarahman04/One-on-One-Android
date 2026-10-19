@@ -34,6 +34,47 @@ class PushTest {
         assertEquals(listOf("alarm:unchanged", "call:unchanged", "end:unchanged", "message:Hello"), seen)
     }
 
+    @Test fun connectionLeftPushIsRoutedValidatedAndCapped() {
+        val router = PushRouter(object : AlarmPushHandler { override fun onAlarmPush(data: Map<String, String>) = fail() },
+            object : CallPushHandler {
+                override fun onCallPush(data: Map<String, String>) = fail()
+                override fun onCallEndPush(data: Map<String, String>) = fail()
+            })
+        val left = mutableListOf<LeftPush>()
+        val push = mapOf("type" to "connection_left", "connectionId" to connectionId, "title" to "Alex left the connection",
+            "body" to "Open One on One to save your conversation.")
+        router.route(push, left = { left += it }) { fail() }
+        router.route(push + ("connectionId" to "../x"), left = { left += it }) { fail() }
+        assertEquals(listOf(LeftPush(connectionId, "Alex left the connection", "Open One on One to save your conversation.")), left)
+        assertEquals("Your connection left the connection", decodeLeftPush(push - "title")?.title)
+        assertEquals(80, decodeLeftPush(push + ("title" to "x".repeat(200)))?.title?.length)
+        assertNull(decodeMessagePush(push))
+    }
+
+    @Test fun leftNoticeNeedsThisAccountsPartnerEndedConnectionAndBuildsItsOwnTitle() = runTest {
+        val session = FakeSession()
+        var ownerSwitch = false
+        val api = object : FakeAccountApi(session) {
+            override suspend fun current(): app.web.oneonone.data.api.CurrentResult {
+                if (ownerSwitch) session.token = "h.eyJzdWIiOiJvdGhlciJ9.s"
+                return super.current()
+            }
+        }
+        session.token = "h.eyJzdWIiOiJ1c2VyIn0.s"
+        val push = LeftPush(connectionId, "Spoofed title", "Spoofed body")
+        val ended = connection("ended", false).copy(id = connectionId, otherNickname = "Alex", endedBy = "partner")
+        api.current = ended
+        assertEquals(LeftPush(connectionId, "Alex left the connection", "Open One on One to save your conversation."), leftNotice(push, session, api))
+        api.current = ended.copy(otherNickname = null)
+        assertEquals("Your connection left the connection", leftNotice(push, session, api)?.title)
+        api.current = ended.copy(id = messageId); assertNull(leftNotice(push, session, api))
+        api.current = ended.copy(status = "active"); assertNull(leftNotice(push, session, api))
+        api.current = ended.copy(endedBy = "me"); assertNull(leftNotice(push, session, api))
+        api.current = null; assertNull(leftNotice(push, session, api))
+        api.current = ended; ownerSwitch = true; assertNull(leftNotice(push, session, api))
+        session.token = null; ownerSwitch = false; assertNull(leftNotice(push, session, api))
+    }
+
     @Test fun normalPushRequiresContractTypeAndCanonicalIds() {
         assertNotNull(decodeMessagePush(data()))
         assertNull(decodeMessagePush(data() - "messageId"))

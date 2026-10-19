@@ -29,7 +29,7 @@ class CardPalettePreviews : PreviewParameterProvider<BubblePalette> {
     override fun getDisplayName(index: Int) = listOf("Dark", "Light", "Love", "Samurai")[index]
 }
 
-private val PreviewConnection = CurrentConnection("preview", "active", "me", false, "Alex", "K7F29PQ2", 0, 0, null, false, false, null, null, "off", "bubbles")
+private val PreviewConnection = CurrentConnection("preview", "active", "me", false, "Alex", "K7F29PQ2", null, null, "off", "bubbles")
 
 private fun sample(type: String, payload: JsonObject = buildJsonObject {}, content: String = "") =
     ChatMessage("preview", "them", content, "2026-10-10T10:00:00Z", type, payload)

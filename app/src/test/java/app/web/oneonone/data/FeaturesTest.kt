@@ -158,10 +158,10 @@ class FeaturesTest {
         val start = Instant.parse("2026-10-07T00:00:00Z")
         val history = (0..119).map { ChatMessage(id = "id$it", senderId = "me", content = "$it", createdAt = start.plusSeconds(it.toLong()).toString()) }
         transport.history = { before, _ -> history.filter { before == null || Instant.parse(it.createdAt).isBefore(Instant.parse(before)) }.takeLast(50) }
-        assertEquals(history, service.exportHistory())
+        assertEquals(history, service.exportHistory("connection"))
         assertTrue(transport.historyCalls.any { it.first != null })
         transport.history = { _, _ -> service.deactivate(); history.takeLast(50) }
-        assertTrue(runCatching { service.exportHistory() }.isFailure)
+        assertTrue(runCatching { service.exportHistory("connection") }.isFailure)
     }
 
     @Test fun stopStopsOnceEvenWhenTappedTwice() = runTest {

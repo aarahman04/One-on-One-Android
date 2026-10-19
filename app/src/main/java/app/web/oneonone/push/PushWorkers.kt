@@ -70,6 +70,7 @@ internal suspend fun deliverMessagePush(context: Context, push: MessagePush) {
     val owner = dependencies.auth().accessToken()?.let(::tokenSubject) ?: return
     val connection = try { dependencies.api().current().connection ?: return }
     catch (error: HttpException) { if (error.code() in setOf(401, 403, 404, 409)) return else throw error }
+    if (connection.id == push.connectionId && connection.status in setOf("active", "leave_pending")) dependencies.messages().markDelivered(push.connectionId)
     if (!shouldNotify(push, connection, dependencies.messages().isChatResumed(push.connectionId))) return
     if (!dependencies.notifications().allowed()) return
     if (dependencies.auth().accessToken()?.let(::tokenSubject) != owner) return
@@ -78,6 +79,27 @@ internal suspend fun deliverMessagePush(context: Context, push: MessagePush) {
         dependencies.auth().accessToken()?.let(::tokenSubject) == owner) {
         dependencies.notifications().show(push, owner)
     }
+}
+
+/** Partner left: replaces the conversation's notification with one that opens the save screen. Signed-in users only. */
+internal suspend fun deliverLeftPush(context: Context, push: LeftPush) {
+    val dependencies = dependencies(context)
+    leftNotice(push, dependencies.auth(), dependencies.api())?.let(dependencies.notifications()::left)
+}
+
+/**
+ * The notice to show for a `connection_left` push, or null. Same gates as a message push: this account's own
+ * connection, ended by the partner, owner unchanged; the title is built locally, never taken from the push.
+ */
+internal suspend fun leftNotice(push: LeftPush, auth: AccountSession, api: AccountApi): LeftPush? {
+    val owner = auth.accessToken()?.let(::tokenSubject) ?: return null
+    val connection = try { api.current().connection ?: return null }
+    catch (error: HttpException) { if (error.code() in setOf(401, 403, 404, 409)) return null else throw error }
+    if (connection.id != push.connectionId || connection.status != "ended") return null
+    if (connection.endedBy == null || connection.endedBy == connection.myUserId) return null
+    if (auth.accessToken()?.let(::tokenSubject) != owner) return null
+    return LeftPush(connection.id, "${connection.otherNickname ?: "Your connection"} left the connection",
+        "Open One on One to save your conversation.")
 }
 
 class MessageNotificationWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {

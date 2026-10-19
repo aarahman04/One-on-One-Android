@@ -1,5 +1,53 @@
 # Android milestone progress
 
+## Instant leave, zip export, server gates, instant receipts (P3, 2026-10-19, 12 / 2.0.5 unchanged)
+
+Branch `feat/instant-leave-export`, against the contract of backend PR #109
+(merged to One-on-One main as `bd3be70`). versionCode not bumped.
+
+- Sign-in gates: server `ageVerifiedAt`/`termsAcceptedAt` are truth; local gates
+  are only a same-account cache, pushed up once when the server lacks them.
+  Reinstall or sign out/in with the same account no longer asks DOB/rules.
+- Leave: one centred dialog (save a copy then leave / leave without saving /
+  cancel); countdown banner, step fields and cancel/confirm-end routes removed.
+- Zip export: `One on One - <partner> - <date>.zip` with `conversation.html`,
+  `conversation.txt`, `letters/`, `images/`, `images/stickers/`, `voice/`,
+  `files/`; progress + cancel; a failed/cancelled save deletes the document.
+- Partner left: `PartnerLeftScreen` (save or continue), then acknowledge-end,
+  local cache cleared, home. `connection_left` FCM opens it. Accepting a new
+  request while an ended chat exists warns first.
+- Receipts: socket `message:read` per incoming message while the chat is
+  resumed (REST fallback, heartbeat kept); delivered on FCM arrival, debounced.
+
+Verification: `gradlew.bat --no-daemon assembleDebug lintDebug testDebugUnitTest`
+passed: 143 tests, zero failures/errors, lint passed. Build verification only;
+no physical-phone or live-account verification claimed.
+
+Known limits: an archive holds the message list (not files) in memory; delivered
+debounce is lost if the process dies within 1 s (socket connect covers it);
+the "old chat" warning on Accept persists the ended id last seen from
+`/connections/current` (pending outranks ended there, so a request that arrives
+before the app ever saw the ended state cannot warn: contract gap). The
+`connection_left` notice is shown only for this account's own ended connection,
+ended by the partner, with a locally built title.
+
+### Xiaomi checklist
+
+- [ ] Sign out and back in with the same account: no DOB or rules screen.
+- [ ] Uninstall/reinstall, sign in with the same account: no DOB or rules screen.
+- [ ] Leave with "Save a copy, then leave": zip opens; folders `letters/`,
+  `images/`, `images/stickers/`, `voice/`, `files/` are right; `conversation.html`
+  reads well; deleted messages are absent; then the app is on the code screen.
+- [ ] Leave without saving: goes straight to the code screen.
+- [ ] Partner with the app closed gets "<name> left the connection" notification;
+  tapping opens the save screen; "Save conversation" writes the zip; then home.
+- [ ] Partner taps "Continue without saving": "Delete without saving?" confirm
+  appears; "Go back" returns to the save screen; "Delete" goes home, conversation gone.
+- [ ] Partner with an ended chat gets a new request, force-stops the app, reopens:
+  tapping Accept still warns "Your old chat will be deleted".
+- [ ] Both in the chat: the blue tick appears in under a second.
+- [ ] Partner app closed: notification arrives and the sender sees the double tick.
+
 ## P2 letter, audio and polish (2026-10-19, 12 / 2.0.5 unchanged)
 
 Branch `feat/letter-audio`. Client only; no backend, contract or versionCode change.

@@ -33,11 +33,13 @@ import java.time.LocalDate
 import java.time.Period
 import javax.inject.Inject
 
-enum class BootRoute { Loading, SignIn, Age, UnderAge, Consent, Connect, Waiting, Request, Chat }
+enum class BootRoute { Loading, SignIn, Age, UnderAge, Consent, Connect, Waiting, Request, Chat, PartnerLeft }
 data class AppState(
     val route: BootRoute = BootRoute.Loading,
     val me: Me? = null,
     val connection: CurrentConnection? = null,
+    /** Id of the connection my partner left, still readable until acknowledged or purged (contract §10). */
+    val ended: String? = null,
     val blocks: List<BlockedUser> = emptyList(),
     val busy: Boolean = false,
     val error: String? = null,
@@ -51,6 +53,7 @@ internal fun bootRoute(signedIn: Boolean, gates: Gates, connection: CurrentConne
     connection == null -> BootRoute.Connect
     connection.status == "pending" -> if (connection.isRequester) BootRoute.Waiting else BootRoute.Request
     connection.status in setOf("active", "leave_pending") -> BootRoute.Chat
+    connection.status == "ended" -> BootRoute.PartnerLeft
     else -> BootRoute.Connect
 }
 
@@ -101,17 +104,26 @@ class AppViewModel @Inject constructor(
             mutable.value = AppState(route = BootRoute.SignIn)
             return
         }
-        val gates = preferences.gates(gateOwner())
+        val me = account.api.me()
+        val gates = account.syncGates(gateOwner(), me)
         if (!gates.ageVerified || !gates.termsAccepted) {
             if (state.value.route != BootRoute.UnderAge) mutable.update {
                 it.copy(route = bootRoute(true, gates, null))
             }
             return
         }
-        val me = account.api.me()
         val current = account.api.current().connection
+        // A pending request outranks an ended connection in /current, so keep the last ended id the server showed
+        // (persisted: the Accept warning must survive process death); anything else means it is gone.
+        val owner = gateOwner()
+        val ended = when (current?.status) {
+            "ended" -> current.id.also { if (preferences.endedConnection(owner) != it) preferences.saveEndedConnection(owner, it) }
+            "pending" -> preferences.endedConnection(owner)
+            else -> null.also { if (preferences.endedConnection(owner) != null) preferences.saveEndedConnection(owner, null) }
+        }
         val onboarding = !preferences.onboardingSeen()
         mutable.update { it.copy(route = bootRoute(true, gates, current), me = me, connection = current, error = null,
+            ended = ended,
             needsNotificationOnboarding = onboarding) }
     }
 
@@ -135,6 +147,12 @@ class AppViewModel @Inject constructor(
             "cancel" -> account.api.cancel(current.id)
             else -> error("Unsupported connection action")
         }
+        load()
+    }
+    /** Partner side of a leave: the server hard-deletes the ended connection now; 404 means it is already gone. */
+    fun acknowledgeEnd() = action {
+        val ended = state.value.connection?.takeIf { it.status == "ended" } ?: return@action
+        try { account.api.acknowledgeEnd(ended.id) } catch (error: HttpException) { if (error.code() != 404) throw error }
         load()
     }
     fun loadBlocks() = action { mutable.update { it.copy(blocks = account.api.blocks().blocks) } }

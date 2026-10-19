@@ -24,6 +24,15 @@ internal fun decodeMessagePush(data: Map<String, String>): MessagePush? {
         data["senderName"].orEmpty().take(40), preview.take(120))
 }
 
+/** `connection_left` (contract §6/§10): the partner left; title/body are the server's display text. */
+@Serializable data class LeftPush(val connectionId: String, val title: String, val body: String)
+
+internal fun decodeLeftPush(data: Map<String, String>): LeftPush? {
+    if (data["type"] != "connection_left" || !validUuid(data["connectionId"])) return null
+    return LeftPush(checkNotNull(data["connectionId"]), data["title"].orEmpty().take(80).ifBlank { "Your connection left the connection" },
+        data["body"].orEmpty().take(160).ifBlank { "Open One on One to save your conversation." })
+}
+
 internal fun shouldNotify(push: MessagePush, current: CurrentConnection?, chatResumed: Boolean): Boolean =
     current?.id == push.connectionId && current.status in setOf("active", "leave_pending") && !chatResumed
 
@@ -31,11 +40,12 @@ internal fun acceptsNotificationAction(owner: String, expectedOwner: String?, cu
     owner == expectedOwner && current != null && current.id == expectedConnection && current.status in setOf("active", "leave_pending")
 
 class PushRouter @Inject constructor(private val alarm: AlarmPushHandler, private val call: CallPushHandler) {
-    fun route(data: Map<String, String>, message: (MessagePush) -> Unit) {
+    fun route(data: Map<String, String>, left: (LeftPush) -> Unit = {}, message: (MessagePush) -> Unit) {
         when (data["type"]) {
             "alarm" -> alarm.onAlarmPush(data)
             "call" -> call.onCallPush(data)
             "call_end" -> call.onCallEndPush(data)
+            "connection_left" -> decodeLeftPush(data)?.let(left)
             else -> decodeMessagePush(data)?.let(message)
         }
     }

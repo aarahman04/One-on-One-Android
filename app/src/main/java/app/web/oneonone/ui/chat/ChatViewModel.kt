@@ -111,15 +111,10 @@ class ChatViewModel @Inject constructor(
         require(value.length in 1..40) { "Nickname must be 1–40 characters." }
         account.nickname(id, NicknameBody(value)); onSaved()
     }
-    fun leave(id: String, leaveAction: String, onDone: () -> Unit) = action {
-        when (leaveAction) {
-            "advance" -> account.leave(id)
-            "cancel" -> account.cancelLeave(id)
-            "end" -> account.confirmEnd(id)
-            else -> error("Unsupported leave action")
-        }
-        onDone()
-    }
+    /** Ends the connection at once for both (contract §10); the partner keeps a read-only copy for 7 days. */
+    fun leave(id: String, onDone: () -> Unit) = action { account.leave(id); onDone() }
+    /** Drops this phone's cached copy of a conversation that has ended. */
+    fun forget(ownerId: String, connectionId: String) = action(showBusy = false) { service.forget(ownerId, connectionId) }
     private fun action(showBusy: Boolean = true, block: suspend () -> Unit) = viewModelScope.launch {
         if (showBusy && mutableBusy.value) return@launch
         if (showBusy) mutableBusy.value = true

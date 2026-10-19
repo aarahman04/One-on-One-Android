@@ -26,7 +26,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import app.web.oneonone.BuildConfig
 import app.web.oneonone.data.model.*
+import app.web.oneonone.data.chat.archiveFiles
+import app.web.oneonone.data.chat.writeConversationArchive
 import app.web.oneonone.data.chat.writeLetterPdf
+import android.provider.DocumentsContract
 import app.web.oneonone.R
 import androidx.core.content.res.ResourcesCompat
 import android.graphics.Typeface
@@ -89,6 +92,9 @@ interface MediaGateway {
     suspend fun save(uri: Uri, text: String)
     suspend fun saveLetterPdf(uri: Uri, message: ChatMessage)
     suspend fun saveAttachment(connection: String, payload: JsonObject, destination: Uri)
+    /** Writes the whole conversation as a zip to [uri]; a failed or cancelled save deletes the half-written document. */
+    suspend fun saveArchive(uri: Uri, connection: String, messages: List<ChatMessage>, owner: String, other: String,
+                            progress: (Int) -> Unit): Unit = error("Not supported.")
     fun playbackFocus(onLost: () -> Unit): Boolean
     fun abandonPlaybackFocus()
 }
@@ -218,10 +224,39 @@ class MediaRepository @Inject constructor(
         require(path.startsWith("$connection/")) { "Attachment belongs to another conversation." }
         urls[path]?.takeIf { it.second > System.currentTimeMillis() }?.let { return@withLock it.first }
         val url = checkNotNull(api.signed(connection, SignedPaths(listOf(path))).urls[path]) { "Attachment is unavailable." }
-        val parsed = checkNotNull(url.toHttpUrlOrNull()) { "Invalid attachment URL." }
-        require(parsed.isHttps && parsed.host == BuildConfig.SUPABASE_URL.toHttpUrlOrNull()?.host) { "Invalid attachment URL origin." }
+        require(storageUrl(url)) { "Invalid attachment URL origin." }
         urls[path] = url to System.currentTimeMillis() + 55 * 60_000
         url
+    }
+    private fun storageUrl(url: String) = url.toHttpUrlOrNull()?.let { it.isHttps && it.host == BuildConfig.SUPABASE_URL.toHttpUrlOrNull()?.host } == true
+
+    override suspend fun saveArchive(uri: Uri, connection: String, messages: List<ChatMessage>, owner: String, other: String,
+                                     progress: (Int) -> Unit) = withContext(Dispatchers.IO) {
+        val handwriting = ResourcesCompat.getFont(context, R.font.dancing_script) ?: Typeface.SERIF
+        val paths = archiveFiles(messages).filter { it.message.type != "letter" }.map { it.message.payload.text("path") }
+        val signed = mutableMapOf<String, String>()
+        try {
+            checkNotNull(context.contentResolver.openOutputStream(uri)) { "Couldn't open that file." }.use { output ->
+                writeConversationArchive(messages, owner, other, output, letter = { message, out -> writeLetterPdf(message, handwriting, out) },
+                    open = open@{ message ->
+                        val path = message.payload.text("path")
+                        if (!path.startsWith("$connection/")) return@open null
+                        if (path !in signed) {
+                            // Sign 50 at a time, just before downloading them: URLs last an hour and /api is rate limited.
+                            val chunk = paths.drop(paths.indexOf(path).coerceAtLeast(0)).take(50).filter { it.startsWith("$connection/") }
+                            signed += api.signed(connection, SignedPaths(chunk)).urls.filter { storageUrl(it.value) }
+                            chunk.forEach { signed.putIfAbsent(it, "") }
+                        }
+                        val url = signed[path]?.takeIf { it.isNotEmpty() } ?: return@open null
+                        val response = downloadClient.newCall(Request.Builder().url(url).build()).execute()
+                        // A file the server no longer has is listed as "not available" instead of failing the whole save.
+                        if (response.isSuccessful) response.body.byteStream() else { response.close(); null }
+                    }, progress = progress)
+            }
+        } catch (error: Throwable) {
+            runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            throw error
+        }
     }
 
     override suspend fun download(connection: String, payload: JsonObject): Uri = withContext(Dispatchers.IO) {

@@ -82,6 +82,7 @@ import app.web.oneonone.ui.theme.OneColors
 import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
+import app.web.oneonone.ui.chat.PartnerLeftScreen
 import app.web.oneonone.ui.chat.StickerViewModel
 import app.web.oneonone.push.PushRegistration
 import kotlinx.coroutines.delay
@@ -120,6 +121,12 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
     LaunchedEffect(state.route, state.connection?.id) {
         if (state.route != BootRoute.Chat) chatViewModel.close(clear = state.route == BootRoute.Connect)
     }
+    // An ended conversation is gone from the server once acknowledged, replaced or purged: drop this phone's cache too.
+    var ended by remember { mutableStateOf<Pair<String, String>?>(null) }
+    LaunchedEffect(state.ended) {
+        ended?.takeIf { it.second != state.ended }?.let { chatViewModel.forget(it.first, it.second) }
+        ended = state.ended?.let { id -> state.me?.userId?.let { it to id } }
+    }
     LaunchedEffect(state.route, state.needsNotificationOnboarding) {
         if (state.needsNotificationOnboarding && state.route == BootRoute.Chat) {
             nav.navigate("notifications?first=true") { launchSingleTop = true }
@@ -146,6 +153,8 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
                     viewModel.checkNotificationReminder(androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled())
                 }
                 if (reminder) NotificationReminderDialog(onDone = viewModel::dismissNotificationReminder)
+            } else if (state.route == BootRoute.PartnerLeft && connection != null) {
+                PartnerLeftScreen(state, connection, featureViewModel, onAcknowledge = viewModel::acknowledgeEnd)
             } else {
                 val context = LocalContext.current
                 HomeScreen(state, onSignIn = { viewModel.signIn(context) }, onVerify = viewModel::verifyAge,
@@ -253,15 +262,29 @@ private fun HomeScreen(
                 FooterLinks(state.busy, onSettings, onSignOut)
             }
             BootRoute.Request -> {
+                // Accepting purges a connection my partner left (contract §10), so say so first.
+                var confirm by rememberSaveable { mutableStateOf(false) }
                 Title("Connection request")
                 ScreenSubtitle("${state.connection?.otherConnectionCode.orEmpty()} wants to connect with you.")
                 Row(BlockWidth, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     DangerButton("Decline", onClick = { onConnectionAction("decline") }, modifier = Modifier.weight(1f), enabled = !state.busy)
-                    PrimaryButton("Accept", onClick = { onConnectionAction("accept") }, modifier = Modifier.weight(1f), enabled = !state.busy)
+                    PrimaryButton("Accept", onClick = { if (state.ended != null) confirm = true else onConnectionAction("accept") },
+                        modifier = Modifier.weight(1f), enabled = !state.busy)
                 }
                 FooterLinks(state.busy, onSettings, onSignOut)
+                if (confirm) OneModal(onDismiss = { confirm = false }) {
+                    Column(verticalArrangement = Arrangement.spacedBy(OneTheme.spacing.md12)) {
+                        Text("Accept this request?", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = OneTheme.colors.text)
+                        Text("Your old chat will be deleted. Save it first if you want a copy.", style = OneTextStyles.cardHint, color = OneTheme.colors.textDim)
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            SecondaryButton("Cancel", { confirm = false })
+                            PrimaryButton("Accept", { confirm = false; onConnectionAction("accept") }, enabled = !state.busy)
+                        }
+                    }
+                }
             }
-            BootRoute.Chat -> Unit
+            BootRoute.Chat, BootRoute.PartnerLeft -> Unit
         }
     }
 }
@@ -527,7 +550,7 @@ class ScreenThemePreviews : PreviewParameterProvider<Boolean> {
 
 @Composable
 private fun HomePreview(route: BootRoute, dark: Boolean, busy: Boolean = false, error: String? = null) {
-    val connection = CurrentConnection("preview", "pending", "me", true, null, "K7F29PQ2", 0, 0, null, false, false, null, null, "off", "bubbles")
+    val connection = CurrentConnection("preview", "pending", "me", true, null, "K7F29PQ2", null, null, "off", "bubbles")
     OneOnOneTheme(darkTheme = dark) {
         HomeScreen(AppState(route = route, me = Me("me", "K7F29PQ2"), connection = connection, busy = busy, error = error),
             {}, {}, {}, {}, {}, {}, {}, {})

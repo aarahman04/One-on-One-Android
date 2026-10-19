@@ -106,6 +106,8 @@ class FakeTransport : Transport {
         return history(before, after)
     }
     override suspend fun markRead(connectionId: String) { readCalls += connectionId; read() }
+    val deliveredCalls = mutableListOf<String>()
+    override suspend fun markDelivered(connectionId: String) { deliveredCalls += connectionId }
     override suspend fun react(messageId: String, emoji: String, remove: Boolean) { }
 }
 
@@ -331,6 +333,48 @@ class MessageServiceTest {
         assertEquals(listOf("b"), replaced.first { it.emoji == "👍" }.userIds)
         assertEquals(listOf("a"), replaced.first { it.emoji == "❤️" }.userIds)
         assertEquals(listOf(ReactionSummary("👍", listOf("b"))), updateReactions(replaced, ReactionUpdate("server", "❤️", "a", "remove")))
+    }
+
+    @Test fun incomingWhileResumedMarksReadAtOnceAndPartnerReceiptsDriveTicks() = runTest {
+        val transport = FakeTransport()
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        service.activate(connection("active", true)); runCurrent()
+        service.visible(true); runCurrent()
+        val before = transport.readCalls.size
+        transport.incoming.emit(ChatMessage("m1", "other", "hi", "2026-10-07T00:00:01Z")); runCurrent()
+        assertEquals("No heartbeat wait: one read per incoming message", before + 1, transport.readCalls.size)
+        transport.incoming.emit(ChatMessage("m2", "me", "mine", "2026-10-07T00:00:02Z")); runCurrent()
+        assertEquals("Own messages never mark read", before + 1, transport.readCalls.size)
+        val mine = ChatMessage("m2", "me", "mine", "2026-10-07T00:00:02Z")
+        fun label() = receiptLabel(mine, service.receipts.value?.lastReadAt, service.receipts.value?.lastDeliveredAt)
+        assertEquals("Sent", label())
+        transport.receipts.emit(ReceiptUpdate("other", lastDeliveredAt = "2026-10-07T00:00:03Z")); runCurrent()
+        assertEquals("Delivered", label())
+        transport.receipts.emit(ReceiptUpdate("other", lastReadAt = "2026-10-07T00:00:04Z")); runCurrent()
+        assertEquals("Read", label())
+        // An older or own receipt never moves the ticks back.
+        transport.receipts.emit(ReceiptUpdate("other", lastReadAt = "2026-10-07T00:00:00Z", lastDeliveredAt = "2026-10-07T00:00:00Z"))
+        transport.receipts.emit(ReceiptUpdate("me", lastReadAt = "2026-10-07T00:00:00Z")); runCurrent()
+        assertEquals("Read", label())
+        service.deactivate()
+    }
+
+    @Test fun deliveredPushBurstBecomesOneCall() = runTest {
+        val transport = FakeTransport()
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        repeat(5) { service.markDelivered("connection"); advanceTimeBy(200) }
+        runCurrent()
+        assertTrue(transport.deliveredCalls.isEmpty())
+        advanceTimeBy(1_001); runCurrent()
+        assertEquals(listOf("connection"), transport.deliveredCalls)
+        service.markDelivered("connection"); advanceTimeBy(1_001); runCurrent()
+        assertEquals(2, transport.deliveredCalls.size)
+    }
+
+    @Test fun exportReadsServerHistoryWithoutAnOpenChat() = runTest {
+        val transport = FakeTransport().apply { history = { _, _ -> listOf(ChatMessage("a", "other", "bye", "2026-10-07T00:00:00Z")) } }
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        assertEquals(listOf("a"), service.exportHistory("ended-connection").map { it.id })
     }
 
     @Test fun receiptPositionsAreMonotonicAndDistinguishAllThreeTicks() {
