@@ -115,6 +115,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val recording by features.recording.collectAsState()
     val hasOlder by vm.hasOlder.collectAsState()
     val receipts by vm.receipts.collectAsState()
+    val presence by vm.presence.collectAsState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(connection.id, connection.myUserId) { vm.open(connection) }
     LaunchedEffect(vm) { vm.ended.collect { onRefresh() } }
@@ -322,7 +323,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             )
         } else ChatHeader(
             title = connection.otherNickname ?: "Your One on One",
-            presence = rememberChatPresence(state, newerTime(connection.otherLastReadAt, receipts?.lastReadAt))
+            presence = rememberChatPresence(state, newerTime(connection.otherLastReadAt, receipts?.lastReadAt), presence)
                 .let { if (otherTyping) ChatPresence("typing…", online = true) else it },
             callsEnabled = !recording,
             onVideo = { features.background(); vm.call(CallKind.Video) },

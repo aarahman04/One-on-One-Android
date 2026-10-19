@@ -8,7 +8,10 @@ versionName **2.0.5**; the Gradle fallback stays 5 / 2.0.0-dev. This work does n
 Previous verified signed build: **2.0.4 / versionCode 11** (2026-10-14, workflow run
 [38551746052](https://github.com/aarahman04/One-on-One-Android/actions/runs/38551746052)).
 Current candidate: **2.0.5 / versionCode 12**, branch `fix/owner-feedback-1019`,
-[PR #27](https://github.com/aarahman04/One-on-One-Android/pull/27) (unmerged).
+[PR #27](https://github.com/aarahman04/One-on-One-Android/pull/27) (merged).
+The live-presence follow-up keeps **12 / 2.0.5** by owner request; use its fresh
+`android-release/app-release.aab`, not an earlier workflow artifact. If code 12
+has already been uploaded to any Play track, Play requires a higher code.
 Version name/code are `android-build` inputs (defaults 12 / 2.0.5).
 The upload after code 12 must use **13 or higher**. Build history is not confirmation
 of Play uploads; check Console before uploading. Full table: `docs/PROGRESS.md` → Releases.

@@ -21,10 +21,12 @@ interface Transport {
     // Edit / delete / pin / typing (contract §5) and server-side link previews (REST).
     val updates: Flow<ChatMessage> get() = emptyFlow()
     val typing: Flow<TypingUpdate> get() = emptyFlow()
+    val presence: Flow<PresenceUpdate> get() = emptyFlow()
     val pins: Flow<PinState> get() = emptyFlow()
     suspend fun edit(messageId: String, content: String): ChatMessage = error("Not supported.")
     suspend fun delete(messageId: String): ChatMessage = error("Not supported.")
     suspend fun pin(messageId: String?): PinState = error("Not supported.")
     fun typing(active: Boolean) {}
+    fun presence(active: Boolean) {}
     suspend fun linkPreview(url: String): LinkPreview? = null
 }

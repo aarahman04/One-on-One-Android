@@ -48,6 +48,8 @@ class MessageService @Inject constructor(
     val connectionState = transport.state
     private val mutableReceipts = MutableStateFlow<ReceiptUpdate?>(null)
     val receipts = mutableReceipts.asStateFlow()
+    private val mutablePresence = MutableStateFlow<PresenceUpdate?>(null)
+    val presence = mutablePresence.asStateFlow()
     private val mutableError = MutableStateFlow<String?>(null)
     val error = mutableError.asStateFlow()
     private val mutableTyping = MutableStateFlow(false)
@@ -85,6 +87,7 @@ class MessageService @Inject constructor(
         mutableActive.value = session
         mutableError.value = null
         mutableReceipts.value = null
+        mutablePresence.value = null
         mutableTyping.value = false
         mutablePin.value = PinState(connection.pinnedMessageId, connection.pinnedBy, connection.pinnedAt)
         val job = SupervisorJob(scope.coroutineContext[Job])
@@ -113,12 +116,19 @@ class MessageService @Inject constructor(
                     lastDeliveredAt = newerTime(previous?.lastDeliveredAt, receipt.lastDeliveredAt))
             }
         } } }
+        conversation.launch { guarded { transport.presence.collect { update ->
+            if (update.userId != session.ownerId) mutablePresence.value = update
+        } } }
         conversation.launch { transport.ended.collect {
             // Teardown from the parent scope; never join the collector's own job.
             scope.launch { deactivate(clear = true); mutableEnded.emit(Unit) }
         } }
         conversation.launch { transport.state.collect {
-            if (it == ConnectionState.Connected) guarded { resync() }
+            mutablePresence.value = null
+            if (it == ConnectionState.Connected) {
+                transport.presence(chatResumed)
+                guarded { resync() }
+            }
         } }
         conversation.launch {
             while (isActive) {
@@ -138,9 +148,11 @@ class MessageService @Inject constructor(
         heartbeatJob = null
         conversationJob?.cancelAndJoin()
         conversationJob = null
+        if (transport.state.value == ConnectionState.Connected) transport.presence(false)
         transport.stop()
         mutableActive.value = null
         mutableReceipts.value = null
+        mutablePresence.value = null
         mutableTyping.value = false
         mutablePin.value = PinState()
         chatResumed = false
@@ -149,7 +161,9 @@ class MessageService @Inject constructor(
     }
 
     fun visible(resumed: Boolean) {
+        val changed = chatResumed != resumed
         chatResumed = resumed
+        if (changed && active.value != null && transport.state.value == ConnectionState.Connected) transport.presence(resumed)
         if (!resumed) {
             heartbeatJob?.cancel()
             heartbeatJob = null

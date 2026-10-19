@@ -33,6 +33,7 @@ class InternetTransport @Inject constructor(
     override val ended = realtime.events("connection:ended").map { Unit }
     override val updates = realtime.events("message:update").map { json.decodeFromString<ChatMessage>(it.toString()) }
     override val typing = realtime.events("typing").map { json.decodeFromString<TypingUpdate>(it.toString()) }
+    override val presence = realtime.events("presence").map { json.decodeFromString<PresenceUpdate>(it.toString()) }
     override val pins = realtime.events("pin:update").map { json.decodeFromString<PinState>(it.toString()) }
     override suspend fun edit(messageId: String, content: String) = messageAck(
         realtime.emitWithAck("message:edit", JSONObject().put("messageId", messageId).put("content", content)))
@@ -43,6 +44,7 @@ class InternetTransport @Inject constructor(
         return json.decodeFromString(ack.getJSONObject("pin").toString())
     }
     override fun typing(active: Boolean) = realtime.emit("typing", JSONObject().put("typing", active))
+    override fun presence(active: Boolean) = realtime.emit("presence", JSONObject().put("active", active))
     override suspend fun linkPreview(url: String) = api.linkPreview(url).preview
     private fun messageAck(ack: JSONObject): ChatMessage {
         check(!ack.has("error") && ack.optBoolean("ok")) { ack.optString("error", "Something went wrong. Try again.") }

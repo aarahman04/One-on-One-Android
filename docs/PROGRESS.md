@@ -1,5 +1,29 @@
 # Android milestone progress
 
+## Live presence follow-up (2026-10-19, 12 / 2.0.5 unchanged)
+
+Branch `feat/live-presence` implements the sibling backend's documented presence
+event. Chat visibility and reconnect send through MessageService -> Transport;
+partner snapshots flow back through the ViewModel to the header. Explicit offline
+overrides fresh receipts; absent snapshots retain receipt fallback. Presence
+clears on disconnect/conversation teardown; own network status keeps priority.
+PR #27 is merged. Owner requested unchanged versionCode 12 / versionName 2.0.5.
+
+Verification: `gradlew.bat --no-daemon assembleDebug lintDebug testDebugUnitTest`
+passed: 128 tests, zero failures/errors, lint passed. Backend build + 39 tests,
+web build + 16 tests and isolated Chromium 1280/360px presence checks passed.
+No physical-phone/live-account verification claimed. Backend/web deployment is
+tracked in the sibling repo; no Supabase migration is needed.
+
+Xiaomi checks: foreground/background both phones; phone + web stays Online while
+either is active; reconnect resends current state; fresh receipts cannot override
+explicit offline; old backend/no event retains receipt fallback. Abrupt network/
+power loss waits for socket disconnect detection.
+
+Use the fresh workflow's `android-release/app-release.aab` for Play, APK for phone
+checks. Earlier code-12 artifacts lack this wiring. If code 12 has already been
+uploaded to Play, it cannot be uploaded again. This work does not upload to Play.
+
 | Milestone | Status | Scope |
 | --- | --- | --- |
 | A0 | Complete; Xiaomi device gate pending | Native scaffold, theme/icons, stack, CI and setup |

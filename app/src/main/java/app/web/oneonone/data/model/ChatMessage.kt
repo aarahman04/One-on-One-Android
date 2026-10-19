@@ -42,6 +42,7 @@ data class ChatMessage(
 
 val AllowedReactions = listOf("❤️", "👍", "😂", "😮", "😢", "🙏")
 @Serializable data class TypingUpdate(val userId: String, val typing: Boolean)
+@Serializable data class PresenceUpdate(val userId: String, val online: Boolean, val lastSeenAt: String? = null)
 /** The connection's one shared pin; messageId null = nothing pinned. */
 @Serializable data class PinState(val messageId: String? = null, val pinnedBy: String? = null, val pinnedAt: String? = null)
 @Serializable data class LinkPreview(
