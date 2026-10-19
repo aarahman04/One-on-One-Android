@@ -11,6 +11,7 @@ import android.database.ContentObserver
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.RingtoneManager
+import app.web.oneonone.call.CallNotifications
 import android.os.Build
 import android.os.Handler
 import android.os.VibrationEffect
@@ -129,6 +130,7 @@ fun CallOverlay(calls: CallManager, avatar: Pair<Any, String>? = null) {
 private fun IncomingRing() {
     val context = LocalContext.current
     DisposableEffect(Unit) {
+        CallNotifications.quietIncoming(context)
         val audio = context.getSystemService(AudioManager::class.java)
         val mode = audio.ringerMode
         val ringtone = if (mode == AudioManager.RINGER_MODE_NORMAL) runCatching {

@@ -28,14 +28,14 @@ class AccountRepository @Inject constructor(
         preferences.savePushToken(null)
         stickers.clear()
         auth.signOut()
-        // Age and Terms gates are re-asked on every sign-in, including a re-created account.
-        preferences.resetGates()
+        // Age and Terms gates stay with this account; a different account is asked again (DeviceStore.gates).
     }
     suspend fun deleteAccount() = mutations.mutex.withLock {
         api.deleteAccount()
         preferences.savePushToken(null)
         stickers.clear()
         auth.signOut()
+        // A re-created account is asked Age and Terms again.
         preferences.resetGates()
     }
 }

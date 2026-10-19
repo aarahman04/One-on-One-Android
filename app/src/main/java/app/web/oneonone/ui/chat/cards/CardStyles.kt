@@ -1,5 +1,7 @@
 package app.web.oneonone.ui.chat.cards
 
+import app.web.oneonone.ui.chat.bubbleClickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,10 +39,11 @@ internal fun CardHint(text: String) {
 internal fun CardAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, location: Boolean = false) {
     val colors = LocalBubbleColors.current
     val source = remember { MutableInteractionSource() }
-    Surface(onClick = onClick, modifier = modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).pressScale(source), enabled = enabled,
+    val shape = RoundedCornerShape(if (location) OneTheme.radii.sm6 else OneTheme.radii.xs4)
+    Surface(modifier = modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).pressScale(source).clip(shape)
+            .bubbleClickable(enabled = enabled, interactionSource = source, onClick = onClick),
         color = if (location) Color.White.copy(alpha = .06f) else Color.Transparent,
-        shape = RoundedCornerShape(if (location) OneTheme.radii.sm6 else OneTheme.radii.xs4),
-        border = BorderStroke(1.dp, colors.edge), contentColor = colors.text, interactionSource = source) {
+        shape = shape, border = BorderStroke(1.dp, colors.edge), contentColor = colors.text) {
         Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
             Text(text, style = OneTextStyles.cardHint.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
                 color = colors.text.copy(alpha = if (enabled) 1f else .5f), textAlign = TextAlign.Center)

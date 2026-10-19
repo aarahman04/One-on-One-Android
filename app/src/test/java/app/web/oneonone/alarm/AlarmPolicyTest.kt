@@ -73,6 +73,11 @@ class AlarmPolicyTest {
         assertEquals(listOf("pendingAck", "live"), AlarmPolicy.raisesToRing(list, "me", now).map { it.first })
     }
 
+    @Test fun `my queued ack stops the ring at once, a failed one does not`() {
+        val list = listOf(ack("q", id = null, state = "queued"), ack("f", id = null, state = "failed"), ack("t", sender = "them"))
+        assertEquals(setOf("q"), AlarmPolicy.ownAcks(list, "me"))
+    }
+
     @Test fun `only server-confirmed acks stop a ring`() {
         val list = listOf(ack("a"), ack("b", id = null, state = "queued"), raise("c"))
         assertEquals(setOf("a"), AlarmPolicy.confirmedAcks(list))

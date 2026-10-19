@@ -152,11 +152,8 @@ private fun FeaturePreview(palette: BubblePalette, message: ChatMessage) {
 
 private fun letter(appearance: String) = sample("letter", buildJsonObject { put("appearance", appearance); put("to", "Alex"); put("from", "Sam") }, "Thank you for making ordinary days special.")
 
-@Preview(name = "Dawn letter viewer", widthDp = 390, heightDp = 844)
-@Composable private fun DawnViewerPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) = DialogPreview(dark) { LetterViewer(letter("dawn"), {}, {}) }
-
-@Preview(name = "Botanical letter viewer", widthDp = 390, heightDp = 844)
-@Composable private fun BotanicalViewerPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) = DialogPreview(dark) { LetterViewer(letter("botanical"), {}, {}) }
+@Preview(name = "Letter viewer", widthDp = 390, heightDp = 844)
+@Composable private fun LetterViewerPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) = DialogPreview(dark) { LetterViewer(letter("dawn"), {}, {}) }
 
 @Preview(name = "Letter preview step", widthDp = 390, heightDp = 844)
 @Composable private fun LetterSendPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) = DialogPreview(dark) {

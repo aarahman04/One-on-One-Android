@@ -67,12 +67,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.web.oneonone.R
 import app.web.oneonone.data.model.FeatureCommands
+import kotlinx.coroutines.delay
 import app.web.oneonone.ui.components.OneIconButton
 import app.web.oneonone.ui.components.pressScale
 import app.web.oneonone.ui.theme.FontFamilies
@@ -91,6 +93,22 @@ private val CommandDescriptions = mapOf(
     "alarm" to "Emergency — alert them right now",
     "location" to "Share where you are right now",
 )
+
+/** "Message", alternating with a "Try /letter"-style hint so people find the slash commands. */
+@Composable
+private fun ComposerPlaceholder(style: TextStyle) {
+    var hint by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        var next = 0
+        while (true) {
+            delay(5_000); hint = FeatureCommands[next++ % FeatureCommands.size]
+            delay(2_500); hint = null
+        }
+    }
+    AnimatedContent(hint, transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(250)) }, label = "placeholder") { shown ->
+        Text(if (shown == null) "Message" else "Try /$shown", style = style, maxLines = 1)
+    }
+}
 
 /** The commands the "/" menu offers for this draft: prefix match on the text after "/" (slashCommands.ts render). */
 internal fun slashMatches(draft: String): List<String> =
@@ -170,7 +188,8 @@ internal fun ChatComposer(
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
     LaunchedEffect(focused) { if (focused) onFocus() }
-    val textStyle = TextStyle(fontFamily = FontFamilies.Body, fontSize = 16.sp, lineHeight = 22.4.sp, color = c.text)
+    val textStyle = TextStyle(fontFamily = FontFamilies.Body, fontSize = 16.sp, lineHeight = 22.4.sp, color = c.text,
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None))
     val motion = OneTheme.motion
     // Recording slides in from the mic side and out the same way, so start/stop never pops.
     AnimatedContent(
@@ -207,13 +226,15 @@ internal fun ChatComposer(
             BasicTextField(
                 value = draft,
                 onValueChange = onDraft,
-                modifier = Modifier.weight(1f).heightIn(max = 120.dp).focusRequester(focusRequester),
+                modifier = Modifier.weight(1f).heightIn(min = ComposerHeight, max = 120.dp).focusRequester(focusRequester),
                 textStyle = textStyle,
                 cursorBrush = SolidColor(c.accentYou),
                 interactionSource = source,
                 decorationBox = { inner ->
-                    Box(Modifier.padding(start = 4.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)) {
-                        if (draft.isEmpty()) Text("Message", style = textStyle, color = c.muted)
+                    // Fills the 44dp pill and centres one line between the 40dp buttons; 1dp up centres the
+                    // lowercase x-height (what the eye reads) rather than the cap height.
+                    Box(Modifier.padding(start = 4.dp, end = 8.dp, top = 9.dp, bottom = 11.dp), contentAlignment = Alignment.CenterStart) {
+                        if (draft.isEmpty()) ComposerPlaceholder(textStyle.copy(color = c.muted))
                         inner()
                     }
                 },

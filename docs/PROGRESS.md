@@ -1227,3 +1227,38 @@ test photos and APKs are not committed.
   Fixed a stuck fade-out ghost of the removed "Sending…" item (dropped `animateItem`).
 - All chat times are 12-hour with AM/PM (bubbles, tap-for-detail, last seen,
   countdown cards), in the phone's time zone.
+
+## Owner feedback round (2026-10-19, 2.0.5, branch `fix/owner-feedback-1019`)
+
+- Re-sign-in into the same account skips date of birth and ground rules (gates keyed to the
+  auth user; sign-out keeps them; another account / re-created account is still asked).
+- Composer "Message" vertically centred (line-height centring + 1dp optical nudge for x-height);
+  measured on emulator. Placeholder now alternates with "Try /letter", "Try /countdown"…
+- Connection ID: "Copy" → "Share" (system share sheet) with Play Store link, web link and the ID.
+  Tap/hold the ID card still copies.
+- /letter: plain white full page, readable black cursive (Dancing Script), date, indented body,
+  "With love" at the bottom-right; appearance picker removed. Download is a real PDF (A4).
+- Long-press on photos, files and "Open letter" now selects the message (Delete appears); before,
+  those tap targets swallowed the long press. Taps toggle while selecting.
+- Double ringtone fixed: in-app ring silences the already-ringing call notification.
+- Alarm: tapping Acknowledge stops the ring at once. "You acknowledged the alarm" row: text
+  aligned with the quote, time/ticks at the bubble edge like text bubbles.
+- Bubble times ~28% dimmer (ticks unchanged).
+- Presence: clock-skew-proof live ageing, 1 s tick. Instant presence needs a backend socket
+  `presence` event; prompt + code handed to the owner (no DB/Supabase change needed).
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` green. Emulator (debug demo,
+no backend): composer centring measured, hint rotation, letter preview/viewer, PDF saved and
+rendered (1 A4 page), alarm ack row, long-press select on letter card. Not device-tested:
+sign-in gates, share sheet targets, calls, real alarm FCM, presence.
+
+### Xiaomi checklist
+- [ ] Sign out, sign back in with the same Google account: lands in chat, no DOB/rules.
+- [ ] Sign in with a different account on the same phone: DOB + rules asked.
+- [ ] Composer "Message" looks centred; hints rotate; typing hides them.
+- [ ] Connection screen Share opens apps; message has Play link, web link, ID.
+- [ ] Send /letter; open on both phones; Download PDF opens in a PDF viewer, handwriting readable.
+- [ ] Long-press a photo, a file and a letter you sent (<30 min): Delete removes it for both.
+- [ ] App backgrounded, receive call, open full-screen call: only one ringtone.
+- [ ] Receive alarm, tap Acknowledge: ring stops immediately; ack row layout.
+- [ ] Partner opens/closes chat: Online/Last seen within ~15 s (instant after backend presence).

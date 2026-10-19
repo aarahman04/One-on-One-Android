@@ -36,6 +36,7 @@ private class FakeMedia : MediaGateway {
     override fun releaseRecording() { }
     override suspend fun discardVoice(path: String?) { if (path != null) discarded++ }
     override suspend fun save(uri: Uri, text: String) { savedText = text }
+    override suspend fun saveLetterPdf(uri: Uri, message: ChatMessage) { }
     override suspend fun saveAttachment(connection: String, payload: JsonObject, destination: Uri) { }
     override fun playbackFocus(onLost: () -> Unit) = true
     override fun abandonPlaybackFocus() { }
@@ -128,7 +129,8 @@ class FeaturesTest {
         assertTrue(runCatching { locationTile(Double.NaN, 0.0) }.isFailure)
         val message = ChatMessage(id = "id", senderId = "me", createdAt = now.toString(), content = "<script>alert('x')</script>",
             type = "letter", payload = obj("appearance" to "dawn", "from" to "<me>", "to" to "&you"))
-        assertFalse(letterHtml(message).contains("<script>")); assertTrue(letterHtml(message).contains("&lt;me&gt;"))
+        assertEquals("October 7, 2026", letterDate(message, java.time.ZoneOffset.UTC))
+        assertEquals("", letterDate(message.copy(createdAt = "not a date")))
         assertFalse(exportChat(listOf(message), "me", "<them>", "html").contains("<script>"))
         assertEquals(message.content, Json.decodeFromString<List<ChatMessage>>(exportChat(listOf(message), "me", "Them", "json")).single().content)
     }

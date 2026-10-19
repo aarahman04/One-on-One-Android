@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontWeight
@@ -55,18 +54,24 @@ import app.web.oneonone.ui.theme.OneTheme
 import app.web.oneonone.ui.chat.cards.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import app.web.oneonone.data.chat.letterDate
+import app.web.oneonone.ui.theme.FontFamilies
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import app.web.oneonone.R
@@ -118,8 +123,8 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
             if (preview) LetterBody(ChatMessage(senderId = connection.myUserId, content = third, createdAt = Instant.now().toString(), type = "letter", payload = payload))
             else when (type) {
                 "letter" -> {
+                    // Every letter renders as one white handwritten page; the contract still needs an appearance, so it stays "dawn".
                     Field("From", from, 40) { from = it }; Field("To", to, 40) { to = it }
-                    Choices(listOf("dawn", "botanical"), choice) { choice = it }
                     Field("Your letter", third, 4_000) { third = it }
                 }
                 "ask" -> { Field("Question", first, 300) { first = it }; Field("Your answer (sealed until they answer)", second, 500) { second = it } }
@@ -195,34 +200,20 @@ internal fun FeatureModal(onDismissRequest: () -> Unit, title: @Composable () ->
 
 private fun moodEmoji(mood: String) = listOf("😄", "🙂", "😐", "😔", "😞").getOrElse(Moods.indexOf(mood)) { "" }
 
-object LetterThemes {
-    val DawnStart = Color(0xFFFFE7D0)
-    val DawnMiddle = Color(0xFFFFD1DC)
-    val DawnEnd = Color(0xFFCFE6FF)
-    val DawnText = Color(0xFF3A2E3A)
-    val BotanicalBackground = Color(0xFFF7F3E8)
-    val BotanicalText = Color(0xFF34432F)
-    val BotanicalBorder = Color(0xFFB9C9A6)
-    val BotanicalInset = Color(0xFF78965A).copy(alpha = .12f)
-}
-
+/** A full white page (A4 proportions, grows for long letters) in black handwriting, scrolling inside the modal. */
 @Composable internal fun LetterBody(message: ChatMessage) {
-    val botanical = message.payload.text("appearance") == "botanical"
-    val shape = RoundedCornerShape(OneTheme.radii.md10)
-    Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().clip(shape).drawWithCache {
-        val vector = Offset(sin(Math.toRadians(160.0)).toFloat(), -cos(Math.toRadians(160.0)).toFloat())
-        val half = (kotlin.math.abs(size.width * vector.x) + kotlin.math.abs(size.height * vector.y)) / 2f
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val brush = Brush.linearGradient(0f to LetterThemes.DawnStart, .38f to LetterThemes.DawnMiddle, 1f to LetterThemes.DawnEnd,
-            start = center - vector * half, end = center + vector * half)
-        onDrawBehind { if (botanical) drawRect(LetterThemes.BotanicalBackground) else drawRect(brush) }
-    }.then(if (botanical) Modifier.border(6.dp, LetterThemes.BotanicalInset, shape).border(1.dp, LetterThemes.BotanicalBorder, shape) else Modifier)
-        .padding(horizontal = 36.dp, vertical = 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        val style = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Serif, lineHeight = 28.sp,
-            color = if (botanical) LetterThemes.BotanicalText else LetterThemes.DawnText)
-        Text("Dear ${message.payload.text("to")},", style = style)
-        Text(message.content, style = style)
-        Text("With love,\n${message.payload.text("from")}", Modifier.align(Alignment.End), style = style, textAlign = TextAlign.End)
+    val maxHeight = with(LocalDensity.current) { (LocalWindowInfo.current.containerSize.height * .62f).toDp() }
+    BoxWithConstraints(Modifier.widthIn(max = 560.dp).fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxWidth().heightIn(min = maxWidth * 1.414f).shadow(2.dp, RoundedCornerShape(2.dp)).background(Color.White)
+            .padding(horizontal = 28.dp, vertical = 36.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            val style = TextStyle(fontFamily = FontFamilies.Letter, fontSize = 22.sp, lineHeight = 32.sp, color = Color.Black)
+            Text(letterDate(message), Modifier.align(Alignment.End), style = style.copy(fontSize = 18.sp))
+            Text("Dear ${message.payload.text("to")},", style = style)
+            Text(message.content, Modifier.padding(start = 28.dp), style = style)
+            // Signature sits at the foot of the page, so even a one-line letter reads as a full page.
+            Spacer(Modifier.weight(1f))
+            Text("With love,\n${message.payload.text("from")}", Modifier.align(Alignment.End), style = style, textAlign = TextAlign.End)
+        }
     }
 }
 
@@ -259,7 +250,7 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     var urlError by remember(path) { mutableStateOf<String?>(null) }
     var retryUrl by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
-    val letterDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/html")) { uri -> uri?.let { vm.saveLetter(it, message) } }
+    val letterDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri -> uri?.let { vm.saveLetter(it, message) } }
     val attachmentDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         if (uri != null && payload != null) vm.saveAttachment(connection.id, payload, uri)
     }
@@ -282,7 +273,7 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     FeatureCardContent(message, mine, original, connection, busy, playing, url, urlError,
         onSend = { t, body, response, r, done -> vm.send(t, body, response, r, done) },
         onPlay = { vm.play(connection.id, it) },
-        onLetterDownload = { letterDownload.launch("one-on-one-letter.html") },
+        onLetterDownload = { letterDownload.launch("one-on-one-letter.pdf") },
         onOpenFile = { payload?.let { p -> vm.openFile(connection.id, p) { documentUri = it } } },
         onImageError = { urlError = "Photo unavailable. Tap retry." },
         onRetryPhoto = { url = null; urlError = null; retryUrl++ },
@@ -396,7 +387,7 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                 } else {
                     if (url == null && urlError == null) Text("Loading photo…")
                     url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "View shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp).clip(RoundedCornerShape(OneTheme.radii.sm6))
-                        .clickable(role = Role.Button) { reveal = true }, contentScale = ContentScale.Crop,
+                        .bubbleClickable { reveal = true }, contentScale = ContentScale.Crop,
                 placeholder = ColorPainter(OneTheme.colors.bgRaised), error = if (LocalInspectionMode.current) ColorPainter(OneTheme.colors.bgRaised) else null,
                         onError = { onImageError() }) }
                     urlError?.let { Text(it); CardAction("Retry photo", onClick = { onRetryPhoto() }) }
@@ -441,7 +432,7 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                     val type = attachmentType(payload.text("mime"))
                     // The whole row opens the viewer; the trailing icon saves a copy.
                     Row(Modifier.clip(RoundedCornerShape(OneTheme.radii.sm6))
-                        .clickable(enabled = !busy && path.isNotBlank(), role = Role.Button, onClickLabel = "View", onClick = onOpenFile),
+                        .bubbleClickable(enabled = !busy && path.isNotBlank(), onClickLabel = "View", onClick = onOpenFile),
                         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(44.dp).clip(RoundedCornerShape(OneTheme.radii.sm6))
                             .background(LocalBubbleColors.current.text.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
@@ -635,7 +626,7 @@ private fun ErrorLine(error: String?) {
 @Composable
 internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () -> Unit) {
     FeatureModal(onDismissRequest = close, title = { Text("Letter") }, text = { LetterBody(message) },
-        confirmButton = { PrimaryButton("Download HTML", download) }, dismissButton = { SecondaryButton("Close", close) })
+        confirmButton = { PrimaryButton("Download PDF", download) }, dismissButton = { SecondaryButton("Close", close) })
 }
 
 @Composable

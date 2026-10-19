@@ -46,6 +46,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -89,6 +90,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.layout.IntrinsicMeasurable
 import androidx.compose.ui.layout.IntrinsicMeasureScope
 import androidx.compose.ui.layout.Layout
@@ -140,6 +142,27 @@ import kotlin.math.roundToInt
  */
 val LocalBubbleColors = staticCompositionLocalOf { BubbleTokens.Dark.mine }
 internal val LocalMessageSaveAction = staticCompositionLocalOf<androidx.compose.runtime.MutableState<(() -> Unit)?>?> { null }
+
+/** Lets tap targets inside a card (photo, file, "Open letter") take part in long-press selection like the bubble does. */
+internal class MessageSelection(val selecting: Boolean, val select: () -> Unit)
+internal val LocalMessageSelection = compositionLocalOf<MessageSelection?> { null }
+
+/**
+ * clickable for a tap target inside a bubble (photo, file row, "Open letter"). Such a target swallows the
+ * bubble's own long press, so it selects the message itself (that's how these get Delete); while selecting, a tap toggles.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun Modifier.bubbleClickable(enabled: Boolean = true, onClickLabel: String? = null,
+    interactionSource: androidx.compose.foundation.interaction.MutableInteractionSource? = null, onClick: () -> Unit): Modifier {
+    val selection = LocalMessageSelection.current
+    val haptics = LocalHapticFeedback.current
+    return combinedClickable(interactionSource = interactionSource, indication = androidx.compose.foundation.LocalIndication.current,
+        enabled = enabled, role = Role.Button, onClickLabel = onClickLabel,
+        onLongClickLabel = selection?.let { "Select message" },
+        onLongClick = selection?.let { s -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); s.select() } },
+        onClick = { if (selection?.selecting == true) selection.select() else onClick() })
+}
 
 /** A reply quote shown at the top of a bubble. */
 internal data class BubbleQuote(val author: String, val snippet: String)
@@ -262,6 +285,7 @@ internal fun MessageBubble(
     val triggerPx = with(LocalDensity.current) { SwipeTriggerDp.dp.toPx() }
     val shape = RoundedCornerShape(OneTheme.radii.bubble8)
     val alarm = message.type == "alarm"
+    val alarmAck = alarm && app.web.oneonone.alarm.AlarmPolicy.ackOf(message) != null
     // Stickers draw bare (a reply quote still needs the bubble); photos sit in a thin frame with the time printed on them.
     val sticker = !deleted && quote == null && isSticker(message)
     val photo = !deleted && !sticker && message.type == "image"
@@ -414,7 +438,7 @@ internal fun MessageBubble(
                         }
                         // Text bubbles shrink-wrap to their widest child so the quote can stretch to the same width.
                         // Cards (S4) keep their own sizing: they may contain subcomposition that has no intrinsics.
-                        .then(if (message.type == "text" || deleted) Modifier.width(IntrinsicSize.Max) else Modifier)
+                        .then(if (message.type == "text" || deleted || alarmAck) Modifier.width(IntrinsicSize.Max) else Modifier)
                         .then(when {
                             sticker -> Modifier
                             photo -> Modifier.padding(3.dp)
@@ -422,13 +446,14 @@ internal fun MessageBubble(
                         }),
                 ) {
                     CompositionLocalProvider(LocalContentColor provides colors.text, LocalBubbleColors provides colors,
-                        LocalMessageSaveAction provides saveCopy) {
+                        LocalMessageSaveAction provides saveCopy, LocalMessageSelection provides MessageSelection(currentSelecting, currentOnSelect)) {
                         if (quote != null) QuoteBlock(quote, colors, Modifier.onGloballyPositioned { quoteBox = it })
                         // Deleting fades the content swap and eases the bubble to its new size instead of popping.
                         AnimatedContent(deleted, transitionSpec = { fadeIn(tween(motion.base200)) togetherWith fadeOut(tween(motion.fast120)) },
                             label = "deleted") { isDeleted ->
                         // AnimatedContent lays children out in a Box; the preview card must stack above the text, not on it.
-                        Column { when {
+                        // An alarm ack row spans the bubble (quote width) so its time/ticks sit at the same edge as text bubbles.
+                        Column(if (alarmAck) Modifier.fillMaxWidth() else Modifier) { when {
                             isDeleted -> TextWithMeta(
                                 text = AnnotatedString("This message was deleted"),
                                 textColor = colors.meta,
@@ -635,7 +660,8 @@ private fun QuoteBlock(quote: BubbleQuote, colors: BubbleColors, modifier: Modif
 @Composable
 private fun MetaRow(time: String, status: Receipt, colors: BubbleColors, palette: BubblePalette, receipt: String?) {
     Row(Modifier.clearAndSetSemantics { if (receipt != null) contentDescription = "$time, $receipt" }, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(time, color = colors.meta, style = OneTextStyles.bubbleMeta)
+        // Time a step quieter than the ticks so it doesn't compete with the message.
+        Text(time, color = colors.meta.copy(alpha = colors.meta.alpha * .72f), style = OneTextStyles.bubbleMeta)
         if (status != Receipt.None) {
             val motion = OneTheme.motion
             val tint by animateColorAsState(if (status == Receipt.Read) palette.read else palette.ticks, tween(motion.base200), label = "tick")

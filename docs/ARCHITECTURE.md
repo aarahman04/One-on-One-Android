@@ -665,3 +665,44 @@ flowchart TD
 Stickers are still ordinary `image` payloads (contract unchanged); detection by exact
 512×512 WebP is a client shortcut until the optional backend sticker flag (codex Prompt 2).
 All chat times use a 12-hour `h:mm a` clock in the device time zone.
+
+## Owner feedback round (2026-10-19, 2.0.5)
+
+Age/Terms gates are local device prefs keyed to the auth user (`gatesOwner` = JWT `sub`).
+Sign-out keeps them, so the same account goes straight to the chat; another account, or a
+deleted and re-created one, is asked again. Gates saved before this change are adopted by the
+signed-in user on first read (sign-out used to wipe them, so they can only be theirs).
+
+```mermaid
+flowchart TD
+  L[AppViewModel.load] --> T[auth.accessToken -> tokenSubject]
+  T --> G{DeviceStore.gates owner matches?}
+  G -- yes, both set --> C[me + current connection -> Chat]
+  G -- no / missing --> A[Age -> Consent, saved with owner]
+  SO[signOut] -. keeps gates .-> G
+  DA[deleteAccount] -. resetGates .-> G
+```
+
+Letters render as one white A4-proportioned page in black Dancing Script (OFL, `res/font`),
+date top-right, body indented, signature pinned to the page foot. "Download PDF" draws the
+same layout with `PdfDocument` + `StaticLayout` (`writeLetterPdf`), breaking long letters
+line by line across A4 pages. The payload still carries `appearance: "dawn"` (contract).
+
+```mermaid
+flowchart LR
+  V[LetterViewer Download PDF] --> CD[CreateDocument application/pdf]
+  CD --> VM[FeatureViewModel.saveLetter]
+  VM --> MG[MediaGateway.saveLetterPdf, IO]
+  MG --> W[writeLetterPdf: A4 pages, handwriting Typeface]
+```
+
+Selection inside cards: photo, file row and card buttons swallow the bubble's long press, so
+they use `bubbleClickable` (LocalMessageSelection): long press selects the message (enables
+Delete within the server's 30-minute window), taps toggle while selecting.
+
+Incoming call: a ring posted while the app was backgrounded is replaced by a silent copy
+(`CallNotifications.quietIncoming`) when the in-app ring starts, so only one ringtone plays.
+Alarm: a queued ack from this device stops the local ring immediately (`AlarmPolicy.ownAcks`)
+instead of after the server echo. Presence ages a live receipt by the phone's monotonic clock
+(immune to server/phone clock skew) and ticks every second; truly instant online/offline needs
+the backend `presence` socket event (prompt delivered to the owner, not in the contract yet).
