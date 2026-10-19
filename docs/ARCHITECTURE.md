@@ -705,4 +705,6 @@ Incoming call: a ring posted while the app was backgrounded is replaced by a sil
 Alarm: a queued ack from this device stops the local ring immediately (`AlarmPolicy.ownAcks`)
 instead of after the server echo. Presence ages a live receipt by the phone's monotonic clock
 (immune to server/phone clock skew) and ticks every second; truly instant online/offline needs
-the backend `presence` socket event (prompt delivered to the owner, not in the contract yet).
+the backend `presence` socket event (see the [backend handoff prompt](prompts/backend-presence-prompt.md)).
+This is a proposal, not the current API contract. Backend support and Android event
+emission/subscription are still pending; the receipt-based fallback remains in use.

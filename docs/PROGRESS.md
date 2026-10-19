@@ -670,15 +670,18 @@ Device checklist: open keyboard in chat (header visible, no gap, none after clos
 | 2.0.1 | 8 | 2026-10-13 | [38348089207](https://github.com/aarahman04/One-on-One-Android/actions/runs/38348089207) | Scroll-to-end, web-parity search, crisp splash logo |
 | 2.0.2 | 9 | 2026-10-13 | [38377404608](https://github.com/aarahman04/One-on-One-Android/actions/runs/38377404608) | Onboarding/connect redesign, gates per sign-in, links, friendly errors, vector icons |
 | 2.0.3 | 10 | 2026-10-14 | [38487293539](https://github.com/aarahman04/One-on-One-Android/actions/runs/38487293539) | Chat polish (gestures, selection, alarm glow, calls, share target), edit/delete/pin/typing, any-emoji reactions, link previews, /location fix, animations |
-| 2.0.4 | 11 | 2026-10-14 | pending (dispatch on `main`) | Chat polish round 2 (alarm silence, inline push, composer, GIPHY, profile photos), sticker maker + packs, bare stickers, photo time overlay, 12-hour times, instant media sends |
+| 2.0.4 | 11 | 2026-10-14 | [38551746052](https://github.com/aarahman04/One-on-One-Android/actions/runs/38551746052) (success) | Chat polish round 2 (alarm silence, inline push, composer, GIPHY, profile photos), sticker maker + packs, bare stickers, photo time overlay, 12-hour times, instant media sends |
+| 2.0.5 | 12 | 2026-10-19 | [39192560039](https://github.com/aarahman04/One-on-One-Android/actions/runs/39192560039) (success; app commit `7db64a3`) | Owner feedback: account gates, composer hints, sharing, handwritten PDF letters, card selection, call/alarm fixes and clock-skew-resistant presence; PR #27 unmerged |
 
-- Signed releases use the `android-build` workflow (manual dispatch on `main`); version
-  name/code are workflow inputs, not stored in the repo. Signed with the existing
+- Signed releases use the `android-build` workflow (manual dispatch on the selected branch;
+  use reviewed `main` for Play). Version name/code are workflow inputs with defaults in
+  `.github/workflows/android-build.yml`. Signed with the existing
   Play upload key (SHA-1 check in the release job passed). Use the
   `android-release` artifact (AAB + APK); `android-debug` and
   `android-release-smoke-unsigned` are test-only.
-- 2.0.3 uses versionCode 10; 2.0.4 uses versionCode 11 (workflow defaults now 11 / 2.0.4);
-  **the upload after it needs versionCode 12 or higher.**
+- 2.0.5 uses versionCode 12 (workflow defaults 12 / 2.0.5); local Gradle defaults remain
+  5 / 2.0.0-dev. **The upload after code 12 needs versionCode 13 or higher.** These
+  workflow builds do not establish which codes have been uploaded to Play.
 - 2.0.4 needs backend migration 037 (run 2026-10-14) and `GIPHY_API_KEY` on Railway (set 2026-10-14).
 - 2.0.3 needs the backend from web PR #100 (merged to web `main`; deployed to Railway 2026-10-14 with `railway up`) and migration 036 (run 2026-10-14).
 - Owner next steps for 1.0.5: install the APK over 1.0.4 on both phones, run the
@@ -1245,7 +1248,21 @@ test photos and APKs are not committed.
   aligned with the quote, time/ticks at the bubble edge like text bubbles.
 - Bubble times ~28% dimmer (ticks unchanged).
 - Presence: clock-skew-proof live ageing, 1 s tick. Instant presence needs a backend socket
-  `presence` event; prompt + code handed to the owner (no DB/Supabase change needed).
+  `presence` event; [backend handoff prompt](prompts/backend-presence-prompt.md) preserved
+  from the temporary scratchpad (proposal only; no DB/Supabase change needed).
+
+Release handoff: [PR #27](https://github.com/aarahman04/One-on-One-Android/pull/27)
+remains unmerged. Release workflow inputs are already **12 / 2.0.5**. README and
+release checklist now match; the web repo is unchanged. Slash hints and handwritten
+PDF export are Android-only; instant presence still needs the backend contract and
+Android client integration described in the handoff prompt.
+
+Handoff verification (2026-10-19): re-ran `gradlew.bat --no-daemon assembleDebug
+lintDebug testDebugUnitTest` successfully (126 tests, zero failures/errors; lint
+passed). Initial signed workflow [39192560039](https://github.com/aarahman04/One-on-One-Android/actions/runs/39192560039)
+and PR checks [39192560395](https://github.com/aarahman04/One-on-One-Android/actions/runs/39192560395)
+both succeeded. The documentation follow-up changes no app code; a fresh manual
+release dispatch on its commit uses the same 12 / 2.0.5 inputs.
 
 Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` green. Emulator (debug demo,
 no backend): composer centring measured, hint rotation, letter preview/viewer, PDF saved and
