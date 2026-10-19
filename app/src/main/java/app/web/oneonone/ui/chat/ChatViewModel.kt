@@ -114,7 +114,7 @@ class ChatViewModel @Inject constructor(
     /** Ends the connection at once for both (contract §10); the partner keeps a read-only copy for 7 days. */
     fun leave(id: String, onDone: () -> Unit) = action { account.leave(id); onDone() }
     /** Drops this phone's cached copy of a conversation that has ended. */
-    fun forget(connection: CurrentConnection) = action(showBusy = false) { service.forget(connection.myUserId, connection.id) }
+    fun forget(ownerId: String, connectionId: String) = action(showBusy = false) { service.forget(ownerId, connectionId) }
     private fun action(showBusy: Boolean = true, block: suspend () -> Unit) = viewModelScope.launch {
         if (showBusy && mutableBusy.value) return@launch
         if (showBusy) mutableBusy.value = true

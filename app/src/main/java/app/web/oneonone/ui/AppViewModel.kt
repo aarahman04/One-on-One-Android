@@ -38,8 +38,8 @@ data class AppState(
     val route: BootRoute = BootRoute.Loading,
     val me: Me? = null,
     val connection: CurrentConnection? = null,
-    /** The connection my partner left, still readable until acknowledged or purged (contract §10). */
-    val ended: CurrentConnection? = null,
+    /** Id of the connection my partner left, still readable until acknowledged or purged (contract §10). */
+    val ended: String? = null,
     val blocks: List<BlockedUser> = emptyList(),
     val busy: Boolean = false,
     val error: String? = null,
@@ -113,10 +113,17 @@ class AppViewModel @Inject constructor(
             return
         }
         val current = account.api.current().connection
+        // A pending request outranks an ended connection in /current, so keep the last ended id the server showed
+        // (persisted: the Accept warning must survive process death); anything else means it is gone.
+        val owner = gateOwner()
+        val ended = when (current?.status) {
+            "ended" -> current.id.also { if (preferences.endedConnection(owner) != it) preferences.saveEndedConnection(owner, it) }
+            "pending" -> preferences.endedConnection(owner)
+            else -> null.also { if (preferences.endedConnection(owner) != null) preferences.saveEndedConnection(owner, null) }
+        }
         val onboarding = !preferences.onboardingSeen()
         mutable.update { it.copy(route = bootRoute(true, gates, current), me = me, connection = current, error = null,
-            // A pending request outranks an ended connection in /current; remember the ended one so accepting can warn.
-            ended = if (current?.status == "ended") current else it.ended.takeIf { current?.status == "pending" },
+            ended = ended,
             needsNotificationOnboarding = onboarding) }
     }
 

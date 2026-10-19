@@ -25,7 +25,11 @@ no physical-phone or live-account verification claimed.
 
 Known limits: an archive holds the message list (not files) in memory; delivered
 debounce is lost if the process dies within 1 s (socket connect covers it);
-the "old chat" warning on Accept is in-memory (lost after process death).
+the "old chat" warning on Accept persists the ended id last seen from
+`/connections/current` (pending outranks ended there, so a request that arrives
+before the app ever saw the ended state cannot warn: contract gap). The
+`connection_left` notice is shown only for this account's own ended connection,
+ended by the partner, with a locally built title.
 
 ### Xiaomi checklist
 
@@ -37,7 +41,10 @@ the "old chat" warning on Accept is in-memory (lost after process death).
 - [ ] Leave without saving: goes straight to the code screen.
 - [ ] Partner with the app closed gets "<name> left the connection" notification;
   tapping opens the save screen; "Save conversation" writes the zip; then home.
-- [ ] Partner taps "Continue without saving": home, conversation gone.
+- [ ] Partner taps "Continue without saving": "Delete without saving?" confirm
+  appears; "Go back" returns to the save screen; "Delete" goes home, conversation gone.
+- [ ] Partner with an ended chat gets a new request, force-stops the app, reopens:
+  tapping Accept still warns "Your old chat will be deleted".
 - [ ] Both in the chat: the blue tick appears in under a second.
 - [ ] Partner app closed: notification arrives and the sender sees the double tick.
 

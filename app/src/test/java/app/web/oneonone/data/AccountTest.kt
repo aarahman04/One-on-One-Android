@@ -68,6 +68,9 @@ class FakeDeviceStore : DeviceStore {
     override suspend fun claimNotification(messageId: String) = true
     override val theme = MutableStateFlow("dark")
     override suspend fun setTheme(value: String) { theme.value = value }
+    var ended: Pair<String, String>? = null
+    override suspend fun endedConnection(owner: String) = ended?.takeIf { it.first == owner }?.second
+    override suspend fun saveEndedConnection(owner: String, id: String?) { ended = id?.let { owner to it } }
     override suspend fun letterSignature() = ""
     override suspend fun saveLetterSignature(value: String) { }
 }
@@ -356,16 +359,19 @@ class GatesTest {
         try {
             val session = FakeSession()
             val api = FakeAccountApi(session).apply { current = connection("ended", false).copy(endedAt = "2026-10-19T00:00:00Z", purgeAt = "2026-10-26T00:00:00Z") }
-            val vm = boot(session, api, FakeDeviceStore())
-            assertEquals(BootRoute.PartnerLeft, vm.state.value.route)
-            assertEquals("connection", vm.state.value.ended?.id)
-            // A pending request outranks the ended one; it is remembered so Accept can warn.
-            api.current = connection("pending", false)
-            vm.refresh(); runCurrent()
-            assertEquals(BootRoute.Request, vm.state.value.route)
-            assertNotNull(vm.state.value.ended)
+            val preferences = FakeDeviceStore()
+            val first = boot(session, api, preferences)
+            assertEquals(BootRoute.PartnerLeft, first.state.value.route)
+            assertEquals("connection", first.state.value.ended)
+            first.viewModelScope.cancel(); runCurrent()
+            // A pending request outranks the ended one; the persisted id keeps the Accept warning after process death.
+            api.current = connection("pending", false).copy(id = "request")
+            val restarted = boot(session, api, preferences)
+            assertEquals(BootRoute.Request, restarted.state.value.route)
+            assertEquals("connection", restarted.state.value.ended)
+            restarted.viewModelScope.cancel(); runCurrent()
             api.current = connection("ended", false)
-            vm.refresh(); runCurrent()
+            val vm = boot(session, api, preferences)
             vm.acknowledgeEnd(); runCurrent()
             assertEquals(listOf("connection"), api.acknowledged)
             assertEquals(BootRoute.Connect, vm.state.value.route)

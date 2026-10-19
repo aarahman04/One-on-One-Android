@@ -14,6 +14,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -112,6 +115,12 @@ internal fun PartnerLeftScreen(state: AppState, connection: CurrentConnection, f
     LaunchedEffect(archive?.saved) { if (archive?.saved == true) { features.cancelArchive(); onAcknowledge() } }
     val saving = archive != null && archive?.error == null
     val blockWidth = Modifier.widthIn(max = 340.dp).fillMaxWidth()
+    // Acknowledging hard-deletes the conversation for good, so skipping the save asks once more.
+    var confirmSkip by rememberSaveable { mutableStateOf(false) }
+    if (confirmSkip) FeatureModal(onDismissRequest = { confirmSkip = false }, title = { Text("Delete without saving?") },
+        text = { Text("Your chat, photos and letters will be gone for good.") },
+        confirmButton = { DangerButton("Delete", onClick = { confirmSkip = false; onAcknowledge() }, enabled = !state.busy) },
+        dismissButton = { SecondaryButton("Go back", onClick = { confirmSkip = false }) })
     ScreenFrame(state) { _ ->
         ScreenTitle("${connection.otherNickname ?: "Your connection"} left the connection", Modifier.widthIn(max = 340.dp))
         Subtitle(purgeDate(connection)?.let { "Save your conversation before it's deleted on $it." }
@@ -122,7 +131,7 @@ internal fun PartnerLeftScreen(state: AppState, connection: CurrentConnection, f
             else {
                 PrimaryButton(if (archive?.error != null) "Try again" else "Save conversation", onClick = save,
                     modifier = Modifier.fillMaxWidth(), enabled = !state.busy)
-                SecondaryButton("Continue without saving", onClick = { features.cancelArchive(); onAcknowledge() },
+                SecondaryButton("Continue without saving", onClick = { features.cancelArchive(); confirmSkip = true },
                     modifier = Modifier.fillMaxWidth(), enabled = !state.busy)
             }
         }

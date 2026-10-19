@@ -122,10 +122,10 @@ fun AppNavigation(viewModel: AppViewModel, chatViewModel: ChatViewModel, feature
         if (state.route != BootRoute.Chat) chatViewModel.close(clear = state.route == BootRoute.Connect)
     }
     // An ended conversation is gone from the server once acknowledged, replaced or purged: drop this phone's cache too.
-    var ended by remember { mutableStateOf<CurrentConnection?>(null) }
-    LaunchedEffect(state.ended?.id) {
-        ended?.takeIf { it.id != state.ended?.id }?.let(chatViewModel::forget)
-        ended = state.ended
+    var ended by remember { mutableStateOf<Pair<String, String>?>(null) }
+    LaunchedEffect(state.ended) {
+        ended?.takeIf { it.second != state.ended }?.let { chatViewModel.forget(it.first, it.second) }
+        ended = state.ended?.let { id -> state.me?.userId?.let { it to id } }
     }
     LaunchedEffect(state.route, state.needsNotificationOnboarding) {
         if (state.needsNotificationOnboarding && state.route == BootRoute.Chat) {

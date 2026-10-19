@@ -51,6 +51,30 @@ class PushTest {
         assertNull(decodeMessagePush(push))
     }
 
+    @Test fun leftNoticeNeedsThisAccountsPartnerEndedConnectionAndBuildsItsOwnTitle() = runTest {
+        val session = FakeSession()
+        var ownerSwitch = false
+        val api = object : FakeAccountApi(session) {
+            override suspend fun current(): app.web.oneonone.data.api.CurrentResult {
+                if (ownerSwitch) session.token = "h.eyJzdWIiOiJvdGhlciJ9.s"
+                return super.current()
+            }
+        }
+        session.token = "h.eyJzdWIiOiJ1c2VyIn0.s"
+        val push = LeftPush(connectionId, "Spoofed title", "Spoofed body")
+        val ended = connection("ended", false).copy(id = connectionId, otherNickname = "Alex", endedBy = "partner")
+        api.current = ended
+        assertEquals(LeftPush(connectionId, "Alex left the connection", "Open One on One to save your conversation."), leftNotice(push, session, api))
+        api.current = ended.copy(otherNickname = null)
+        assertEquals("Your connection left the connection", leftNotice(push, session, api)?.title)
+        api.current = ended.copy(id = messageId); assertNull(leftNotice(push, session, api))
+        api.current = ended.copy(status = "active"); assertNull(leftNotice(push, session, api))
+        api.current = ended.copy(endedBy = "me"); assertNull(leftNotice(push, session, api))
+        api.current = null; assertNull(leftNotice(push, session, api))
+        api.current = ended; ownerSwitch = true; assertNull(leftNotice(push, session, api))
+        session.token = null; ownerSwitch = false; assertNull(leftNotice(push, session, api))
+    }
+
     @Test fun normalPushRequiresContractTypeAndCanonicalIds() {
         assertNotNull(decodeMessagePush(data()))
         assertNull(decodeMessagePush(data() - "messageId"))
