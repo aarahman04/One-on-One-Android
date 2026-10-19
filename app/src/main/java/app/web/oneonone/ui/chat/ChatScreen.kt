@@ -109,9 +109,14 @@ internal fun receiptLabel(message: ChatMessage, readAt: String?, deliveredAt: St
 @Composable
 fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: FeatureViewModel, stickers: StickerViewModel, onSettings: () -> Unit, onAccount: () -> Unit, onRefresh: () -> Unit, accountError: String? = null,
                partnerAvatar: Pair<String, String>? = null,
-               games: GameViewModel = viewModel(viewModelStoreOwner = LocalActivity.current as ComponentActivity)) {
+               games: GameViewModel = viewModel(viewModelStoreOwner = LocalActivity.current as ComponentActivity),
+               speech: SpeechViewModel = viewModel(viewModelStoreOwner = LocalActivity.current as ComponentActivity)) {
     val context = LocalContext.current
     val gameError by games.error.collectAsState()
+    val speechNotice by speech.notice.collectAsState()
+    val dictation by speech.dictation.collectAsState()
+    val dictationHint by speech.dictationHint.collectAsState()
+    val dictated by speech.text.collectAsState()
     val messages by vm.messages.collectAsState()
     val draft by vm.draft.collectAsState()
     val replyTo by vm.replyTo.collectAsState()
@@ -125,6 +130,14 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val receipts by vm.receipts.collectAsState()
     val presence by vm.presence.collectAsState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val activity = LocalActivity.current
+    DisposableEffect(lifecycle, speech, connection.id) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && activity?.isChangingConfigurations != true) speech.background()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); if (activity?.isChangingConfigurations != true) speech.closeChat() }
+    }
     LaunchedEffect(connection.id, connection.myUserId) { vm.open(connection) }
     LaunchedEffect(vm) { vm.ended.collect { onRefresh() } }
     DisposableEffect(lifecycle, connection.id) {
@@ -161,6 +174,17 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val saves = remember(connection.id) { mutableMapOf<String, MutableState<(() -> Unit)?>>() }
     val composerFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(dictated?.id) {
+        val result = dictated ?: return@LaunchedEffect
+        if (result.owner.ownerId == connection.myUserId && result.owner.connectionId == connection.id) {
+            vm.appendDictation(result.text)
+            speech.consumeText(result.id)
+            withFrameNanos { }
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                runCatching { composerFocus.requestFocus(); keyboard?.show() }
+            }
+        } else speech.consumeText(result.id)
+    }
     // Reply opens the keyboard on the composer, like swiping to reply in WhatsApp.
     val startReply = { id: String? -> vm.reply(id); if (id != null) runCatching { composerFocus.requestFocus(); keyboard?.show() } }
     // A new person with no nickname yet: ask once per visit what to call them.
@@ -226,7 +250,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     LaunchedEffect(recording) { elapsed = 0; while (recording) { delay(1_000); elapsed++ } }
     val sendRecording: () -> Unit = { features.stopAndSend(connection, replyTo) { vm.reply(null) } }
     val microphone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-        if (allowed) features.record(sendRecording) else features.showError("Microphone access was denied. Allow it in App info → Permissions to record voice notes.")
+        if (allowed && !speech.dictation.value.active) { speech.stopNarration(); features.record(sendRecording) }
+        else if (!allowed) features.showError("Microphone access was denied. Allow it in App info → Permissions to record voice notes.")
     }
     val palette = when (connection.wallpaper) {
         "love" -> BubbleTokens.Love
@@ -278,10 +303,9 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val alarmGlow = if (liveAlarm != null) rememberInfiniteTransition(label = "alarm-glow").animateFloat(.35f, 1f,
         infiniteRepeatable(tween(900, easing = OneTheme.motion.standard), RepeatMode.Reverse), label = "alarm-glow-alpha").value else 0f
     val danger = OneTheme.colors.danger
-    val slash = if (recording) emptyList() else slashMatches(draft)
+    val slash = if (recording || dictation.active) emptyList() else slashMatches(draft)
     // /audio dictates into the draft; it is never a message type.
-    val (dictation, beginDictation) = rememberDictation(
-        onText = { text -> vm.draft(if (draft.isBlank()) text else draft.trimEnd() + " " + text) }, onError = features::showError)
+    val beginDictation = rememberDictation(speech, { features.recording.value }, features::stopPlayback)
     // Picking a command consumes the "/" draft, which also closes the slash menu.
     val runCommand = { name: String -> features.clearError(); vm.draft(""); when (name) {
         "audio" -> { if (!recording) beginDictation() }
@@ -343,7 +367,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             title = connection.otherNickname ?: "Your One on One",
             presence = rememberChatPresence(state, newerTime(connection.otherLastReadAt, receipts?.lastReadAt), presence)
                 .let { if (otherTyping) ChatPresence("typing…", online = true) else it },
-            callsEnabled = !recording,
+            callsEnabled = !recording && !dictation.active,
             onVideo = { features.background(); vm.call(CallKind.Video) },
             onCall = { features.background(); vm.call(CallKind.Audio) },
             onMore = { more = true },
@@ -445,7 +469,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                                 when (message.type) {
                                     "alarm" -> AlarmCard(message, mine, vm::sendCard)
                                     "call" -> CallLogCard(message, mine, vm::sendCard)
-                                    else -> FeatureCard(message, mine, original, connection, features)
+                                    else -> FeatureCard(message, mine, original, connection, features, speech)
                                 }
                             })
                     }
@@ -456,7 +480,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             // Offline: one calm status pill (debounced so brief reconnects don't flash). Otherwise errors show for a few seconds.
             var offline by remember { mutableStateOf(false) }
             LaunchedEffect(state) { if (state == ConnectionState.Connected) offline = false else { delay(2_000); offline = true } }
-            val notice = gameError ?: error ?: featureError ?: accountError
+            val notice = speechNotice ?: gameError ?: error ?: featureError ?: accountError
             var shown by remember { mutableStateOf<String?>(null) }
             LaunchedEffect(notice) { shown = notice; if (notice != null) { delay(4_000); shown = null } }
             ChatNotice(if (offline) "No connection · Reconnecting…" else null, Modifier.align(Alignment.TopCenter))
@@ -486,7 +510,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             val original = messages.find { it.id == id }
             ReplyBar(authorOf(original, connection).ifEmpty { "Earlier message" }, original?.let(::messageSummary) ?: "earlier message") { vm.reply(null) }
         } }
-        if (dictation.listening) DictationBar(dictation.partial, onStop = dictation::stop, onCancel = dictation::cancel)
+        if (dictation.active) DictationBar(dictation, dictationHint, onStop = speech::stopDictation, onCancel = speech::cancelDictation)
         else ChatComposer(
             draft = draft, onDraft = vm::draft,
             canSend = !busy, // Text is queued instantly; an uploading voice note or sticker must not block it.
@@ -500,7 +524,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             },
             onMic = {
                 attachmentOpen = false; features.clearError()
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) features.record(sendRecording)
+                if (speech.dictation.value.active) speech.showNotice("Finish dictation before recording a voice note.")
+                else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) { speech.stopNarration(); features.record(sendRecording) }
                 else microphone.launch(Manifest.permission.RECORD_AUDIO)
             },
             elapsedSeconds = elapsed,

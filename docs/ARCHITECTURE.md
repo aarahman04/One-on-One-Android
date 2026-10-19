@@ -1,5 +1,95 @@
 # Native Android architecture
 
+## Natural voice and dictation (2026-10-19)
+
+`SpeechViewModel` owns both speech sessions and scopes delivered text to the
+active account/conversation. UI renders StateFlows and handles permission and
+the optional external recognition Activity. `SpeechRepository` uses the existing
+Retrofit/BearerInterceptor client; no extra socket, dependency or endpoint.
+The owner-supplied Speech (2.0.6) contract is the authority pending publication
+in sibling `docs/API-CONTRACT.md`.
+
+```mermaid
+sequenceDiagram
+    participant U as LetterViewer
+    participant V as SpeechViewModel / LetterNarrator
+    participant R as SpeechRepository / authenticated API
+    participant P as AndroidNarrationAudio / MediaPlayer
+    U->>V: Read letter (connectionId, messageId)
+    V->>P: Transient media/speech audio focus
+    V->>R: GET /api/connections/{id}/messages/{id}/narration?part=0
+    R-->>V: Cached Ogg + X-Narration-Part / X-Narration-Parts
+    V->>P: Open file off main; prepareAsync; play
+    loop Until final part
+        V->>R: Fetch part n+1 while n plays
+        R-->>V: Next cached part
+        V->>P: Prepare; setNextMediaPlayer(next)
+        P-->>V: Completion; promote linked player
+        V->>R: Delete completed cache file off main thread
+    end
+    opt Network / 503 / 504
+        V->>P: Release natural players; device TextToSpeech
+        V-->>U: Natural voice unavailable, using device voice
+    end
+    U->>V: Pause / resume / stop / dismiss
+    Note over V,P: ON_STOP (except rotation) and focus loss stop; release and delete cache files
+```
+
+`LetterNarrator` is a JVM-testable state machine with a fakeable API and audio
+adapter. It prepares at most the current and next player, ignores rapid loading
+taps and retired callbacks, and cancels pending HTTP/preparation on stop. The
+Activity ViewModel retains playback on rotation; process restoration never
+restarts audio. The native adapter uses AUDIOFOCUS_GAIN_TRANSIENT with
+USAGE_MEDIA / CONTENT_TYPE_SPEECH. MediaPlayer calls stay on the main Looper;
+file open/close runs on IO and `prepareAsync` does the preparation work
+([Android MediaPlayer reference](https://developer.android.com/reference/android/media/MediaPlayer)).
+Device TTS has no platform pause API and
+resumes from its latest reported word boundary or completed chunk.
+
+```mermaid
+sequenceDiagram
+    participant U as Chat / DictationBar
+    participant V as SpeechViewModel / SpeechTranscriber
+    participant M as MediaRepository (dictation owner)
+    participant R as SpeechRepository / authenticated API
+    U->>V: /audio + existing RECORD_AUDIO permission
+    V->>M: Start separate AAC/MPEG-4 cache recording
+    V-->>U: Timer + first-use DevicePreferences language hint
+    U->>V: Stop and transcribe (or 120-second limit)
+    V->>M: Stop; obtain temporary clip
+    V->>R: POST /api/transcribe (raw audio/mp4, <= 3 MB)
+    R-->>V: text, language, durationMs
+    V->>M: Delete temporary recording
+    V-->>U: Append text to current draft; focus input
+    opt Network / 503 / 504
+        V-->>U: Using device speech recognition
+        V->>M: Cancel and delete recorded file
+        V->>V: Existing SpeechRecognizer / system Activity fallback
+    end
+    U->>V: Cancel at any time
+    V->>R: Cancel pending upload
+    V->>M: Release recorder and delete temp file
+    Note over U,V: No message enqueue/send and no voice-note draft
+```
+
+Recorder settings are shared with voice notes, with separate ownership, cache
+directory and 120-second / 3 MB caps. FeatureViewModel's voice-note cleanup cannot
+release a dictation recording. Cancel waits for in-flight recorder work before
+another dictation session starts; generation tokens reject late native/API
+results. HTTP cancellation closes a streaming narration body; all cache I/O is
+off main. Only successful text reaches ChatViewModel's draft append helper.
+No letter text is sent to the narration endpoint.
+
+### Xiaomi checklist
+
+- [ ] Short and long letters read fully; near-gapless part handoff.
+- [ ] Pause/resume/stop, close stops audio, rapid taps no overlap, rotation.
+- [ ] Airplane mode -> device voice fallback; background/focus loss stops audio.
+- [ ] `/audio` records and transcribes Indian-English into the composer without sending.
+- [ ] Cancel recording/upload; silence -> "Didn't catch that. Try again."
+- [ ] Two-minute timer/limit; first-use hint persists; device fallback remains cancellable.
+- [ ] Voice notes unaffected, reciprocal recording guard; light/dark and TalkBack.
+
 ## Mini-games — ephemeral two-player relay (2026-10-19)
 
 `/games` is a composer command, never a message type. `GameViewModel` owns

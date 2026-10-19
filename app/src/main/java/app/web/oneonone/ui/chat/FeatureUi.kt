@@ -9,8 +9,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
+import androidx.activity.compose.LocalActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import app.web.oneonone.data.media.NarrationPhase
+import app.web.oneonone.data.media.NarrationState
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -243,7 +249,7 @@ internal fun locationTile(lat: Double, lng: Double): String {
 }
 
 @Composable
-fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, connection: CurrentConnection, vm: FeatureViewModel) {
+fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, connection: CurrentConnection, vm: FeatureViewModel, speech: SpeechViewModel) {
     val payload = message.payload
     val busy by vm.busy.collectAsState()
     val path = payload.text("path")
@@ -277,12 +283,17 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     }
     FeatureCardContent(message, mine, original, connection, busy, playing, url, urlError,
         onSend = { t, body, response, r, done -> vm.send(t, body, response, r, done) },
-        onPlay = { vm.play(connection.id, it) },
+        onPlay = { if (speech.dictation.value.active) speech.showNotice("Stop dictation before playing a voice note.")
+            else { speech.stopNarration(); vm.play(connection.id, it) } },
         onLetterDownload = { letterDownload.launch("one-on-one-letter.pdf") },
         onOpenFile = { payload?.let { p -> vm.openFile(connection.id, p) { documentUri = it } } },
         onImageError = { urlError = "Photo unavailable. Tap retry." },
         onRetryPhoto = { url = null; urlError = null; retryUrl++ },
-        onSaveCopy = saveCopy, playbackPosition = position, playbackDuration = duration, playbackPaused = paused)
+        onSaveCopy = saveCopy, playbackPosition = position, playbackDuration = duration, playbackPaused = paused,
+        speech = speech, onReadLetter = {
+            if (!vm.recording.value && !speech.dictation.value.active) vm.stopPlayback()
+            speech.readLetter(connection.id, message, vm.recording.value)
+        })
     documentUri?.let { uri ->
         DocumentViewer(uri, payload.text("mime"), payload.text("name"), busy, saveCopy,
             openWith = { openAttachment(context, uri, payload.text("mime")) }, close = { documentUri = null })
@@ -294,7 +305,8 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
     busy: Boolean, playing: String?, url: String?, urlError: String?,
     onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, onPlay: (String) -> Unit,
     onLetterDownload: () -> Unit, onOpenFile: () -> Unit, onImageError: () -> Unit, onRetryPhoto: () -> Unit, onSaveCopy: () -> Unit,
-    playbackPosition: Int = 0, playbackDuration: Int = 0, playbackPaused: Boolean = false) {
+    playbackPosition: Int = 0, playbackDuration: Int = 0, playbackPaused: Boolean = false,
+    speech: SpeechViewModel? = null, onReadLetter: () -> Unit = {}) {
     val payload = message.payload
     val path = payload.text("path")
     val uriHandler = LocalUriHandler.current
@@ -306,7 +318,7 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                 "letter" -> {
                     CardHeading("✉", "A letter for ${payload.text("to")}")
                     CardAction("Open letter", onClick = { reveal = true })
-                    if (reveal) LetterViewer(message, onLetterDownload, close = { reveal = false })
+                    if (reveal) LetterViewer(message, onLetterDownload, close = { reveal = false }, connection = connection.id, speech = speech, read = onReadLetter)
                 }
                 "ask" -> {
                     CardHeading(if (payload.text("answerB").isNotBlank()) "💌" else "🔒", payload.text("question"))
@@ -635,41 +647,54 @@ private fun ErrorLine(error: String?) {
 }
 
 @Composable
-internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () -> Unit) {
-    val context = LocalContext.current.applicationContext
-    var speaking by remember { mutableStateOf(false) }
-    var notice by remember { mutableStateOf<String?>(null) }
-    val engine = remember { arrayOfNulls<TextToSpeech>(1) } // created on the first tap, shut down when the viewer closes
-    LaunchedEffect(notice) { if (notice != null) { delay(4_000); notice = null } }
-    DisposableEffect(Unit) { onDispose { engine[0]?.shutdown(); engine[0] = null } }
-    fun read(tts: TextToSpeech) {
-        val chunks = "Dear ${message.payload.text("to")}. ${message.content}. With love, ${message.payload.text("from")}.".chunked(TextToSpeech.getMaxSpeechInputLength() - 1)
-        speaking = true
-        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) { if (utteranceId == "letter-${chunks.lastIndex}") speaking = false }
-            @Deprecated("Deprecated in Java") override fun onError(utteranceId: String?) { speaking = false }
-            override fun onStop(utteranceId: String?, interrupted: Boolean) { speaking = false }
-        })
-        chunks.forEachIndexed { i, chunk -> tts.speak(chunk, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "letter-$i") }
-    }
-    fun toggle() {
-        val tts = engine[0]
-        if (speaking) { tts?.stop(); speaking = false }
-        else if (tts != null) read(tts)
-        else engine[0] = TextToSpeech(context) { status ->
-            val started = engine[0]
-            if (status == TextToSpeech.SUCCESS && started != null) read(started)
-            else { notice = "Reading aloud isn't available on this phone."; started?.shutdown(); engine[0] = null }
+internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () -> Unit,
+                          connection: String = "", speech: SpeechViewModel? = null, read: () -> Unit = {}) {
+    val key = "$connection/${message.id}"
+    val state = speech?.narration?.collectAsState()?.value?.takeIf { it.key == key } ?: NarrationState()
+    val speechNotice = speech?.notice?.collectAsState()?.value
+    val activity = LocalActivity.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(key, speech, lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && activity?.isChangingConfigurations != true) speech?.stopNarration(key)
         }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); if (activity?.isChangingConfigurations != true) speech?.stopNarration(key) }
     }
-    FeatureModal(onDismissRequest = close, title = {
+    val dismiss = { speech?.stopNarration(key); close() }
+    val c = OneTheme.colors
+    val s = OneTheme.spacing
+    FeatureModal(onDismissRequest = dismiss, title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Letter", Modifier.weight(1f))
-            OneIconButton(if (speaking) R.drawable.ic_stop else R.drawable.ic_volume, if (speaking) "Stop reading" else "Read letter aloud", { toggle() })
+            BoxWithConstraints(Modifier.weight(1f)) {
+                Column(verticalArrangement = Arrangement.spacedBy(s.xxs2)) {
+                    Text("Letter")
+                    if (this@BoxWithConstraints.maxWidth >= OneTheme.sizes.touch40 * 3 && state.total > 0 && !state.device && state.phase != NarrationPhase.Idle) {
+                        val seconds = state.positionMs / 1_000
+                        Text("Part ${state.part + 1} of ${state.total} \u00b7 ${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}",
+                            color = c.textDim, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        LinearProgressIndicator(progress = { if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f },
+                            modifier = Modifier.fillMaxWidth().height(s.xxs2), color = c.accentYou, trackColor = c.border)
+                    }
+                }
+            }
+            if (state.phase == NarrationPhase.Loading) Box(Modifier.size(OneTheme.sizes.touch40).semantics {
+                contentDescription = "Loading narration"; liveRegion = LiveRegionMode.Polite
+            }, contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(s.xl24), color = c.accentYou, strokeWidth = s.xxs2)
+            } else OneIconButton(when (state.phase) {
+                NarrationPhase.Playing -> R.drawable.ic_pause
+                NarrationPhase.Paused -> R.drawable.ic_play
+                else -> R.drawable.ic_volume
+            }, when (state.phase) {
+                NarrationPhase.Playing -> "Pause"
+                NarrationPhase.Paused -> "Resume"
+                else -> "Read letter aloud"
+            }, read)
+            if (state.phase != NarrationPhase.Idle) OneIconButton(R.drawable.ic_stop, "Stop reading", { speech?.stopNarration(key) })
         }
-    }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { ChatNotice(notice, warning = true); LetterBody(message) } },
-        confirmButton = { PrimaryButton("Download PDF", download) }, dismissButton = { SecondaryButton("Close", close) })
+    }, text = { Column(verticalArrangement = Arrangement.spacedBy(s.sm8)) { ChatNotice(state.notice ?: speechNotice, warning = true); LetterBody(message) } },
+        confirmButton = { PrimaryButton("Download PDF", download) }, dismissButton = { SecondaryButton("Close", dismiss) })
 }
 
 @Composable

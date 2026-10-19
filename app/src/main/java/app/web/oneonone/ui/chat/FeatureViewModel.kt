@@ -229,7 +229,7 @@ class FeatureViewModel @Inject constructor(
             catch (error: Exception) { stopPlayback(); mutableError.value = userError(error) }
         }
     }
-    private fun stopPlayback() {
+    fun stopPlayback() {
         playbackJob?.cancel(); progressJob?.cancel(); player?.release(); player = null
         playbackPrepared = false; playing.value = null
         mutablePlaybackPosition.value = 0; mutablePlaybackDuration.value = 0; mutablePlaybackPaused.value = false
