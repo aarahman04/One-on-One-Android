@@ -290,4 +290,17 @@ class SpeechTest {
         assertEquals("Line one\nGood morning", appendDictationText("Line one\n", "Good morning"))
         assertEquals("Already here", appendDictationText("Already here", " \n"))
     }
+
+    @Test fun deviceOnlyBuildNeverUploadsAndUsesDeviceVoiceAndRecognitionQuietly() = runTest {
+        val api = FakeSpeech().apply { upload = { throw AssertionError("Must not upload") } }; val recorder = FakeRecorder(); val device = FakeDevice()
+        val notices = mutableListOf<String>()
+        val transcriber = SpeechTranscriber(api, recorder, device, backgroundScope, { }, notices::add, StandardTestDispatcher(testScheduler), server = false)
+        transcriber.start(); advanceUntilIdle()
+        assertEquals(DictationPhase.DeviceListening, transcriber.state.value.phase)
+        assertTrue(notices.isEmpty())
+        val audio = FakeAudio()
+        val narrator = LetterNarrator(api, audio, backgroundScope, StandardTestDispatcher(testScheduler), server = false)
+        narrator.toggle("c", "m", "Dear you."); advanceUntilIdle()
+        assertTrue(narrator.state.value.device)
+    }
 }

@@ -20,7 +20,7 @@ interface DeviceSpeech {
 /** Recording and upload share one cancellable session; successful text is delivered, never sent. */
 class SpeechTranscriber(private val api: SpeechGateway, private val recorder: DictationRecorder, private val device: DeviceSpeech,
                         private val scope: CoroutineScope, private val deliver: (String) -> Unit, private val notice: (String) -> Unit,
-                        private val io: CoroutineDispatcher = Dispatchers.IO) {
+                        private val io: CoroutineDispatcher = Dispatchers.IO, private val server: Boolean = true) {
     private val mutableState = MutableStateFlow(DictationState())
     val state = mutableState.asStateFlow()
     private var generation = 0L
@@ -31,6 +31,7 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
 
     fun start() {
         if (state.value.active) return
+        if (!server) { fallback(announce = false); return }
         val token = ++generation
         mutableState.value = DictationState(DictationPhase.Starting, token = token)
         val previous = cleanup
@@ -92,12 +93,12 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
         }
     }
 
-    private fun fallback() {
+    private fun fallback(announce: Boolean = true) {
         cancel()
         val previous = cleanup
         val token = ++generation
         mutableState.value = DictationState(if (device.available) DictationPhase.DeviceListening else DictationPhase.DeviceDialog, token = token)
-        notice("Using device speech recognition")
+        if (announce) notice("Using device speech recognition")
         newSession().launch {
             previous?.join()
             if (token != generation || !device.available) return@launch
