@@ -251,10 +251,29 @@ class FeatureViewModel @Inject constructor(
         account.block(connection); service.deactivate(clear = true); done()
     }
     fun export(uri: Uri, connection: CurrentConnection, format: String) = action {
-        val messages = service.exportHistory()
+        val messages = service.exportHistory(connection.id)
         val text = withContext(Dispatchers.Default) { exportChat(messages, connection.myUserId, connection.otherNickname ?: "Them", format) }
         media.save(uri, text)
     }
+    private val mutableArchive = MutableStateFlow<ArchiveState?>(null)
+    /** The zip save in progress, failed or finished; null when idle. Lives in the ViewModel, so rotation keeps it. */
+    val archive = mutableArchive.asStateFlow()
+    private var archiveJob: Job? = null
+    fun saveArchive(uri: Uri, connection: CurrentConnection) {
+        archiveJob?.cancel()
+        mutableArchive.value = ArchiveState()
+        archiveJob = viewModelScope.launch {
+            try {
+                val messages = service.exportHistory(connection.id)
+                media.saveArchive(uri, connection.id, messages, connection.myUserId, connection.otherNickname ?: "Them") { percent ->
+                    mutableArchive.update { it?.copy(progress = percent) }
+                }
+                mutableArchive.value = ArchiveState(progress = 100, saved = true)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutableArchive.value = ArchiveState(error = archiveError(error)) }
+        }
+    }
+    fun cancelArchive() { archiveJob?.cancel(); archiveJob = null; mutableArchive.value = null }
     fun saveLetter(uri: Uri, message: ChatMessage) = action { media.saveLetterPdf(uri, message) }
     override fun onCleared() {
         recordingJob?.cancel(); stopPlayback()
@@ -262,3 +281,9 @@ class FeatureViewModel @Inject constructor(
         CoroutineScope(Dispatchers.IO).launch { media.releaseRecording() }
     }
 }
+
+/** Zip save progress (0..100); [error] is display copy; [saved] once the whole file is written. */
+data class ArchiveState(val progress: Int = 0, val error: String? = null, val saved: Boolean = false)
+
+internal fun archiveError(error: Exception): String =
+    if (error is java.io.IOException) "Check your connection and try again." else userError(error)

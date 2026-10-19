@@ -354,9 +354,6 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         }
         Reveal(search) { ChatSearchBar(query, { query = it }, count = if (matches.isEmpty()) "0/0" else "${current + 1}/${matches.size}",
             onOlder = { step(-1) }, onNewer = { step(1) }, onClose = closeSearch) }
-        Reveal(connection.myLeaveStep > 0 || connection.otherLeaveStep > 0) {
-            LeaveBanner("Leave countdown: you ${connection.myLeaveStep}/5, them ${connection.otherLeaveStep}/5")
-        }
         var lastPinId by remember { mutableStateOf(pinState.messageId) }
         if (pinState.messageId != null) lastPinId = pinState.messageId
         Reveal(pinState.messageId != null) { lastPinId?.let { pinnedId ->
@@ -549,8 +546,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     if (nickname) NicknameDialog(connection, busy, onDismiss = { nickname = false }) {
         vm.nickname(connection.id, it) { nickname = false; onRefresh() }
     }
-    if (leave) LeaveDialog(connection, busy, onDismiss = { leave = false }) {
-        vm.leave(connection.id, it) { leave = false; onRefresh() }
+    if (leave) LeaveDialog(connection, features, busy, error, onDismiss = { leave = false }) {
+        vm.leave(connection.id) { leave = false; onRefresh() }
     }
 }
 
@@ -649,15 +646,4 @@ private fun AlarmBanner(from: String, onAcknowledge: () -> Unit) {
         Text("Acknowledge", Modifier.clip(RoundedCornerShape(OneTheme.radii.full)).background(Color.White).padding(horizontal = 12.dp, vertical = 6.dp),
             color = c.danger, style = OneTextStyles.cardHint.copy(fontWeight = FontWeight.Bold))
     }
-}
-
-@Composable
-private fun LeaveDialog(connection: CurrentConnection, busy: Boolean, onDismiss: () -> Unit, onAction: (String) -> Unit) {
-    FeatureModal(onDismissRequest = onDismiss, title = { Text("Leave connection") },
-        text = { Text("Leaving takes five daily steps, one every 24 hours. Ending deletes the conversation and attachments for both of you. Your step: ${connection.myLeaveStep}/5. ${if (connection.bothLeaving) "You both chose to leave; you can end immediately." else ""}") },
-        confirmButton = { DangerButton(if (connection.bothLeaving) "End now" else "Advance one step",
-            onClick = { onAction(if (connection.bothLeaving) "end" else "advance") },
-            enabled = !busy && (connection.bothLeaving || connection.myLeaveStep == 0 || connection.canAdvanceLeave)) },
-        dismissButton = { SecondaryButton(if (connection.myLeaveStep > 0) "Keep connection" else "Cancel",
-            onClick = { if (connection.myLeaveStep > 0) onAction("cancel") else onDismiss() }, enabled = !busy) })
 }

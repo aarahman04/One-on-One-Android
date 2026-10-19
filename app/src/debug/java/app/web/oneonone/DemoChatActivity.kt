@@ -92,8 +92,8 @@ class DemoChatActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val connection = CurrentConnection(id = DemoTransport.CONNECTION, status = "active", myUserId = DemoTransport.ME, isRequester = true,
-            otherNickname = if (storeDemo) "Arjun" else "Alex", otherConnectionCode = "", myLeaveStep = 0, otherLeaveStep = 0, daysRemaining = null, bothLeaving = false,
-            canAdvanceLeave = true, otherLastReadAt = null, otherLastDeliveredAt = null, wallpaper = if (storeDemo) "love" else "off", messageStyle = "bubbles")
+            otherNickname = if (storeDemo) "Arjun" else "Alex", otherConnectionCode = "",
+            otherLastReadAt = null, otherLastDeliveredAt = null, wallpaper = if (storeDemo) "love" else "off", messageStyle = "bubbles")
         setContent {
             OneOnOneTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {

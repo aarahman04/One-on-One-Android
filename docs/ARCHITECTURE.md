@@ -1,5 +1,41 @@
 # Native Android architecture
 
+## Instant leave, zip export, server gates, instant receipts (2026-10-19)
+
+Contract §10 (backend PR #109, merged). Gates: `GET /api/me` timestamps are truth;
+`AccountRepository.syncGates` caches them per JWT `sub` in DevicePreferences and
+pushes a same-account device answer up once via `POST /api/me/gates` (an older
+backend or offline keeps the cache). Leave is one call (`POST /leave`); the old
+step routes/fields are gone (JSON stays tolerant via `ignoreUnknownKeys`).
+`ConversationArchive.kt` streams a zip (letters via `writeLetterPdf`, attachments
+signed 50 at a time and copied in 64 KiB chunks, then `conversation.html/.txt`);
+deleted and system rows are excluded and deleted media is never fetched. The
+partner of an ended connection routes to `PartnerLeftScreen` from `/current`
+(cold start safe), the socket `connection:ended` event or the `connection_left`
+push. Reads go `MessageService -> Transport -> InternetTransport` as socket
+`message:read` with a 2 s ack, REST fallback; FCM message pushes call
+`MessageService.markDelivered` (1 s debounce) -> `POST /delivered`.
+
+```mermaid
+sequenceDiagram
+  participant L as Leaver app
+  participant B as Backend
+  participant F as FCM
+  participant P as Partner app
+  L->>L: LeaveDialog "Save a copy, then leave"
+  L->>B: GET /messages (pages) + POST /attachments/signed
+  L->>L: zip written to SAF document
+  L->>B: POST /connections/:id/leave
+  B-->>P: socket connection:ended (if online)
+  B->>F: data {type:"connection_left", connectionId, title, body}
+  F->>P: onMessageReceived -> PushRouter -> deliverLeftPush -> notification
+  P->>B: GET /connections/current -> status "ended", purgeAt
+  P->>P: PartnerLeftScreen "Save conversation"
+  P->>B: GET /messages + POST /attachments/signed (read-only window)
+  P->>P: zip written
+  P->>B: POST /connections/:id/acknowledge-end (404 = done)
+  P->>P: Room cache cleared, home code screen
+
 ## Letter pagination, dictation, swipe (2026-10-19)
 
 `writeLetterPdf` measures the letter at a font size, `chooseLetterSize` picks the first

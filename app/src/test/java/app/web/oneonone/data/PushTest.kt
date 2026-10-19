@@ -34,6 +34,23 @@ class PushTest {
         assertEquals(listOf("alarm:unchanged", "call:unchanged", "end:unchanged", "message:Hello"), seen)
     }
 
+    @Test fun connectionLeftPushIsRoutedValidatedAndCapped() {
+        val router = PushRouter(object : AlarmPushHandler { override fun onAlarmPush(data: Map<String, String>) = fail() },
+            object : CallPushHandler {
+                override fun onCallPush(data: Map<String, String>) = fail()
+                override fun onCallEndPush(data: Map<String, String>) = fail()
+            })
+        val left = mutableListOf<LeftPush>()
+        val push = mapOf("type" to "connection_left", "connectionId" to connectionId, "title" to "Alex left the connection",
+            "body" to "Open One on One to save your conversation.")
+        router.route(push, left = { left += it }) { fail() }
+        router.route(push + ("connectionId" to "../x"), left = { left += it }) { fail() }
+        assertEquals(listOf(LeftPush(connectionId, "Alex left the connection", "Open One on One to save your conversation.")), left)
+        assertEquals("Your connection left the connection", decodeLeftPush(push - "title")?.title)
+        assertEquals(80, decodeLeftPush(push + ("title" to "x".repeat(200)))?.title?.length)
+        assertNull(decodeMessagePush(push))
+    }
+
     @Test fun normalPushRequiresContractTypeAndCanonicalIds() {
         assertNotNull(decodeMessagePush(data()))
         assertNull(decodeMessagePush(data() - "messageId"))

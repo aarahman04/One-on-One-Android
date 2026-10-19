@@ -70,6 +70,7 @@ internal suspend fun deliverMessagePush(context: Context, push: MessagePush) {
     val owner = dependencies.auth().accessToken()?.let(::tokenSubject) ?: return
     val connection = try { dependencies.api().current().connection ?: return }
     catch (error: HttpException) { if (error.code() in setOf(401, 403, 404, 409)) return else throw error }
+    if (connection.id == push.connectionId && connection.status in setOf("active", "leave_pending")) dependencies.messages().markDelivered(push.connectionId)
     if (!shouldNotify(push, connection, dependencies.messages().isChatResumed(push.connectionId))) return
     if (!dependencies.notifications().allowed()) return
     if (dependencies.auth().accessToken()?.let(::tokenSubject) != owner) return
@@ -78,6 +79,13 @@ internal suspend fun deliverMessagePush(context: Context, push: MessagePush) {
         dependencies.auth().accessToken()?.let(::tokenSubject) == owner) {
         dependencies.notifications().show(push, owner)
     }
+}
+
+/** Partner left: replaces the conversation's notification with one that opens the save screen. Signed-in users only. */
+internal suspend fun deliverLeftPush(context: Context, push: LeftPush) {
+    val dependencies = dependencies(context)
+    if (dependencies.auth().accessToken() == null) return
+    dependencies.notifications().left(push)
 }
 
 class MessageNotificationWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {

@@ -237,18 +237,6 @@ internal fun ChatSearchBar(query: String, onQuery: (String) -> Unit, count: Stri
     HorizontalDivider(color = c.border)
 }
 
-/** .chat__leave-banner: danger text on danger@8%, bottom border. */
-@Composable
-internal fun LeaveBanner(text: String) {
-    val c = OneTheme.colors
-    Text(
-        text,
-        modifier = Modifier.fillMaxWidth().background(c.danger.copy(alpha = .08f)).padding(horizontal = 20.dp, vertical = 10.dp),
-        color = c.danger, style = OneTextStyles.cardHint, textAlign = TextAlign.Center,
-    )
-    HorizontalDivider(color = c.border)
-}
-
 /** Floating pill over the message list: connection status or a short-lived notice. */
 @Composable
 internal fun ChatNotice(text: String?, modifier: Modifier = Modifier, warning: Boolean = false) {

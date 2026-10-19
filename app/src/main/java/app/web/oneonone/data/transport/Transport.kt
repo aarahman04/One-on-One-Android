@@ -17,6 +17,8 @@ interface Transport {
     suspend fun send(message: SendMessage): ChatMessage
     suspend fun history(connectionId: String, before: String? = null, after: String? = null): List<ChatMessage>
     suspend fun markRead(connectionId: String)
+    /** Marks delivered for a notified device (contract §10, called from the FCM receive path). */
+    suspend fun markDelivered(connectionId: String) {}
     suspend fun react(messageId: String, emoji: String, remove: Boolean)
     // Edit / delete / pin / typing (contract §5) and server-side link previews (REST).
     val updates: Flow<ChatMessage> get() = emptyFlow()

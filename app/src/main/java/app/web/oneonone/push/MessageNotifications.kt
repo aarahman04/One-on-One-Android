@@ -74,6 +74,18 @@ class MessageNotifications @Inject constructor(@ApplicationContext private val c
     fun cancel(connectionId: String) = clear(context, connectionId)
     fun cancelMessages() { manager.activeNotifications.filter { it.notification.channelId == NotificationChannels.MESSAGES }
         .forEach { manager.cancel(it.tag, it.id) } }
+    /** Same tag as the conversation, so it replaces the message lines; tapping opens the app, which routes to the save screen. */
+    fun left(push: LeftPush) {
+        if (!allowed()) return
+        val tap = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java)
+            .setData("oneonone://left/${push.connectionId}".toUri())
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        manager.notify(tag(push.connectionId), MESSAGE_ID, NotificationCompat.Builder(context, NotificationChannels.MESSAGES)
+            .setSmallIcon(R.drawable.ic_stat_notify).setContentTitle(push.title).setContentText(push.body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(push.body)).setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setContentIntent(tap).setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build())
+    }
     fun generic(title: String, body: String) {
         if (!allowed()) return
         val tap = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)

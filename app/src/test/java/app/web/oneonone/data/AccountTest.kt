@@ -47,9 +47,19 @@ class FakeDeviceStore : DeviceStore {
     var gatesOwner: String? = null
     var token: String? = "device-token"
     var seenOnboarding = true
-    override suspend fun gates(owner: String) = if (gatesOwner == null || gatesOwner == owner) savedGates else Gates()
-    override suspend fun verifyAge(owner: String) { gatesOwner = owner; savedGates = savedGates.copy(ageVerified = true) }
-    override suspend fun acceptTerms(owner: String) { gatesOwner = owner; savedGates = savedGates.copy(termsAccepted = true) }
+    // Same owner rules as DevicePreferences: legacy gates adopt the first owner; another owner's gates never count.
+    override suspend fun gates(owner: String): Gates {
+        if (gatesOwner == null && (savedGates.ageVerified || savedGates.termsAccepted)) gatesOwner = owner
+        return if (gatesOwner == owner) savedGates else Gates()
+    }
+    override suspend fun verifyAge(owner: String) {
+        if (gatesOwner != owner) savedGates = savedGates.copy(termsAccepted = false)
+        gatesOwner = owner; savedGates = savedGates.copy(ageVerified = true)
+    }
+    override suspend fun acceptTerms(owner: String) {
+        if (gatesOwner != owner) savedGates = savedGates.copy(ageVerified = false)
+        gatesOwner = owner; savedGates = savedGates.copy(termsAccepted = true)
+    }
     override suspend fun resetGates() { savedGates = Gates(); gatesOwner = null }
     override suspend fun pushToken() = token
     override suspend fun savePushToken(token: String?) { this.token = token }
@@ -68,7 +78,20 @@ open class FakeAccountApi(val session: FakeSession) : AccountApi {
     var requestedCode: String? = null
     var failCurrent = false
     var deleteFails = false
-    override suspend fun me() = Me("me", "ABCDEFGH")
+    /** Server gate record (contract §10). */
+    var serverGates = GatesResult()
+    val gatePosts = mutableListOf<JsonObject>()
+    var gatesFail = false
+    override suspend fun me() = Me("me", "ABCDEFGH", serverGates.ageVerifiedAt, serverGates.termsAcceptedAt)
+    override suspend fun gates(body: JsonObject): GatesResult {
+        gatePosts += body
+        check(!gatesFail) { "404" }
+        serverGates = GatesResult(serverGates.ageVerifiedAt ?: body["ageVerified"]?.let { "2026-10-19T00:00:00Z" },
+            serverGates.termsAcceptedAt ?: body["termsAccepted"]?.let { "2026-10-19T00:00:00Z" })
+        return serverGates
+    }
+    val acknowledged = mutableListOf<String>()
+    override suspend fun acknowledgeEnd(id: String) { acknowledged += id; current = null }
     override suspend fun regenerate() = CodeResult("JKLMNPQR")
     override suspend fun deleteAccount() { check(!deleteFails); session.operations.add("delete") }
     override suspend fun blocks() = BlocksResult(emptyList())
@@ -94,9 +117,7 @@ open class FakeAccountApi(val session: FakeSession) : AccountApi {
     }
     override suspend fun nickname(id: String, body: NicknameBody) { }
     override suspend fun register(body: PushTokenBody) { session.operations.add("register:${body.platform}") }
-    override suspend fun leave(id: String) = LeaveResponse(LeaveResult("leave_pending", 1, 4, false, false))
-    override suspend fun cancelLeave(id: String) = LeaveResponse(LeaveResult("active", 0, null, false, false))
-    override suspend fun confirmEnd(id: String) = LeaveResponse(LeaveResult("terminated", 5, 0, true, true))
+    override suspend fun leave(id: String) { current = null }
     override suspend fun wallpaper(id: String, body: WallpaperBody) { }
     override suspend fun block(id: String) { }
     override suspend fun reportConnection(id: String, body: ReportBody) { }
@@ -104,8 +125,7 @@ open class FakeAccountApi(val session: FakeSession) : AccountApi {
 }
 
 fun connection(status: String, requester: Boolean) = CurrentConnection(
-    "connection", status, "me", requester, null, "JKLMNPQR", 0, 0, null,
-    false, false, null, null, "off", "bubbles",
+    "connection", status, "me", requester, null, "JKLMNPQR", null, null, "off", "bubbles",
 )
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -248,6 +268,108 @@ class AccountTest {
             vm.refresh(); runCurrent()
             assertEquals(BootRoute.UnderAge, vm.state.value.route)
             assertFalse(preferences.savedGates.ageVerified)
+            vm.viewModelScope.cancel(); runCurrent()
+        } finally { Dispatchers.resetMain() }
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+class GatesTest {
+    private fun jwt(sub: String) = "h." + java.util.Base64.getUrlEncoder().withoutPadding()
+        .encodeToString("{\"sub\":\"$sub\"}".toByteArray()) + ".s"
+
+    private fun TestScope.boot(session: FakeSession, api: FakeAccountApi, preferences: FakeDeviceStore): AppViewModel {
+        val vm = AppViewModel(session, AccountRepository(api, session, preferences, stickers = testStickerLibrary()), preferences)
+        runCurrent(); return vm
+    }
+
+    @Test fun serverGatesSkipDobAndRulesAfterReinstallOrSignOut() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val session = FakeSession().apply { token = jwt("user-a") }
+            val api = FakeAccountApi(session).apply { serverGates = GatesResult("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z") }
+            // Reinstall: no device record at all.
+            val preferences = FakeDeviceStore().apply { savedGates = Gates() }
+            val vm = boot(session, api, preferences)
+            assertEquals(BootRoute.Connect, vm.state.value.route)
+            assertTrue(api.gatePosts.isEmpty())
+            // The server answer is cached for this account only.
+            assertEquals(Gates(true, true), preferences.gates("user-a"))
+            assertEquals(Gates(), preferences.gates("user-b"))
+            vm.viewModelScope.cancel(); runCurrent()
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun sameAccountDeviceGatesArePushedUpOnceThenServerIsTruth() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val session = FakeSession().apply { token = jwt("user-a") }
+            val api = FakeAccountApi(session)
+            val preferences = FakeDeviceStore().apply { savedGates = Gates(true, true); gatesOwner = "user-a" }
+            val vm = boot(session, api, preferences)
+            assertEquals(BootRoute.Connect, vm.state.value.route)
+            assertEquals(1, api.gatePosts.size)
+            assertEquals(setOf("ageVerified", "termsAccepted"), api.gatePosts.single().keys)
+            vm.refresh(); runCurrent(); vm.refresh(); runCurrent()
+            assertEquals(1, api.gatePosts.size)
+            vm.viewModelScope.cancel(); runCurrent()
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun olderBackendKeepsTheCachedAnswerAndRetriesOnlyOnce() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val session = FakeSession().apply { token = jwt("user-a") }
+            val api = FakeAccountApi(session).apply { gatesFail = true }
+            val preferences = FakeDeviceStore().apply { savedGates = Gates(true, true); gatesOwner = "user-a" }
+            val vm = boot(session, api, preferences)
+            assertEquals(BootRoute.Connect, vm.state.value.route)
+            vm.refresh(); runCurrent()
+            assertEquals(1, api.gatePosts.size)
+            vm.viewModelScope.cancel(); runCurrent()
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun anotherAccountsDeviceGatesNeverCountOrUpload() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val session = FakeSession().apply { token = jwt("user-b") }
+            val api = FakeAccountApi(session)
+            val preferences = FakeDeviceStore().apply { savedGates = Gates(true, true); gatesOwner = "user-a" }
+            val vm = boot(session, api, preferences)
+            assertEquals(BootRoute.Age, vm.state.value.route)
+            assertTrue(api.gatePosts.isEmpty())
+            vm.verifyAge(LocalDate.now().minusYears(20)); runCurrent()
+            assertEquals(BootRoute.Consent, vm.state.value.route)
+            assertEquals(setOf("ageVerified"), api.gatePosts.single().keys)
+            // Switching owner on the device dropped user-a's Terms answer.
+            assertFalse(preferences.gates("user-b").termsAccepted)
+            vm.acceptTerms(); runCurrent()
+            assertEquals(BootRoute.Connect, vm.state.value.route)
+            assertNotNull(api.serverGates.termsAcceptedAt)
+            vm.viewModelScope.cancel(); runCurrent()
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun endedConnectionRoutesToSaveScreenAndAcknowledgeGoesHome() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val session = FakeSession()
+            val api = FakeAccountApi(session).apply { current = connection("ended", false).copy(endedAt = "2026-10-19T00:00:00Z", purgeAt = "2026-10-26T00:00:00Z") }
+            val vm = boot(session, api, FakeDeviceStore())
+            assertEquals(BootRoute.PartnerLeft, vm.state.value.route)
+            assertEquals("connection", vm.state.value.ended?.id)
+            // A pending request outranks the ended one; it is remembered so Accept can warn.
+            api.current = connection("pending", false)
+            vm.refresh(); runCurrent()
+            assertEquals(BootRoute.Request, vm.state.value.route)
+            assertNotNull(vm.state.value.ended)
+            api.current = connection("ended", false)
+            vm.refresh(); runCurrent()
+            vm.acknowledgeEnd(); runCurrent()
+            assertEquals(listOf("connection"), api.acknowledged)
+            assertEquals(BootRoute.Connect, vm.state.value.route)
+            assertNull(vm.state.value.ended)
             vm.viewModelScope.cancel(); runCurrent()
         } finally { Dispatchers.resetMain() }
     }

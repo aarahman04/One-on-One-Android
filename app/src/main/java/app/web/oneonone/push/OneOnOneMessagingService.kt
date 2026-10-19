@@ -19,7 +19,10 @@ class OneOnOneMessagingService : FirebaseMessagingService() {
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onNewToken(token: String) { registration.schedule(token) }
     override fun onMessageReceived(message: RemoteMessage) {
-        router.route(message.data) { push ->
+        router.route(message.data, left = { push ->
+            // No network needed: the app re-reads /connections/current when opened and shows the save screen.
+            runCatching { runBlocking { withTimeoutOrNull(8_000) { deliverLeftPush(this@OneOnOneMessagingService, push) } } }
+        }) { push ->
             // Inside the high-priority FCM window (onMessageReceived runs off the main thread): show now. WorkManager was the
             // only path and Xiaomi/Doze defer even expedited work, so notifications arrived late or not at all in the background.
             val shown = runCatching { runBlocking { withTimeoutOrNull(8_000) { deliverMessagePush(this@OneOnOneMessagingService, push); true } } }

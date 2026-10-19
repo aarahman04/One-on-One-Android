@@ -311,13 +311,14 @@ class MessageService @Inject constructor(
         return try { pending.await() } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { previews.remove(url, pending); null }
     }
-    suspend fun exportHistory(): List<ChatMessage> = synchronizing.withLock {
+    /** Full server history, oldest first. Works without an open chat: the partner of an ended connection reads it read-only. */
+    suspend fun exportHistory(connectionId: String): List<ChatMessage> = synchronizing.withLock {
         // ponytail: export holds the conversation in memory; stream pages for conversations that exceed device memory.
-        val session = checkNotNull(active.value)
+        val session = active.value
         val all = linkedMapOf<String, ChatMessage>()
         var before: String? = null
         while (session == active.value) {
-            val page = transport.history(session.connectionId, before = before)
+            val page = transport.history(connectionId, before = before)
             page.forEach { all[checkNotNull(it.id)] = it }
             if (page.size < 50) break
             val next = page.minBy { Instant.parse(it.createdAt) }.createdAt
@@ -326,6 +327,22 @@ class MessageService @Inject constructor(
         }
         check(session == active.value) { "Conversation changed during export." }
         all.values.sortedBy { Instant.parse(it.createdAt) }
+    }
+    /** Clears the local cache of a conversation the server has ended; Room is never the record. */
+    suspend fun forget(ownerId: String, connectionId: String) = store.clear(ownerId, connectionId)
+
+    private val deliveredJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+    /**
+     * A message push reached this phone: tell the sender's ticks. A burst of pushes becomes one call a second after the
+     * last (the server stamps now(), which covers every earlier message; /api shares a 240/min per-IP limit).
+     * shortcut: lost if the process dies inside that second; the socket connect also marks delivered when the app opens.
+     */
+    fun markDelivered(connectionId: String) {
+        deliveredJobs.put(connectionId, scope.launch {
+            delay(1_000)
+            try { transport.markDelivered(connectionId) } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Best effort; the next push or socket connect retries. */ }
+        })?.cancel()
     }
     suspend fun findSend(tempId: String): ChatMessage? = active.value?.let { store.byTempId(it.ownerId, it.connectionId, tempId) }
     suspend fun markRead() = markRead(heartbeat = false)

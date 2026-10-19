@@ -9,7 +9,9 @@ import retrofit2.http.POST
 import retrofit2.http.PATCH
 import retrofit2.http.Path
 
-@Serializable data class Me(val userId: String, val connectionCode: String)
+// Gate timestamps are server truth (contract §10); null until accepted, absent on older backends.
+@Serializable data class Me(val userId: String, val connectionCode: String, val ageVerifiedAt: String? = null, val termsAcceptedAt: String? = null)
+@Serializable data class GatesResult(val ageVerifiedAt: String? = null, val termsAcceptedAt: String? = null)
 @Serializable data class CodeResult(val connectionCode: String)
 @Serializable data class ConnectionRequest(val connectionCode: String)
 @Serializable data class TokenBody(val token: String)
@@ -18,8 +20,6 @@ import retrofit2.http.Path
 @Serializable data class BlocksResult(val blocks: List<BlockedUser>)
 @Serializable data class CurrentResult(val connection: CurrentConnection?)
 @Serializable data class NicknameBody(val nickname: String)
-@Serializable data class LeaveResult(val status: String, val myLeaveStep: Int, val daysRemaining: Int?, val bothLeaving: Boolean, val terminated: Boolean)
-@Serializable data class LeaveResponse(val leave: LeaveResult)
 @Serializable data class WallpaperBody(val wallpaper: String)
 @Serializable data class ReportBody(val category: String, val reason: String)
 @Serializable data class CurrentConnection(
@@ -29,11 +29,6 @@ import retrofit2.http.Path
     val isRequester: Boolean,
     val otherNickname: String?,
     val otherConnectionCode: String,
-    val myLeaveStep: Int,
-    val otherLeaveStep: Int,
-    val daysRemaining: Int?,
-    val bothLeaving: Boolean,
-    val canAdvanceLeave: Boolean,
     val otherLastReadAt: String?,
     val otherLastDeliveredAt: String?,
     val wallpaper: String,
@@ -44,10 +39,16 @@ import retrofit2.http.Path
     // Opaque photo ids (contract §9); a new id means refetch the signed URL.
     val myAvatarId: String? = null,
     val otherAvatarId: String? = null,
+    // Only for status "ended": the partner's read-only window until purgeAt (contract §10). Legacy leave-step fields are ignored.
+    val endedBy: String? = null,
+    val endedAt: String? = null,
+    val purgeAt: String? = null,
 )
 
 interface AccountApi {
     @GET("api/me") suspend fun me(): Me
+    /** Body has only `ageVerified: true` and/or `termsAccepted: true`; any other key or value is 400. */
+    @POST("api/me/gates") suspend fun gates(@Body body: JsonObject): GatesResult
     @POST("api/me/connection-code/regenerate") suspend fun regenerate(): CodeResult
     @DELETE("api/me") suspend fun deleteAccount()
     @GET("api/me/blocks") suspend fun blocks(): BlocksResult
@@ -60,9 +61,9 @@ interface AccountApi {
     @POST("api/push/token/unregister") suspend fun unregister(@Body body: TokenBody)
     @POST("api/push/token") suspend fun register(@Body body: PushTokenBody)
     @PATCH("api/connections/{id}/nickname") suspend fun nickname(@Path("id") id: String, @Body body: NicknameBody)
-    @POST("api/connections/{id}/leave") suspend fun leave(@Path("id") id: String): LeaveResponse
-    @POST("api/connections/{id}/leave/cancel") suspend fun cancelLeave(@Path("id") id: String): LeaveResponse
-    @POST("api/connections/{id}/leave/confirm-end") suspend fun confirmEnd(@Path("id") id: String): LeaveResponse
+    /** Ends the connection at once (contract §10); the body is not needed. */
+    @POST("api/connections/{id}/leave") suspend fun leave(@Path("id") id: String)
+    @POST("api/connections/{id}/acknowledge-end") suspend fun acknowledgeEnd(@Path("id") id: String)
     @PATCH("api/connections/{id}/wallpaper") suspend fun wallpaper(@Path("id") id: String, @Body body: WallpaperBody)
     @POST("api/connections/{id}/block") suspend fun block(@Path("id") id: String)
     @POST("api/connections/{id}/report") suspend fun reportConnection(@Path("id") id: String, @Body body: ReportBody)
