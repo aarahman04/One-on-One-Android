@@ -61,6 +61,7 @@ data class OneSizes(
 )
 
 data class OneMotion(
+    val springDamping: Float = .62f, val springStiffness: Float = 420f,
     val standard: CubicBezierEasing = CubicBezierEasing(.2f, 0f, 0f, 1f),
     val emphasized: CubicBezierEasing = CubicBezierEasing(.3f, 0f, .1f, 1f),
     val fast120: Int = 120, val enter160: Int = 160, val base200: Int = 200, val slow320: Int = 320,

@@ -5,6 +5,8 @@ import app.web.oneonone.data.realtime.ConnectionState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import app.web.oneonone.data.games.GameEvent
+import kotlinx.serialization.json.JsonElement
 
 interface Transport {
     val state: StateFlow<ConnectionState>
@@ -12,6 +14,12 @@ interface Transport {
     val receipts: Flow<ReceiptUpdate>
     val reactions: Flow<ReactionUpdate>
     val ended: Flow<Unit>
+    val gameEvents: Flow<GameEvent> get() = emptyFlow()
+    suspend fun gameInvite(gameId: String, game: String): Unit = error("Not supported.")
+    suspend fun gameAccept(gameId: String): Unit = error("Not supported.")
+    suspend fun gameDecline(gameId: String): Unit = error("Not supported.")
+    suspend fun gameMove(gameId: String, seq: Int, data: JsonElement): Unit = error("Not supported.")
+    suspend fun gameEnd(gameId: String, reason: String): Unit = error("Not supported.")
     suspend fun start()
     suspend fun stop()
     suspend fun send(message: SendMessage): ChatMessage

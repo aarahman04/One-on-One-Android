@@ -3,6 +3,12 @@ package app.web.oneonone.data.transport
 import app.web.oneonone.data.model.*
 import app.web.oneonone.data.realtime.ConnectionState
 import app.web.oneonone.data.realtime.RealtimeSocket
+import app.web.oneonone.data.games.GameProtocol
+import app.web.oneonone.data.games.GameKind
+import app.web.oneonone.data.games.GameRelayException
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
+import kotlinx.serialization.json.*
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
@@ -30,6 +36,27 @@ class InternetTransport @Inject constructor(
     private val json: Json,
 ) : Transport {
     override val state = realtime.state
+    override val gameEvents = merge(*GameProtocol.events.map { name ->
+        realtime.events(name).mapNotNull { GameProtocol.decode(name, it.toString()) }
+    }.toTypedArray())
+    private suspend fun gameAck(name: String, payload: JsonObject) {
+        val ack = realtime.emitWithAck(name, JSONObject(payload.toString()))
+        if (!ack.optBoolean("ok") || ack.has("error")) throw GameRelayException(ack.optString("error", "invalid_payload"))
+    }
+    override suspend fun gameInvite(gameId: String, game: String) {
+        require(GameKind.entries.any { it.wire == game })
+        gameAck("game:invite", GameProtocol.payload(gameId) { put("game", game) })
+    }
+    override suspend fun gameAccept(gameId: String) = gameAck("game:accept", GameProtocol.payload(gameId))
+    override suspend fun gameDecline(gameId: String) = gameAck("game:decline", GameProtocol.payload(gameId))
+    override suspend fun gameMove(gameId: String, seq: Int, data: JsonElement) {
+        require(seq >= 0)
+        gameAck("game:move", GameProtocol.payload(gameId) { put("seq", seq); put("data", data) })
+    }
+    override suspend fun gameEnd(gameId: String, reason: String) {
+        require(reason.length <= 64)
+        gameAck("game:end", GameProtocol.payload(gameId) { put("reason", reason) })
+    }
     override val incoming = realtime.events("message:new").map { json.decodeFromString<ChatMessage>(it.toString()) }
     override val receipts = realtime.events("receipt:update").map { json.decodeFromString<ReceiptUpdate>(it.toString()) }
     override val reactions = realtime.events("reaction:update").map { json.decodeFromString<ReactionUpdate>(it.toString()) }

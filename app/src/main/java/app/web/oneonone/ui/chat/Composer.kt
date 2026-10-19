@@ -85,6 +85,7 @@ private val ComposerHeight = 44.dp
 
 /** Slash-command descriptions, copied from client/src/features/slashCommands.ts. */
 private val CommandDescriptions = mapOf(
+    "games" to "Play a game together",
     "letter" to "Write a letter",
     "countdown" to "Start a shared countdown",
     "checkin" to "How are you, really?",

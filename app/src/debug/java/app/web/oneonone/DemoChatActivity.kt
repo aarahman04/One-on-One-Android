@@ -31,6 +31,8 @@ import app.web.oneonone.data.model.*
 import app.web.oneonone.data.realtime.ConnectionState
 import app.web.oneonone.data.transport.Transport
 import app.web.oneonone.ui.chat.ChatScreen
+import app.web.oneonone.data.games.GameService
+import app.web.oneonone.ui.games.GameViewModel
 import app.web.oneonone.ui.chat.ChatViewModel
 import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.ui.chat.StickerViewModel
@@ -80,6 +82,7 @@ class DemoChatActivity : ComponentActivity() {
         }
     }
     private val chat: ChatViewModel by viewModels { viewModelFactory { initializer { ChatViewModel(service, account, launcher, createSavedStateHandle()) } } }
+    private val games: GameViewModel by viewModels { viewModelFactory { initializer { GameViewModel(GameService(transport, service), createSavedStateHandle()) } } }
     private val features: FeatureViewModel by viewModels { viewModelFactory { initializer {
         FeatureViewModel(service, account, DemoMedia(applicationContext, MediaRepository(applicationContext, retrofit.create(AttachmentApi::class.java), json)),
             DevicePreferences(applicationContext), createSavedStateHandle())
@@ -97,7 +100,7 @@ class DemoChatActivity : ComponentActivity() {
         setContent {
             OneOnOneTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
-                    ChatScreen(connection, chat, features, stickers, onSettings = {}, onAccount = {}, onRefresh = {})
+                    ChatScreen(connection, chat, features, stickers, onSettings = {}, onAccount = {}, onRefresh = {}, games = games)
                 }
             }
         }

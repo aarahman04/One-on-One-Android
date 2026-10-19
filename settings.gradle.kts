@@ -10,6 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://jitpack.io") { content { includeGroup("com.github.bhlangonijr") } }
     }
 }
 rootProject.name = "One on One"
