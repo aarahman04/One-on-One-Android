@@ -111,6 +111,18 @@ class FakeTransport : Transport {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MessageServiceTest {
+    @Test fun reconnectPresenceDoesNotWaitForHistoryToFinish() = runTest {
+        val transport = FakeTransport().apply { history = { _, _ -> awaitCancellation() } }
+        val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)
+        service.visible(true)
+        service.activate(connection("active", true)); runCurrent()
+        assertEquals(listOf(true), transport.presenceCalls)
+        transport.state.value = ConnectionState.Offline; runCurrent()
+        transport.state.value = ConnectionState.Connected; runCurrent()
+        assertEquals(listOf(true, true), transport.presenceCalls)
+        service.deactivate()
+    }
+
     @Test fun presenceFollowsVisibilityReconnectAndConversationTeardown() = runTest {
         val transport = FakeTransport()
         val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)

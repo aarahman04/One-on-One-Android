@@ -10,10 +10,14 @@ clears on disconnect/conversation teardown; own network status keeps priority.
 PR #27 is merged. Owner requested unchanged versionCode 12 / versionName 2.0.5.
 
 Verification: `gradlew.bat --no-daemon assembleDebug lintDebug testDebugUnitTest`
-passed: 128 tests, zero failures/errors, lint passed. Backend build + 39 tests,
+passed: 129 tests, zero failures/errors, lint passed. Backend build + 39 tests,
 web build + 16 tests and isolated Chromium 1280/360px presence checks passed.
-No physical-phone/live-account verification claimed. Backend/web deployment is
-tracked in the sibling repo; no Supabase migration is needed.
+No physical-phone/live-account verification claimed. Backend/web
+[PR #107](https://github.com/aarahman04/One-on-One/pull/107) merged as `32233b1`;
+Railway deployment `6d5e5a0d-c2ff-455b-9545-f2e8dc296173` succeeded and production
+`/health` returned `ok`. Vercel reported success. No Supabase migration is needed.
+Presence reconnect handling runs independently of REST history resync; a blocked
+history request cannot prevent the current foreground state from being resent.
 
 Xiaomi checks: foreground/background both phones; phone + web stays Online while
 either is active; reconnect resends current state; fresh receipts cannot override

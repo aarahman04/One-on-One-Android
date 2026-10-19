@@ -125,10 +125,10 @@ class MessageService @Inject constructor(
         } }
         conversation.launch { transport.state.collect {
             mutablePresence.value = null
-            if (it == ConnectionState.Connected) {
-                transport.presence(chatResumed)
-                guarded { resync() }
-            }
+            if (it == ConnectionState.Connected) transport.presence(chatResumed)
+        } }
+        conversation.launch { transport.state.collect {
+            if (it == ConnectionState.Connected) guarded { resync() }
         } }
         conversation.launch {
             while (isActive) {
