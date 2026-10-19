@@ -1,5 +1,55 @@
 # Android milestone progress
 
+## Mini-games (2026-10-19, no version change)
+
+Branch `feat/mini-games`, based on `origin/main`. Adds `/games` with a themed hub,
+in-chat invitations (30-second expiry), cancel/accept/decline, five full-screen
+two-player games, result/rematch, resign/leave confirmation and disconnect pause.
+Commands and relay events never enter the message payload validator or Room.
+Backend repo unchanged; API authority is its §10 Games relay. No new endpoint,
+event, socket, push notification or versionCode change.
+
+Rebased onto `origin/main` (`372f0e0`, PRs #29 and #31 merged). Keeps `/audio`
+and `/games`, draft clearing before every command, and all nine slash commands.
+Main's instant read/delivered receipts and instant leave/export remain intact.
+
+Pure Kotlin engines cover chess (chesslib 1.3.7), table tennis, Connect 4,
+tic-tac-toe and 5×5 Dots & Boxes. Both peers check move legality/order; invalid
+remote moves end with a clear notice. Table tennis uses host authority, display
+frames, 29.4 Hz relay, bounded guest prediction, increasing ball speed and first
+to seven. Chess includes original vectors, black rotation, selection/drag,
+promotion, captured pieces and all requested check/draw outcomes. Board surfaces
+use OneTheme, motion, haptics and semantic controls; no bitmap/emoji game icons.
+Saved IDs/roles are scoped to account/conversation; rotation keeps live engines,
+process restoration cleanly ends the prior game. KEEP_SCREEN_ON is screen-scoped.
+Tic-tac-toe's optional best-of-three tally is local across ordinary rematches;
+the documented invite/move schemas have no shared series metadata.
+
+Validation: `gradlew.bat assembleDebug lintDebug testDebugUnitTest` passed:
+193 tests, zero failures/errors/skips; strict lint passed with no issues.
+This includes 35 new game tests and the added slash-command test. JVM checks
+exercise game rules, validation, ordering, invitation/disconnect timers, late
+events, restoration and relay pacing. `git diff --check` passed. Build tooling
+still emits its existing SDK XML / Gradle deprecation notices; no lint baseline
+or new lint exclusion was added.
+No physical-device or live two-account testing is claimed. Mobile-data latency,
+actual frame pacing, touch feel, light/dark rendering and TalkBack require phones.
+
+### Xiaomi checklist
+
+- [ ] `/games` blocked when partner offline; same notice on `partner_offline` ack.
+- [ ] Invite / accept / decline / cancel / 30-second timeout.
+- [ ] Each of the 5 games played to a result; verify chess castling, en passant,
+  all four promotions, check/mate, stalemate, repetition, 50-move/material draw.
+- [ ] Rematch; fresh board and UUID; tic-tac-toe best of 3 tally.
+- [ ] Resign; leave mid-game; Back confirms leaving.
+- [ ] Partner kills app mid-game -> “Waiting for <nickname>…” then end after 15 s.
+- [ ] Rotation mid-game on both phones; kill/relaunch ends the previous game.
+- [ ] Table tennis smooth on mobile data and Wi-Fi; 3-2-1 serve, drag, first to 7.
+- [ ] Light and dark mode; large fonts; TalkBack every square/cell/line and turn.
+- [ ] Screen awake during play; normal screen timeout restored on result/exit.
+- [ ] Incoming call controls remain visible and answerable over a game.
+
 ## Instant leave, zip export, server gates, instant receipts (P3, 2026-10-19, 12 / 2.0.5 unchanged)
 
 Branch `feat/instant-leave-export`, against the contract of backend PR #109

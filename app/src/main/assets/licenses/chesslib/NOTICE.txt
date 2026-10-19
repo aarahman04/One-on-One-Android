@@ -1,0 +1,8 @@
+chesslib 1.3.7
+Copyright 2017 Ben-Hur Carlos Vieira Langoni Junior
+https://github.com/bhlangonijr/chesslib/tree/1.3.7
+Licensed under the Apache License, Version 2.0; see LICENSE.txt.
+Used without source modifications for legal chess moves and game outcomes.
+The upstream 1.3.7 distribution does not contain a separate NOTICE file.
+
+The chess and game icon silhouettes in this app are original vector artwork.

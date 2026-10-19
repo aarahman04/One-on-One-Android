@@ -1,5 +1,84 @@
 # Native Android architecture
 
+## Mini-games — ephemeral two-player relay (2026-10-19)
+
+`/games` is a composer command, never a message type. `GameViewModel` owns
+invitations, engines, results and timers. `GameService` sits beside MessageService
+and reads its active account/conversation and presence. All five acknowledged
+events pass through Transport -> InternetTransport -> the existing RealtimeSocket.
+No extra socket, push notification, REST endpoint, Room row or server persistence.
+The authority is sibling `docs/API-CONTRACT.md` §10, Games relay.
+
+```mermaid
+sequenceDiagram
+    participant A as Inviter UI / GameViewModel
+    participant GA as GameService / Transport / InternetTransport
+    participant S as Shared RealtimeSocket / backend relay
+    participant GB as Partner transport / GameService
+    participant B as Partner GameViewModel / UI
+    A->>GA: UUID + gameInvite(gameId, game)
+    GA->>S: game:invite {gameId, game} + ack
+    S->>GB: game:invite + from
+    GB->>B: In-chat invitation (30 s expiry)
+    B->>GB: Accept
+    GB->>S: game:accept {gameId} + ack
+    S->>GA: game:accept + from
+    GA->>A: Start as player 1
+    loop Board moves or 29.4 Hz table tennis packets
+        A->>GA: Validate local move; seq + data
+        GA->>S: game:move {gameId, seq, data} + ack
+        S->>GB: game:move + from
+        GB->>B: Validate sender, gameId, sequence, turn and rules
+        Note over A,B: Same pure Kotlin rules on both phones; illegal/order errors end the game
+    end
+    A->>GA: Resign / leave / cancel / invalid move
+    GA->>S: game:end {gameId, reason} + ack
+    S->>GB: game:end + from
+    GB->>B: Clear play state; show result
+```
+
+Board games use a single sequence starting at zero across both players; dots
+retains the player's turn on a completed box. Table tennis has a sequence per
+sender: host physics at display rate, 34 ms packet interval, bounded guest
+extrapolation with smoothing, substep paddle collisions and a three-second serve.
+The host waits for acknowledgement of the final-score packet before its result.
+The guest starts transmitting only after accept is acknowledged. Both validate
+finite court coordinates, paddle limits, score progression and envelope ordering.
+Game packets are never retried after uncertain delivery: a lost relay pauses for
+15 seconds then ends, preserving strict duplicate/out-of-order rejection.
+
+Chess uses chesslib 1.3.7, with generated legal-move membership checked before
+`doMove`. Check, castling, en passant, all promotions, mate, stalemate, repetition,
+50-move and material draws are local. Original themed vectors represent pieces.
+Licenses and upstream attribution ship under `assets/licenses`; see
+[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
+
+The activity's Hilt ViewModel survives rotation; SavedStateHandle records the
+game ID, role, game kind and account/conversation scope. Restoring a process never
+restores an incomplete board: it ends the old game once the shared socket returns.
+A different account/conversation discards the saved game. Retired IDs reject late
+accepts/moves; simultaneous invites converge on the smaller UUID. Rematches use a
+new UUID; tic-tac-toe results offer a local best-of-three tally over rematches,
+without adding undocumented relay fields. Leaving chat/backgrounding pauses play.
+The full-screen Compose surface owns KEEP_SCREEN_ON only while playing and stays
+below the existing incoming-call overlay. Theme tokens,
+original vector icons, Canvas boards and semantic controls serve light/dark mode;
+turn text announces changes and table tennis offers TalkBack paddle actions.
+
+### Xiaomi checklist
+
+- [ ] `/games` blocked when partner offline (including `partner_offline` ack).
+- [ ] Invite, accept, decline, cancel and 30-second invitation timeout.
+- [ ] Each of the 5 games played to a result (chess special moves/draws included).
+- [ ] Rematch uses a fresh game; tic-tac-toe best of 3 and score tally.
+- [ ] Resign and leave mid-game; Back asks before leaving.
+- [ ] Partner kills app mid-game -> pause, then end after 15 seconds.
+- [ ] Rotate mid-game on both phones; process kill/relaunch ends the old game.
+- [ ] Table tennis smooth on mobile data and Wi-Fi; countdown, paddle drag, first to 7.
+- [ ] Light and dark mode, large text, TalkBack cell/line controls and turn announcements.
+- [ ] Screen stays awake while playing and returns to normal after leaving.
+- [ ] An incoming call remains visible and answerable over a game.
+
 ## Instant leave, zip export, server gates, instant receipts (2026-10-19)
 
 Contract §10 (backend PR #109, merged). Gates: `GET /api/me` timestamps are truth;
@@ -35,6 +114,7 @@ sequenceDiagram
   P->>P: zip written
   P->>B: POST /connections/:id/acknowledge-end (404 = done)
   P->>P: Room cache cleared, home code screen
+```
 
 ## Letter pagination, dictation, swipe (2026-10-19)
 

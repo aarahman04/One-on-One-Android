@@ -1,6 +1,12 @@
 package app.web.oneonone.ui.chat
 
 import android.Manifest
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.web.oneonone.ui.games.GameViewModel
+import app.web.oneonone.ui.games.GameHost
+import app.web.oneonone.ui.games.GameInviteBanner
 import androidx.core.content.FileProvider
 import java.io.File
 import java.util.UUID
@@ -102,8 +108,10 @@ internal fun receiptLabel(message: ChatMessage, readAt: String?, deliveredAt: St
 
 @Composable
 fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: FeatureViewModel, stickers: StickerViewModel, onSettings: () -> Unit, onAccount: () -> Unit, onRefresh: () -> Unit, accountError: String? = null,
-               partnerAvatar: Pair<String, String>? = null) {
+               partnerAvatar: Pair<String, String>? = null,
+               games: GameViewModel = viewModel(viewModelStoreOwner = LocalActivity.current as ComponentActivity)) {
     val context = LocalContext.current
+    val gameError by games.error.collectAsState()
     val messages by vm.messages.collectAsState()
     val draft by vm.draft.collectAsState()
     val replyTo by vm.replyTo.collectAsState()
@@ -275,8 +283,13 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val (dictation, beginDictation) = rememberDictation(
         onText = { text -> vm.draft(if (draft.isBlank()) text else draft.trimEnd() + " " + text) }, onError = features::showError)
     // Picking a command consumes the "/" draft, which also closes the slash menu.
-    val runCommand = { name: String -> features.clearError(); vm.draft("")
-        if (name == "audio") { if (!recording) beginDictation() } else if (name == "alarm") alarm = true else command = name }
+    val runCommand = { name: String -> features.clearError(); vm.draft(""); when (name) {
+        "audio" -> { if (!recording) beginDictation() }
+        "games" -> { keyboard?.hide(); games.hub() }
+        "alarm" -> alarm = true
+        else -> command = name
+    } }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().drawWithContent {
         drawContent()
         if (alarmGlow > 0f) {
@@ -369,6 +382,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                 onUnpin = { vm.pin(null) },
             )
         } }
+        GameInviteBanner(games)
         Reveal(liveAlarm != null) { AlarmBanner(connection.otherNickname ?: "Your One on One", acknowledgeAlarm) }
         if (featureBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -442,7 +456,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             // Offline: one calm status pill (debounced so brief reconnects don't flash). Otherwise errors show for a few seconds.
             var offline by remember { mutableStateOf(false) }
             LaunchedEffect(state) { if (state == ConnectionState.Connected) offline = false else { delay(2_000); offline = true } }
-            val notice = error ?: featureError ?: accountError
+            val notice = gameError ?: error ?: featureError ?: accountError
             var shown by remember { mutableStateOf<String?>(null) }
             LaunchedEffect(notice) { shown = notice; if (notice != null) { delay(4_000); shown = null } }
             ChatNotice(if (offline) "No connection · Reconnecting…" else null, Modifier.align(Alignment.TopCenter))
@@ -502,6 +516,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     }
     selected?.let { source -> UploadContent(kind, source, featureBusy, featureErrorNow,
         send = { features.upload(connection, kind, source.toUri(), replyTo) { selected = null; vm.reply(null) } }, cancel = { selected = null }) }
+    GameHost(games, connection, partnerPhoto?.let { it to "${it.path}@${it.lastModified()}" } ?: partnerAvatar)
     command?.let { type ->
         val close = { command = null; vm.draft(""); vm.reply(null) }
         if (type == "location") LocationConfirmation(connection, features, replyTo, close)
@@ -548,6 +563,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     }
     if (leave) LeaveDialog(connection, features, busy, error, onDismiss = { leave = false }) {
         vm.leave(connection.id) { leave = false; onRefresh() }
+    }
     }
 }
 

@@ -79,6 +79,7 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 dependencies {
+    implementation(libs.chesslib)
     implementation(libs.androidx.core)
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.exif)
