@@ -227,7 +227,7 @@ internal fun BlocksScreen(state: AppState, onUnblock: (String) -> Unit, onBack: 
             }
         } else SettingsGroup("Accounts") {
             state.blocks.forEach { block ->
-                SettingsRow(R.drawable.ic_ban, block.blockedUserId,
+                SettingsRow(R.drawable.ic_ban, "Blocked account",
                     trailing = SettingsTrailing.Action("Unblock", enabled = !state.busy) { onUnblock(block.blockedUserId) })
             }
         }

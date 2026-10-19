@@ -126,7 +126,7 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
         }
     }
     val valid = runCatching { validateFeaturePayload(connection.id, type, payload); require(type != "letter" || third.isNotBlank()) }.isSuccess
-    FeatureModal(onDismissRequest = { if (!busy) close() }, title = { Text(if (preview) "Preview letter" else "/$type") },
+    FeatureModal(onDismissRequest = { if (!busy) close() }, title = { Text(if (preview) "Preview letter" else CommandTitles[type] ?: type) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (preview) LetterBody(ChatMessage(senderId = connection.myUserId, content = third, createdAt = Instant.now().toString(), type = "letter", payload = payload))
             else when (type) {
@@ -187,7 +187,7 @@ private fun ChoiceButton(option: String, selected: Boolean, enabled: Boolean = t
         shape = RoundedCornerShape(OneTheme.radii.xs4), color = OneTheme.colors.bg,
         border = BorderStroke(1.dp, if (selected) OneTheme.colors.accentOther else OneTheme.colors.border)) {
         Box(Modifier.defaultMinSize(minHeight = OneTheme.sizes.touch40).padding(horizontal = 14.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
-            Text(if (option in Moods) "${moodEmoji(option)} $option" else option.replace('_', ' '),
+            Text(choiceLabel(option),
                 style = MaterialTheme.typography.labelMedium, color = (if (selected) OneTheme.colors.text else OneTheme.colors.textDim).copy(alpha = if (enabled) 1f else .5f))
         }
     }
@@ -207,6 +207,26 @@ internal fun FeatureModal(onDismissRequest: () -> Unit, title: @Composable () ->
         }
     }
 }
+
+/** Human labels for payload values shown as choices; unknown values fall back to readable text. */
+internal fun choiceLabel(option: String): String = when (option) {
+    in Moods -> "${moodEmoji(option)} ${option.replaceFirstChar { it.uppercase() }}"
+    "a" -> "Option A"; "b" -> "Option B"
+    "off" -> "None"; "love" -> "Love"; "samurai" -> "Samurai"; "dark" -> "Dark"; "light" -> "Light"
+    "txt" -> "Plain text"; "json" -> "JSON"; "html" -> "Web page"
+    "child_safety" -> "Child safety"; "hate" -> "Hate speech"; "sexual" -> "Sexual content"
+    else -> option.replace('_', ' ').replaceFirstChar { it.uppercase() }
+}
+
+/** "You changed the wallpaper to Samurai" instead of raw payload keys. */
+internal fun systemEventText(who: String, event: String?, value: String?): String = when (event) {
+    "wallpaper" -> if (value == null || value == "off") "$who turned off the wallpaper" else "$who changed the wallpaper to ${choiceLabel(value)}"
+    null -> "$who changed a chat setting"
+    else -> "$who changed the ${event.replace('_', ' ')}${value?.let { " to ${choiceLabel(it)}" } ?: ""}"
+}
+
+private val CommandTitles = mapOf("letter" to "Write a letter", "ask" to "Ask a sealed question", "thisorthat" to "This or that",
+    "countdown" to "Start a countdown", "checkin" to "Check in")
 
 private fun moodEmoji(mood: String) = listOf("😄", "🙂", "😐", "😔", "😞").getOrElse(Moods.indexOf(mood)) { "" }
 
@@ -316,12 +336,12 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
     Column(Modifier.widthIn(min = if (message.type == "image") 0.dp else 224.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             when (message.type) {
                 "letter" -> {
-                    CardHeading("✉", "A letter for ${payload.text("to")}")
+                    CardHeading(R.drawable.ic_mail, "A letter for ${payload.text("to")}")
                     CardAction("Open letter", onClick = { reveal = true })
                     if (reveal) LetterViewer(message, onLetterDownload, close = { reveal = false }, connection = connection.id, speech = speech, read = onReadLetter)
                 }
                 "ask" -> {
-                    CardHeading(if (payload.text("answerB").isNotBlank()) "💌" else "🔒", payload.text("question"))
+                    CardHeading(if (payload.text("answerB").isNotBlank()) R.drawable.ic_heart else R.drawable.ic_lock, payload.text("question"))
                     if (payload.text("answerB").isNotBlank()) {
                         val author = original?.senderId ?: if (mine) "other" else connection.myUserId
                         Text("${if (author == connection.myUserId) "You" else connection.otherNickname ?: "Them"}: ${payload.text("answerA")}")
@@ -342,7 +362,7 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                     val a = payload.text("optionA"); val b = payload.text("optionB")
                     val colors = LocalBubbleColors.current
                     val revealed = payload.text("pickRecipient").isNotBlank()
-                    if (revealed) CardHeading("🎲", "This or that?")
+                    if (revealed) CardHeading(R.drawable.ic_shuffle, "This or that?")
                     else Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(painterResource(R.drawable.ic_lock), null, tint = colors.text, modifier = Modifier.size(16.dp))
                         Text("This or that?", style = OneTextStyles.cardHeading, color = colors.text)
@@ -367,14 +387,14 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                         CardHint(if (mine) "Sealed — waiting for their choice." else "Their choice is sealed. Tap yours.")
                     }
                 }
-                "checkin" -> { CardHeading(moodEmoji(payload.text("mood")), payload.text("mood")); Text(payload.text("note")) }
+                "checkin" -> { CardHeading(R.drawable.ic_smile, "${moodEmoji(payload.text("mood"))} ${payload.text("mood").replaceFirstChar { it.uppercase() }}".trim()); Text(payload.text("note")) }
                 "countdown" -> {
                     var remaining by remember(payload.text("targetIso")) { mutableStateOf("") }
                     LaunchedEffect(payload.text("targetIso")) { while (true) {
                         remaining = runCatching { countdownText(payload.text("targetIso")) }.getOrDefault("Unavailable")
                         delay(1_000)
                     } }
-                    CardHeading("⏳", payload.text("label")); CardHint(remaining)
+                    CardHeading(R.drawable.ic_hourglass, payload.text("label")); CardHint(remaining)
                     CardHint(runCatching { FullFormat.withZone(ZoneId.systemDefault()).format(Instant.parse(payload.text("targetIso"))) }.getOrDefault(""))
                 }
                 "location" -> {
@@ -384,7 +404,7 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                             Box(Modifier.size(64.dp).clip(RoundedCornerShape(OneTheme.radii.sm6)).background(OneTheme.colors.bg)) {
                                 AsyncImage(if (LocalInspectionMode.current) null else locationTile(lat, lng), "Map preview of shared location", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                                     placeholder = ColorPainter(OneTheme.colors.bgRaised))
-                                Text("📍", Modifier.align(Alignment.Center), fontSize = 20.sp)
+                                Icon(painterResource(R.drawable.ic_map_pin), null, Modifier.align(Alignment.Center).size(24.dp), tint = OneTheme.colors.danger)
                             }
                             Text("Snapshot, not live tracking", Modifier.weight(1f).padding(end = 4.dp), style = OneTextStyles.cardHeading,
                                 color = LocalBubbleColors.current.text, maxLines = 2, overflow = TextOverflow.Ellipsis)

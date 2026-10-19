@@ -37,7 +37,7 @@ fun CallLogCard(message: ChatMessage, isMine: Boolean, onSend: (type: String, pa
     } else if (isMine) R.drawable.ic_call_log_phone_out else R.drawable.ic_call_log_phone_in
     Row(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(36.dp).clip(CircleShape).background(OneTheme.colors.discBg), contentAlignment = Alignment.Center) {
-            Icon(painterResource(icon), if (kind == "video") "📹" else "📞", Modifier.size(19.dp),
+            Icon(painterResource(icon), if (kind == "video") "Video call" else "Voice call", Modifier.size(19.dp),
                 tint = if (missed) OneTheme.colors.danger else LocalBubbleColors.current.text)
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
