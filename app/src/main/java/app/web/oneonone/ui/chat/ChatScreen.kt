@@ -430,7 +430,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                         if (index == 0 || dayLabel(messages[index - 1].createdAt) != day) DateSeparator(day)
                         val mine = message.senderId == connection.myUserId
                         if (message.type == "system") {
-                            SystemLine("${if (mine) "You" else "They"} changed ${message.payload?.get("event")?.jsonPrimitive?.content} to ${message.payload?.get("value")?.jsonPrimitive?.content}")
+                            SystemLine(systemEventText(if (mine) "You" else connection.otherNickname ?: "They", message.payload?.get("event")?.jsonPrimitive?.content, message.payload?.get("value")?.jsonPrimitive?.content))
                             return@itemsIndexed
                         }
                         val label = receiptLabel(message, newerTime(connection.otherLastReadAt, receipts?.lastReadAt),
@@ -656,7 +656,7 @@ private fun EncryptionNote() {
     val c = OneTheme.colors
     Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Icon(painterResource(R.drawable.ic_lock), null, tint = c.muted, modifier = Modifier.size(11.dp))
-        Text("Messages are encrypted", color = c.muted, style = OneTextStyles.bubbleMeta)
+        Text("Messages are encrypted on our servers", color = c.muted, style = OneTextStyles.bubbleMeta)
     }
 }
 

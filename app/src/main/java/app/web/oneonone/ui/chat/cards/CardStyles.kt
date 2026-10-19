@@ -5,7 +5,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -23,9 +26,9 @@ import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 
 @Composable
-internal fun CardHeading(icon: String, title: String) {
+internal fun CardHeading(@DrawableRes icon: Int, title: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(icon, fontSize = 16.sp, color = LocalBubbleColors.current.text)
+        Icon(painterResource(icon), null, Modifier.size(18.dp), tint = LocalBubbleColors.current.text)
         Text(title, style = OneTextStyles.cardHeading, color = LocalBubbleColors.current.text)
     }
 }

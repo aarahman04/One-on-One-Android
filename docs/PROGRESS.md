@@ -1,5 +1,23 @@
 # Android milestone progress
 
+## Polish + 2.0.6 release (2026-10-19, versionCode 13 / 2.0.6, fix/pro-polish)
+- Card headings use vector icons (letter, ask, this-or-that, check-in, countdown, location pin, alarm siren) instead of emoji; `alarm_title` and alarm status lines are plain text.
+- Call log icon reads "Video call"/"Voice call" to TalkBack instead of emoji names.
+- Human labels for choices (moods, Option A/B, wallpapers, theme, export formats, report categories) and system lines ("You changed the wallpaper to Samurai").
+- Composer titles read "Write a letter", "Ask a sealed question", "This or that", "Start a countdown", "Check in" instead of raw `/command`.
+- Encryption note says "Messages are encrypted on our servers" (encrypted at rest, not end-to-end). Blocked list no longer shows raw user IDs. Loading screen follows the theme.
+- Parakeet (CC-BY-4.0) and Kokoro (Apache-2.0) server-side attribution in docs/THIRD-PARTY-LICENSES.md.
+- Release workflow defaults bumped to versionCode 13 / 2.0.6. Round contents: Android #29, #30, #31, #32, this PR; backend #109, #110.
+- Verification: `gradlew.bat assembleDebug lintDebug testDebugUnitTest` passed (211 tests). Build-verified only.
+
+### Xiaomi checklist
+- [ ] Card headings show icons (no emoji) in light and dark; alarm card shows siren icon.
+- [ ] TalkBack on a call log card says "Voice call"/"Video call".
+- [ ] Appearance and export choices show readable labels; changing wallpaper shows a readable system line.
+- [ ] Each slash composer shows a readable title.
+- [ ] Settings > Blocked shows "Blocked account".
+- [ ] Full 2.0.6 regression: sign out/in no gates, leave + zip, partner-left, ticks, games, letters (PDF, natural voice), /audio.
+
 ## Natural letter voice and recorded /audio (2026-10-19, no version change)
 
 Branch `feat/natural-voice`, based on `origin/main` after mini-games. Keeps the

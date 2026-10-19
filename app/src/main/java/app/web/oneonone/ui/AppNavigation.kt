@@ -216,7 +216,7 @@ private fun HomeScreen(
     onSettings: () -> Unit,
 ) {
     if (state.route == BootRoute.Loading) {
-        Box(Modifier.fillMaxSize().background(OneColors.Dark.bg), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(OneTheme.colors.bg), contentAlignment = Alignment.Center) {
             // Same vector at the system splash icon's 240dp, so the hand-off doesn't jump.
             Image(painterResource(R.drawable.splash_logo), null, Modifier.size(240.dp))
         }

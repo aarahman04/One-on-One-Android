@@ -11,3 +11,7 @@
 
 Existing sticker attribution remains in `app/src/main/assets/stickers/NOTICE.txt`;
 font attribution remains in `docs/design/fonts-LICENSE.txt`.
+
+## Server-side speech models (not shipped in the APK)
+- Kokoro-82M (hexgrad), Apache-2.0 — letter narration, voice `af_heart`.
+- NVIDIA Parakeet TDT 0.6B v3, CC-BY-4.0 — speech-to-text. Attribution: "Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)."

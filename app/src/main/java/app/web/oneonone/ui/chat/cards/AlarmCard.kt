@@ -8,6 +8,9 @@ import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import app.web.oneonone.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,7 +47,7 @@ interface AlarmCardEntryPoint { fun messages(): MessageService }
 fun AlarmCard(message: ChatMessage, isMine: Boolean, onSend: (type: String, payload: JsonObject, replyTo: String?) -> Unit) {
     if (AlarmPolicy.ackOf(message) != null) {
         val who = if (isMine) "You" else "They"
-        Text(if (AlarmPolicy.isCancel(message)) "⛔ $who cancelled the alarm" else "✅ $who acknowledged the alarm",
+        Text(if (AlarmPolicy.isCancel(message)) "$who cancelled the alarm" else "$who acknowledged the alarm",
             style = OneTextStyles.subtitle, color = LocalBubbleColors.current.text, modifier = Modifier.padding(vertical = 4.dp))
         return
     }
@@ -86,7 +89,7 @@ internal fun AlarmContent(hint: String, tappable: Boolean, onClick: () -> Unit) 
     // The 4dp danger bar is drawn by MessageBubble on the bubble edge, like the web.
     Row(Modifier.widthIn(min = 224.dp).clickable(enabled = tappable, role = Role.Button, onClick = onClick),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("🚨", fontSize = 16.sp, color = danger)
+            Icon(painterResource(R.drawable.ic_siren), null, Modifier.size(18.dp), tint = danger)
             Column {
                 Text("Emergency alarm", style = OneTextStyles.cardHeading, color = LocalBubbleColors.current.text)
                 CardHint(hint)
