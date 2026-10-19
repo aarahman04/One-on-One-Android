@@ -1,5 +1,37 @@
 # Android milestone progress
 
+## P2 letter, audio and polish (2026-10-19, 12 / 2.0.5 unchanged)
+
+Branch `feat/letter-audio`. Client only; no backend, contract or versionCode change.
+
+- Letter PDF: signature is unbreakable and always on the last page foot, kept with at
+  least the last 3 body lines. A letter that overflows one page only by the signature
+  steps 20 -> 18 -> 17pt to fit one page (pure `planLetterPages`/`chooseLetterSize`,
+  unit tested). On-screen `LetterBody` scales margins/type/spacing from the PDF's A4
+  points (no shrink step in the preview; it does not paginate).
+- Letter reciter: speaker button in the viewer title (TextToSpeech, lazy init, stops and
+  shuts down on close); friendly in-modal notice if TTS is unavailable.
+- `/audio`: client-only dictation (SpeechRecognizer, system dialog fallback), text is
+  appended to the composer draft and sent through the normal path. Not a message type.
+- /ask meta stays at the bubble end for text-only cards; /thisorthat tiles; swipe-to-reply
+  claims only clearly horizontal drags; reactions are a single WhatsApp-style pill.
+
+Verification: `gradlew.bat assembleDebug lintDebug testDebugUnitTest` passed. Pixel_9a
+emulator (debug demo) checked letter preview, speaker start/stop, /ask send, /thisorthat
+revealed tiles, swipe-to-reply. Not checked on a phone: PDF output, /audio, light mode.
+
+### Xiaomi checklist
+
+- Full-page letter keeps the signature with the body on page 1; page 2 never starts with the signature alone.
+- Downloaded PDF matches the preview.
+- Speaker reads the letter, tapping again stops it, closing the viewer stops it.
+- `/audio` fills the composer; denying the microphone shows a friendly message.
+- /ask time and ticks sit bottom-right on mine.
+- /thisorthat tiles in composer, sealed (tappable) and revealed (You/partner chips, "You matched!").
+- Fast vertical or diagonal scrolling never starts a reply.
+- Swipe left on mine and right on theirs replies smoothly (rubber band, one haptic).
+- Reactions show as a WhatsApp-style pill overlapping the bubble, readable in light and dark.
+
 ## Live presence follow-up (2026-10-19, 12 / 2.0.5 unchanged)
 
 Branch `feat/live-presence` implements the sibling backend's documented presence

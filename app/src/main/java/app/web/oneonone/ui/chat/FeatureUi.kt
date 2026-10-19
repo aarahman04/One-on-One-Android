@@ -9,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -130,7 +132,9 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
                 "ask" -> { Field("Question", first, 300) { first = it }; Field("Your answer (sealed until they answer)", second, 500) { second = it } }
                 "thisorthat" -> {
                     Field("Option A", first, 100) { first = it }; Field("Option B", second, 100) { second = it }
-                    Text("Your choice stays sealed until they choose."); Choices(listOf("a", "b"), choice) { choice = it }
+                    Text("Your choice stays sealed until they choose.")
+                    OptionTiles(first.trim().ifBlank { "Option A" }, second.trim().ifBlank { "Option B" }, OneTheme.colors.text, OneTheme.colors.border,
+                        OneTheme.colors.bgRaised, selected = choice, onPick = { choice = it })
                 }
                 "countdown" -> {
                     Field("Countdown label", first, 100) { first = it }
@@ -204,12 +208,16 @@ private fun moodEmoji(mood: String) = listOf("😄", "🙂", "😐", "😔", "�
 @Composable internal fun LetterBody(message: ChatMessage) {
     val maxHeight = with(LocalDensity.current) { (LocalWindowInfo.current.containerSize.height * .62f).toDp() }
     BoxWithConstraints(Modifier.widthIn(max = 560.dp).fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState())) {
+        // Margins, type and spacing are the PDF's A4 points (595 wide, 64 margin, 20pt) scaled to this width, so lines break alike.
+        val scale = maxWidth.value / 595f
+        val density = LocalDensity.current
         Column(Modifier.fillMaxWidth().heightIn(min = maxWidth * 1.414f).shadow(2.dp, RoundedCornerShape(2.dp)).background(Color.White)
-            .padding(horizontal = 28.dp, vertical = 36.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            val style = TextStyle(fontFamily = FontFamilies.Letter, fontSize = 22.sp, lineHeight = 32.sp, color = Color.Black)
-            Text(letterDate(message), Modifier.align(Alignment.End), style = style.copy(fontSize = 18.sp))
+            .padding((64 * scale).dp), verticalArrangement = Arrangement.spacedBy((18 * scale).dp)) {
+            val style = TextStyle(fontFamily = FontFamilies.Letter, fontSize = with(density) { (20 * scale).dp.toSp() },
+                lineHeight = with(density) { (32 * scale).dp.toSp() }, color = Color.Black)
+            Text(letterDate(message), Modifier.align(Alignment.End), style = style)
             Text("Dear ${message.payload.text("to")},", style = style)
-            Text(message.content, Modifier.padding(start = 28.dp), style = style)
+            Text(message.content, Modifier.padding(start = (28 * scale).dp), style = style)
             // Signature sits at the foot of the page, so even a one-line letter reads as a full page.
             Spacer(Modifier.weight(1f))
             Text("With love,\n${message.payload.text("from")}", Modifier.align(Alignment.End), style = style, textAlign = TextAlign.End)
@@ -323,25 +331,31 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                 }
                 "thisorthat" -> {
                     val a = payload.text("optionA"); val b = payload.text("optionB")
-                    CardHeading("🎲", "$a or $b?")
-                    if (payload.text("pickRecipient").isNotBlank()) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
-                        Text(a, Modifier.weight(1f), style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.SemiBold))
-                        CardHint("vs")
-                        Text(b, Modifier.weight(1f), style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.SemiBold))
+                    val colors = LocalBubbleColors.current
+                    val revealed = payload.text("pickRecipient").isNotBlank()
+                    if (revealed) CardHeading("🎲", "This or that?")
+                    else Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.ic_lock), null, tint = colors.text, modifier = Modifier.size(16.dp))
+                        Text("This or that?", style = OneTextStyles.cardHeading, color = colors.text)
                     }
+                    if (revealed) {
+                        // The sender's pick is pickSender; the pick in the reply belongs to whoever sent that reply.
                         val author = original?.senderId ?: if (mine) "other" else connection.myUserId
-                        Text("${if (author == connection.myUserId) "You" else connection.otherNickname ?: "Them"}: ${if (payload.text("pickSender") == "a") a else b}")
-                        Text("${if (mine) "You" else connection.otherNickname ?: "Them"}: ${if (payload.text("pickRecipient") == "a") a else b}")
-                    } else if (mine) CardHint("Sealed — waiting for their choice.")
-                    else {
-                        CardHint("Their choice is sealed.")
-                        if (message.id != null) FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { listOf("a" to a, "b" to b).forEach { (pick, label) ->
-                            CardAction(label, enabled = !busy, onClick = {
+                        val senderIsMe = author == connection.myUserId
+                        val partner = connection.otherNickname ?: "Them"
+                        val picks = mutableMapOf<String, List<String>>()
+                        fun mark(pick: String, who: String) { picks[pick] = picks[pick].orEmpty() + who }
+                        mark(payload.text("pickSender"), if (senderIsMe) "You" else partner)
+                        mark(payload.text("pickRecipient"), if (mine) "You" else partner)
+                        OptionTiles(a, b, colors.text, colors.edge, colors.backgroundStart, picks = picks)
+                        if (payload.text("pickSender") == payload.text("pickRecipient")) Text("You matched!", style = OneTextStyles.cardHeading)
+                    } else {
+                        OptionTiles(a, b, colors.text, colors.edge, colors.backgroundStart, enabled = !busy,
+                            onPick = if (!mine && message.id != null) { pick ->
                                 val response = buildJsonObject { payload?.forEach { (k, v) -> put(k, v) }; put("pickRecipient", pick) }
                                 onSend("thisorthat", "", response, message.id) { }
-                            })
-                        } }
+                            } else null)
+                        CardHint(if (mine) "Sealed — waiting for their choice." else "Their choice is sealed. Tap yours.")
                     }
                 }
                 "checkin" -> { CardHeading(moodEmoji(payload.text("mood")), payload.text("mood")); Text(payload.text("note")) }
@@ -625,7 +639,39 @@ private fun ErrorLine(error: String?) {
 
 @Composable
 internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () -> Unit) {
-    FeatureModal(onDismissRequest = close, title = { Text("Letter") }, text = { LetterBody(message) },
+    val context = LocalContext.current.applicationContext
+    var speaking by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    val engine = remember { arrayOfNulls<TextToSpeech>(1) } // created on the first tap, shut down when the viewer closes
+    LaunchedEffect(notice) { if (notice != null) { delay(4_000); notice = null } }
+    DisposableEffect(Unit) { onDispose { engine[0]?.shutdown(); engine[0] = null } }
+    fun read(tts: TextToSpeech) {
+        val chunks = "Dear ${message.payload.text("to")}. ${message.content}. With love, ${message.payload.text("from")}.".chunked(TextToSpeech.getMaxSpeechInputLength() - 1)
+        speaking = true
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) { if (utteranceId == "letter-${chunks.lastIndex}") speaking = false }
+            @Deprecated("Deprecated in Java") override fun onError(utteranceId: String?) { speaking = false }
+            override fun onStop(utteranceId: String?, interrupted: Boolean) { speaking = false }
+        })
+        chunks.forEachIndexed { i, chunk -> tts.speak(chunk, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "letter-$i") }
+    }
+    fun toggle() {
+        val tts = engine[0]
+        if (speaking) { tts?.stop(); speaking = false }
+        else if (tts != null) read(tts)
+        else engine[0] = TextToSpeech(context) { status ->
+            val started = engine[0]
+            if (status == TextToSpeech.SUCCESS && started != null) read(started)
+            else { notice = "Reading aloud isn't available on this phone."; started?.shutdown(); engine[0] = null }
+        }
+    }
+    FeatureModal(onDismissRequest = close, title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Letter", Modifier.weight(1f))
+            OneIconButton(if (speaking) R.drawable.ic_stop else R.drawable.ic_volume, if (speaking) "Stop reading" else "Read letter aloud", { toggle() })
+        }
+    }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { ChatNotice(notice, warning = true); LetterBody(message) } },
         confirmButton = { PrimaryButton("Download PDF", download) }, dismissButton = { SecondaryButton("Close", close) })
 }
 
