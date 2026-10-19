@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -261,6 +262,7 @@ internal fun MessageBubble(
     preview: (@Composable () -> Unit)? = null,
     // The full picker lives in ChatScreen: a sheet owned by a lazy row was lost when the row recomposed or left composition.
     onMoreReactions: () -> Unit = {},
+    partnerName: String = "Your partner",
 ) {
     val c = OneTheme.colors
     val motion = OneTheme.motion
@@ -275,6 +277,7 @@ internal fun MessageBubble(
     val failed = message.id == null && message.deliveryState == "failed"
     val status = if (mine && message.type != "call" && !failed) receiptOf(receipt) else Receipt.None
     var reacting by remember { mutableStateOf(false) }
+    var showReactors by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val canReply = message.id != null && message.type != "call" && !deleted
     val scope = rememberCoroutineScope()
@@ -507,16 +510,18 @@ internal fun MessageBubble(
                 if (reacting) ReactionBar(colors, mine, myReaction, onPick = { onReact(it); reacting = false }, onDismiss = { reacting = false },
                     onMore = { reacting = false; onMoreReactions() })
             }
+            if (showReactors) ReactorsSheet(message.reactions, myReaction, partnerName, onRemove = { onReact(it); showReactors = false },
+                onAdd = { showReactors = false; reacting = true }, onDismiss = { showReactors = false })
             // WhatsApp-style pill: every reaction in one rounded chip overlapping the bubble's bottom edge, inset 10dp from its
             // outer edge, ringed in the chat background so it looks cut out. It grows/shrinks in smoothly and each new emoji
-            // pops with a spring. Tapping the pill toggles my reaction, or (if I have none) joins the first one.
+            // pops with a spring. Tapping the pill lists who reacted.
             val reactions = if (deleted) emptyList() else message.reactions
             var lastReactions by remember { mutableStateOf(reactions) }
             if (reactions.isNotEmpty()) lastReactions = reactions
             val origin = TransformOrigin(if (mine) 1f else 0f, 0f)
             val total = lastReactions.sumOf { it.userIds.size }
             val reactionLabel = "Reactions: " + lastReactions.joinToString(", ") { r ->
-                r.emoji + " by " + if (r.emoji == myReaction) (if (r.userIds.size > 1) "you and your partner" else "you") else "your partner"
+                r.emoji + " by " + if (r.emoji == myReaction) (if (r.userIds.size > 1) "you and $partnerName" else "you") else partnerName
             }
             AnimatedVisibility(reactions.isNotEmpty(),
                 Modifier.layout { measurable, constraints ->
@@ -530,7 +535,7 @@ internal fun MessageBubble(
                     scaleOut(tween(180), targetScale = .5f, transformOrigin = origin)) {
                 Box(Modifier.padding(horizontal = 10.dp)) {
                     Row(Modifier.shadow(2.dp, CircleShape).background(c.bgRaised, CircleShape).border(2.dp, c.bg, CircleShape)
-                        .clip(CircleShape).clickable(role = Role.Button) { onReact(myReaction ?: lastReactions.first().emoji) }
+                        .clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Show who reacted") { showReactors = true }
                         .padding(horizontal = 6.dp, vertical = 2.dp).semantics(mergeDescendants = true) { contentDescription = reactionLabel },
                         horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                         lastReactions.forEach { reaction ->
@@ -741,4 +746,33 @@ private class TextWithMetaPolicy(private val holder: TextLayoutHolder) : Measure
 
     override fun IntrinsicMeasureScope.maxIntrinsicHeight(measurables: List<IntrinsicMeasurable>, width: Int) =
         measurables[0].maxIntrinsicHeight(width)
+}
+
+/** Who reacted with what; my own row removes it, the partner's is read-only, and "Add reaction" reopens the quick bar. */
+@Composable
+private fun ReactorsSheet(reactions: List<app.web.oneonone.data.model.ReactionSummary>, myReaction: String?, partnerName: String,
+    onRemove: (String) -> Unit, onAdd: () -> Unit, onDismiss: () -> Unit) {
+    val c = OneTheme.colors
+    app.web.oneonone.ui.components.OneModal(onDismiss, placement = app.web.oneonone.ui.components.ModalPlacement.Bottom) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Reactions", color = c.text, style = OneTextStyles.subtitle.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(bottom = 8.dp))
+            reactions.forEach { r ->
+                val mine = r.emoji == myReaction
+                if (mine) ReactorRow(r.emoji, "You", "Tap to remove", Modifier.clickable(role = Role.Button, onClickLabel = "Remove your reaction") { onRemove(r.emoji) })
+                if (r.userIds.size > (if (mine) 1 else 0)) ReactorRow(r.emoji, partnerName, null, Modifier)
+            }
+            ReactorRow(null, "+ Add reaction", null, Modifier.clickable(role = Role.Button, onClick = onAdd))
+        }
+    }
+}
+
+@Composable
+private fun ReactorRow(emoji: String?, name: String, hint: String?, modifier: Modifier) {
+    val c = OneTheme.colors
+    Row(modifier.fillMaxWidth().defaultMinSize(minHeight = OneTheme.sizes.touch40).padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (emoji != null) Text(emoji, style = OneTextStyles.bubbleText.copy(fontSize = 22.sp))
+        Text(name, Modifier.weight(1f), color = if (emoji == null) c.accentOther else c.text, style = OneTextStyles.menuItem)
+        if (hint != null) Text(hint, color = c.muted, style = OneTextStyles.cardHint)
+    }
 }

@@ -420,6 +420,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                                 else messageLinks(message.content).firstOrNull { !it.second.startsWith("tel:") }?.second
                             }?.let { url -> { LinkPreviewCard(url, vm::linkPreview) } },
                             onMoreReactions = { reactingTo = message.id },
+                            partnerName = connection.otherNickname ?: "Your partner",
                             onReact = { emoji -> selectedKeys = emptyList(); vm.react(checkNotNull(message.id), emoji,
                                 message.reactions.any { it.emoji == emoji && connection.myUserId in it.userIds }) },
                             onRetry = { if (message.deliveryState == "unknown") duplicate = message.tempId else message.tempId?.let { vm.retry(it) } },

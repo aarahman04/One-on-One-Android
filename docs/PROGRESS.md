@@ -31,6 +31,7 @@ revealed tiles, swipe-to-reply. Not checked on a phone: PDF output, /audio, ligh
 - Fast vertical or diagonal scrolling never starts a reply.
 - Swipe left on mine and right on theirs replies smoothly (rubber band, one haptic).
 - Reactions show as a WhatsApp-style pill overlapping the bubble, readable in light and dark.
+- Tap the reaction pill: a sheet shows who reacted; tap your own row to remove it; "+ Add reaction" opens the quick bar.
 
 ## Live presence follow-up (2026-10-19, 12 / 2.0.5 unchanged)
 
