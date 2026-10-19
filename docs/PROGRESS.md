@@ -1,5 +1,55 @@
 # Android milestone progress
 
+## Natural letter voice and recorded /audio (2026-10-19, no version change)
+
+Branch `feat/natural-voice`, based on `origin/main` after mini-games. Keeps the
+letter design and title speaker control; a ViewModel now owns authenticated
+part downloads, loading/play/pause/stop, a single next-part prefetch and two
+linked MediaPlayers. Cache files and players are released on stop, dismiss,
+audio-focus loss and backgrounding; rotation retains the session. Device TTS
+remains the fallback for network/503/504 failures, with an in-modal notice.
+Missing letters show the requested 404 notice. Device voice resumes at the
+latest word boundary reported by the engine (or the last completed chunk).
+
+`/audio` now records a separate AAC/MPEG-4 temp file, shows the existing
+listening bar with a timer, then uploads raw `audio/mp4` to `/api/transcribe`.
+The limit is 120 seconds / 3 MB. Success appends to the current draft and
+focuses the composer; it never sends or creates a voice-note message. Cancel
+aborts recording/upload and deletes the file. Voice-note and dictation recorder
+ownership are mutually exclusive, including during asynchronous cleanup.
+SpeechRecognizer / system recognition remains the fallback for network/503/504;
+no-speech, too-long and rate-limit responses stay in-app. The first-use language
+hint is persisted in DevicePreferences. No dependency or versionCode change.
+
+Only the two endpoints supplied in the owner-approved Speech (2.0.6) contract
+are used; narration sends connection/message IDs and part index, never text.
+The backend repo is unchanged. The backend feature branch was not yet published
+when implementation began; live endpoint/deployment verification remains open.
+
+Validation: `gradlew.bat assembleDebug lintDebug testDebugUnitTest` passed;
+211 JVM tests, zero failures/errors/skips, strict lint reports no issues.
+The 18 new speech tests exercise sequential prefetch/handoff, rapid taps,
+pause at a part boundary, stop/focus loss, missing/inconsistent parts, device
+fallback, transcription success/errors/cancel/late results, timer/length caps,
+recorder-start cleanup, external-result tokens and draft whitespace. Retrofit
+tests check authenticated ID-only narration GETs and raw audio/mp4 POSTs.
+`git diff --check` passed. Existing SDK XML / Gradle deprecation notices remain.
+No physical-device, live-backend or two-account verification is claimed.
+
+### Xiaomi checklist
+
+- [ ] Natural voice reads short and long letters fully, across all parts.
+- [ ] Pause / resume / stop; close letter stops audio; rapid taps never overlap.
+- [ ] Rotation keeps playback and controls; backgrounding and audio-focus loss stop it.
+- [ ] Airplane mode -> "Natural voice unavailable, using device voice" fallback.
+- [ ] `/audio` records Indian-English speech, transcribes into the box without sending.
+- [ ] Existing draft text is preserved when dictated text is appended; input focuses.
+- [ ] Cancel during recording and upload; no late text or leftover temp file.
+- [ ] Silence -> "Didn't catch that. Try again."; two-minute limit and timer.
+- [ ] Voice notes are unaffected; neither recorder can start over the other.
+- [ ] First-use language hint appears once; device speech fallback can be cancelled.
+- [ ] Light/dark mode, large fonts, TalkBack control labels; no device testing claimed.
+
 ## Mini-games (2026-10-19, no version change)
 
 Branch `feat/mini-games`, based on `origin/main`. Adds `/games` with a themed hub,

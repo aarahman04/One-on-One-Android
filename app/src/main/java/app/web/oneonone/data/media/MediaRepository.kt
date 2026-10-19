@@ -121,7 +121,7 @@ class MediaRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: AttachmentApi,
     private val json: Json,
-) : MediaGateway {
+) : MediaGateway, DictationRecorder {
     private val signing = Mutex()
     private val urls = mutableMapOf<String, Pair<String, Long>>()
     private val downloadClient = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
@@ -129,6 +129,8 @@ class MediaRepository @Inject constructor(
     private var recorder: MediaRecorder? = null
     private var recordingFile: File? = null
     private var recordingStarted = 0L
+    private var recordingDictation = false
+    private var dictationFile: File? = null
     private var focus: AudioFocusRequest? = null
     override fun playbackFocus(onLost: () -> Unit): Boolean {
         val manager = context.getSystemService(AudioManager::class.java)
@@ -331,12 +333,14 @@ class MediaRepository @Inject constructor(
         }
     }
 
+    override suspend fun startRecording(onLimit: () -> Unit) = startRecorder(false, onLimit)
+    override suspend fun startDictation(onLimit: () -> Unit) = startRecorder(true, onLimit)
     @Suppress("DEPRECATION") // Context constructor is API 31+; minSdk remains 26.
-    override suspend fun startRecording(onLimit: () -> Unit) = withContext(Dispatchers.IO) {
+    private suspend fun startRecorder(dictation: Boolean, onLimit: () -> Unit) = withContext(Dispatchers.IO) {
         check(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) { "Microphone access was denied." }
         synchronized(this@MediaRepository) {
             check(recorder == null) { "Already recording." }
-            val file = File(File(context.cacheDir, "recordings").apply { mkdirs() }, "${UUID.randomUUID()}.m4a")
+            val file = File(File(context.cacheDir, if (dictation) "dictation" else "recordings").apply { mkdirs() }, "${UUID.randomUUID()}.m4a")
             val recording = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
             try {
                 recording.setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -345,16 +349,20 @@ class MediaRepository @Inject constructor(
                 recording.setAudioEncodingBitRate(64_000)
                 recording.setAudioSamplingRate(44_100)
                 recording.setOutputFile(file.absolutePath)
-                recording.setMaxDuration(3_600_000)
-                recording.setMaxFileSize(16L * MiB)
+                recording.setMaxDuration(if (dictation) DICTATION_MAX_MS else 3_600_000)
+                recording.setMaxFileSize(if (dictation) DICTATION_MAX_BYTES else 16L * MiB)
                 recording.setOnInfoListener { _, what, _ -> if (what in setOf(MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED)) onLimit() }
                 recording.prepare(); recording.start()
-                recorder = recording; recordingFile = file; recordingStarted = SystemClock.elapsedRealtime()
+                recorder = recording; recordingFile = file; recordingStarted = SystemClock.elapsedRealtime(); recordingDictation = dictation
+                if (dictation) dictationFile = file
             } catch (error: Exception) { recording.release(); file.delete(); throw error }
         }
     }
-    override suspend fun stopRecording(): VoiceClip? = withContext(Dispatchers.IO) {
+    override suspend fun stopRecording(): VoiceClip? = stopRecorder(false)
+    override suspend fun stopDictation(): VoiceClip? = stopRecorder(true)
+    private suspend fun stopRecorder(dictation: Boolean): VoiceClip? = withContext(Dispatchers.IO) {
         synchronized(this@MediaRepository) {
+            if (recordingDictation != dictation) return@synchronized null
             val recording = recorder ?: return@synchronized null
             val file = checkNotNull(recordingFile)
             val elapsed = (SystemClock.elapsedRealtime() - recordingStarted) / 1_000.0
@@ -366,13 +374,20 @@ class MediaRepository @Inject constructor(
                     metadata.setDataSource(file.absolutePath)
                     metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull()?.div(1_000) ?: elapsed
                 } finally { metadata.release() }
-                VoiceClip(file, duration.coerceAtMost(3_600.0))
+                VoiceClip(file, if (dictation) duration else duration.coerceAtMost(3_600.0))
             } catch (error: Exception) { file.delete(); throw error }
             finally { recording.release(); recorder = null; recordingFile = null }
         }
     }
-    override fun releaseRecording() = synchronized(this) {
-        recorder?.release(); recorder = null; recordingFile?.delete(); recordingFile = null
+    override fun releaseRecording() = releaseRecorder(false)
+    override suspend fun cancelDictation() = withContext(Dispatchers.IO) {
+        try { releaseRecorder(true) }
+        finally { dictationFile?.delete(); dictationFile = null }
+    }
+    private fun releaseRecorder(dictation: Boolean) = synchronized(this) {
+        if (recordingDictation == dictation) {
+            recorder?.release(); recorder = null; recordingFile?.delete(); recordingFile = null
+        }
     }
     override suspend fun searchGifs(query: String, offset: Int): GifPage = api.gifs(query.trim().take(50), offset.coerceAtLeast(0))
         // Trust boundary: only https GIPHY media hosts are loaded by the grid.

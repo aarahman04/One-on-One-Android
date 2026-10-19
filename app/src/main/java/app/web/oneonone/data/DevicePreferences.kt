@@ -41,6 +41,7 @@ interface DeviceStore {
     suspend fun endedConnection(owner: String): String? = null
     suspend fun saveEndedConnection(owner: String, id: String?) {}
     suspend fun setChatTextStep(value: Int) {}
+    suspend fun claimDictationHint(): Boolean = false
 }
 
 @Singleton
@@ -57,6 +58,12 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     private val signature = stringPreferencesKey("letterFrom")
     private val reminderAt = longPreferencesKey("notificationReminderAt")
     private val endedKey = stringPreferencesKey("endedConnection")
+    private val dictationHint = booleanPreferencesKey("dictationLanguageHintSeen")
+    override suspend fun claimDictationHint(): Boolean {
+        var first = false
+        store.edit { if (it[dictationHint] != true) { it[dictationHint] = true; first = true } }
+        return first
+    }
     override suspend fun endedConnection(owner: String) =
         store.data.first()[endedKey]?.split('|')?.takeIf { it.size == 2 && it[0] == owner }?.get(1)
     override suspend fun saveEndedConnection(owner: String, id: String?) { store.edit {

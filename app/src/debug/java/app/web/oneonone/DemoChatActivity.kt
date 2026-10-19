@@ -34,6 +34,11 @@ import app.web.oneonone.ui.chat.ChatScreen
 import app.web.oneonone.data.games.GameService
 import app.web.oneonone.ui.games.GameViewModel
 import app.web.oneonone.ui.chat.ChatViewModel
+import app.web.oneonone.ui.chat.SpeechViewModel
+import app.web.oneonone.data.media.SpeechRepository
+import app.web.oneonone.data.media.SpeechApi
+import app.web.oneonone.data.media.AndroidNarrationAudio
+import app.web.oneonone.data.media.AndroidDeviceSpeech
 import app.web.oneonone.ui.chat.FeatureViewModel
 import app.web.oneonone.ui.chat.StickerViewModel
 import app.web.oneonone.ui.theme.OneOnOneTheme
@@ -76,6 +81,11 @@ class DemoChatActivity : ComponentActivity() {
         Retrofit.Builder().baseUrl("https://demo.invalid/").addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build()
     }
     private val account by lazy { retrofit.create(AccountApi::class.java) }
+    private val realMedia by lazy { MediaRepository(applicationContext, retrofit.create(AttachmentApi::class.java), json) }
+    private val speech: SpeechViewModel by viewModels { viewModelFactory { initializer {
+        SpeechViewModel(SpeechRepository(applicationContext, retrofit.create(SpeechApi::class.java)), AndroidNarrationAudio(applicationContext),
+            realMedia, AndroidDeviceSpeech(applicationContext), DevicePreferences(applicationContext), service)
+    } } }
     private val launcher = object : CallLauncher {
         override fun start(kind: app.web.oneonone.call.CallKind) {
             runOnUiThread { Toast.makeText(this@DemoChatActivity, "Calls need the real backend", Toast.LENGTH_SHORT).show() }
@@ -84,7 +94,7 @@ class DemoChatActivity : ComponentActivity() {
     private val chat: ChatViewModel by viewModels { viewModelFactory { initializer { ChatViewModel(service, account, launcher, createSavedStateHandle()) } } }
     private val games: GameViewModel by viewModels { viewModelFactory { initializer { GameViewModel(GameService(transport, service), createSavedStateHandle()) } } }
     private val features: FeatureViewModel by viewModels { viewModelFactory { initializer {
-        FeatureViewModel(service, account, DemoMedia(applicationContext, MediaRepository(applicationContext, retrofit.create(AttachmentApi::class.java), json)),
+        FeatureViewModel(service, account, DemoMedia(applicationContext, realMedia),
             DevicePreferences(applicationContext), createSavedStateHandle())
     } } }
     private val stickers: StickerViewModel by viewModels { viewModelFactory { initializer {
@@ -100,7 +110,7 @@ class DemoChatActivity : ComponentActivity() {
         setContent {
             OneOnOneTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
-                    ChatScreen(connection, chat, features, stickers, onSettings = {}, onAccount = {}, onRefresh = {}, games = games)
+                    ChatScreen(connection, chat, features, stickers, onSettings = {}, onAccount = {}, onRefresh = {}, games = games, speech = speech)
                 }
             }
         }
