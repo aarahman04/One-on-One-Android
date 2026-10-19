@@ -1,9 +1,10 @@
 # One on One — native Android
 
 Private 1:1 messaging, Kotlin + Jetpack Compose. Same Play identity:
-`app.web.oneonone`, minSdk 26, compile/target SDK 37 (Android 17), versionCode 5.
-**A0 scaffold only:** native welcome screen, brand theme/icon and build pipeline.
-Authentication, chat, notifications, alarms and calls arrive in A1–A7.
+`app.web.oneonone`, minSdk 26, compile/target SDK 37 (Android 17).
+Includes authentication, chat, notifications, alarms, voice/video calls and stickers.
+Current release candidate: **2.0.5 / versionCode 12**; see
+[progress and device checks](docs/PROGRESS.md) for verification and remaining work.
 
 ## Local setup
 
@@ -19,9 +20,8 @@ Authentication, chat, notifications, alarms and calls arrive in A1–A7.
    `app/google-services.json`. Reuse Firebase project `one-on-one-508202` and its
    existing Android registration. Both local files are gitignored.
 
-The reference `.env` currently uses localhost for the API and omits the Google
-web client ID. A0 does not call the network. Before A1 phone testing, set the
-deployed HTTPS API origin and the web OAuth audience documented in the API
+If the reference `.env` uses localhost for the API or omits the Google web
+client ID, set the deployed HTTPS API origin and the web OAuth audience documented in the API
 contract (or use a deliberately configured development server). `localhost` on
 a phone is the phone itself. Release CI requires all four nonempty settings and
 HTTPS URLs. Debug CI works without secrets and skips Google Services when the
@@ -69,7 +69,8 @@ CI checks the restored key and both output signers against **both** fingerprints
 
 Download the `android-release` artifact after a successful dispatch. Every Play
 upload needs a versionCode greater than every previous upload on every track.
-The Capacitor candidate is 4 / 1.0.3; the native default starts at 5 / 2.0.0-dev.
+Manual release defaults are **12 / 2.0.5**. Local builds without version properties
+keep the Gradle fallback **5 / 2.0.0-dev**; release CI passes the selected version explicitly.
 Local signing uses the optional `ANDROID_*` entries in local.properties;
 `bundleRelease assembleRelease` without a configured key produces unsigned
 outputs. Local outputs are not certificate-verified; use CI for release artifacts.
@@ -96,9 +97,9 @@ fingerprints before testing Google sign-in.
 The full requested stack is pinned in `gradle/libs.versions.toml`: Compose /
 Material 3, Navigation, Hilt + KSP, Retrofit/OkHttp/serialization, Socket.IO 2.x
 (v4-server compatible), supabase-kt Auth + Credential Manager, Room, DataStore,
-WorkManager, Firebase Messaging, Stream WebRTC and Coil. Dependencies are wired;
-the owned auth/chat/normal-push/feature milestones are merged. Claude owns alarm
-and calls; their seams remain placeholders until A4/A5 integration.
+WorkManager, Firebase Messaging, Stream WebRTC, Coil and MediaPipe. A0–A7 and the
+S1–S5 restyle are merged, including alarms and calls. Owner feedback for 2.0.5 is
+in [PR #27](https://github.com/aarahman04/One-on-One-Android/pull/27), pending review.
 
 The backend remains in the read-only sibling web repo. Its
 `docs/API-CONTRACT.md` is the only API authority. The copy here is a reference

@@ -9,5 +9,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Store captures use the same chat UI with fictional, conversational sample messages. -->
+        <activity-alias android:name=".StoreDemoActivity" android:targetActivity=".DemoChatActivity"
+            android:exported="true" android:label="One on One" />
+        <activity-alias android:name=".StoreLetterActivity" android:targetActivity=".DemoChatActivity"
+            android:exported="true" android:label="One on One" />
+        <activity-alias android:name=".StoreAlarmActivity" android:targetActivity=".DemoChatActivity"
+            android:exported="true" android:label="One on One" />
+        <activity-alias android:name=".StoreChoicesActivity" android:targetActivity=".DemoChatActivity"
+            android:exported="true" android:label="One on One" />
+        <activity-alias android:name=".StoreCountdownActivity" android:targetActivity=".DemoChatActivity"
+            android:exported="true" android:label="One on One" />
+        <activity-alias android:name=".StoreStickersActivity" android:targetActivity=".DemoChatActivity"
+            android:exported="true" android:label="One on One" />
+        <activity android:name=".StoreCallActivity" android:exported="true" android:label="One on One"
+            android:theme="@style/Theme.OneOnOne" />
     </application>
 </manifest>

@@ -1,0 +1,8 @@
+steps:
+  - tool: restart-app
+    args: { bundleId: app.web.oneonone, activity: .StoreLetterActivity }
+  - await: { visible: { text: "Open letter" } }
+  - tap: { text: "Open letter" }
+  - await: { visible: { text: "Dear Arjun," } }
+  - await: { visible: { text: "more little moments with you." } }
+  - await: { idle: true }

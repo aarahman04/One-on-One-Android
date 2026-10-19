@@ -19,9 +19,10 @@ import javax.inject.Singleton
 private val Context.devicePreferences by preferencesDataStore("device")
 
 interface DeviceStore {
-    suspend fun gates(): Gates
-    suspend fun verifyAge()
-    suspend fun acceptTerms()
+    /** Age/Terms gates belong to one auth user, so re-signing into the same account skips them. */
+    suspend fun gates(owner: String): Gates
+    suspend fun verifyAge(owner: String)
+    suspend fun acceptTerms(owner: String)
     suspend fun resetGates()
     suspend fun pushToken(): String?
     suspend fun savePushToken(token: String?)
@@ -44,6 +45,7 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     private val store = context.devicePreferences
     private val age = booleanPreferencesKey("ageVerified")
     private val consent = stringPreferencesKey("termsAcceptedAt")
+    private val gateOwner = stringPreferencesKey("gatesOwner")
     private val pushToken = stringPreferencesKey("pushToken")
     private val onboarding = booleanPreferencesKey("notificationOnboardingSeen")
     private val handledPushes = stringPreferencesKey("handledMessagePushes")
@@ -60,10 +62,24 @@ class DevicePreferences @Inject constructor(@ApplicationContext context: Context
     override suspend fun setChatTextStep(value: Int) { store.edit { it[textStepKey] = value.coerceIn(0, 3) } }
     override suspend fun letterSignature() = store.data.first()[signature].orEmpty()
     override suspend fun saveLetterSignature(value: String) { store.edit { it[signature] = value.trim().take(40) } }
-    override suspend fun gates() = store.data.first().let { Gates(it[age] == true, it[consent] != null) }
-    override suspend fun verifyAge() { store.edit { it[age] = true } }
-    override suspend fun acceptTerms() { store.edit { it[consent] = Instant.now().toString() } }
-    override suspend fun resetGates() { store.edit { it.remove(age); it.remove(consent) } }
+    override suspend fun gates(owner: String): Gates {
+        var gates = Gates()
+        store.edit {
+            // Gates saved before owners existed were reset on every sign-out, so they belong to this session.
+            if (it[gateOwner] == null && (it[age] == true || it[consent] != null)) it[gateOwner] = owner
+            if (it[gateOwner] == owner) gates = Gates(it[age] == true, it[consent] != null)
+        }
+        return gates
+    }
+    override suspend fun verifyAge(owner: String) { store.edit {
+        if (it[gateOwner] != owner) it.remove(consent)
+        it[gateOwner] = owner; it[age] = true
+    } }
+    override suspend fun acceptTerms(owner: String) { store.edit {
+        if (it[gateOwner] != owner) it.remove(age)
+        it[gateOwner] = owner; it[consent] = Instant.now().toString()
+    } }
+    override suspend fun resetGates() { store.edit { it.remove(age); it.remove(consent); it.remove(gateOwner) } }
     override suspend fun pushToken(): String? = store.data.first()[pushToken]
     override suspend fun savePushToken(token: String?) { store.edit {
         if (token == null) it.remove(pushToken) else it[pushToken] = token

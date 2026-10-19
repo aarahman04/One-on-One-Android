@@ -63,6 +63,10 @@ object AlarmPolicy {
     fun confirmedAcks(messages: List<ChatMessage>): Set<String> =
         messages.filter { it.id != null }.mapNotNull { ackOf(it) }.toSet()
 
+    /** Raise ids this device just acked (queued or sent): the ring stops on the tap, not after the server round trip. */
+    fun ownAcks(messages: List<ChatMessage>, myUserId: String): Set<String> =
+        messages.filter { it.senderId == myUserId && it.deliveryState !in FAILED_STATES }.mapNotNull { ackOf(it) }.toSet()
+
     /**
      * Alarms silenced from the notification: which acks to send now and which to forget.
      * Ack only while the server still accepts it (Live/Failed); a raise not in the list yet is kept for a later pass.

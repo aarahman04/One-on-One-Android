@@ -1,14 +1,17 @@
 ﻿# Native Android release checklist
 
-Prepared 2026-10-07 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **11** /
-versionName **2.0.4** (next build); the Gradle fallback stays 5 / 2.0.0-dev. Nothing has been uploaded to Play by this work.
+Updated 2026-10-19 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **12** /
+versionName **2.0.5**; the Gradle fallback stays 5 / 2.0.0-dev. This work does not upload to Play.
 
 ## Release history
 
-Latest signed build: **2.0.3 / versionCode 10** (2026-10-14, workflow run [38487293539](https://github.com/aarahman04/One-on-One-Android/actions/runs/38487293539); see
-`docs/PROGRESS.md` → Releases). Previous: 2.0.2 / 9 (2026-10-13), 2.0.1 / 8 (2026-10-13), 2.0.0 / 7 (2026-10-10), 1.0.5 / 6 (2026-10-10), 1.0.4 / 5 (2026-10-09). Version name/code are passed as `android-build`
-workflow inputs at dispatch (defaults 11 / 2.0.4; Gradle fallback 5 / 2.0.0-dev). Next build:
-**2.0.4 / versionCode 11**; the upload after it must use versionCode **12 or higher**. Full table: `docs/PROGRESS.md` → Releases.
+Previous verified signed build: **2.0.4 / versionCode 11** (2026-10-14, workflow run
+[38551746052](https://github.com/aarahman04/One-on-One-Android/actions/runs/38551746052)).
+Current candidate: **2.0.5 / versionCode 12**, branch `fix/owner-feedback-1019`,
+[PR #27](https://github.com/aarahman04/One-on-One-Android/pull/27) (unmerged).
+Version name/code are `android-build` inputs (defaults 12 / 2.0.5).
+The upload after code 12 must use **13 or higher**. Build history is not confirmation
+of Play uploads; check Console before uploading. Full table: `docs/PROGRESS.md` → Releases.
 
 A4 (alarm, PR #8), A5 (calls, PR #9) and the S1–S5 restyle (PRs #10–#14) are now
 merged; the A7-era notes below that call them pending are historical. Owner Xiaomi
@@ -130,7 +133,7 @@ owner reconciliation before the global package disclosure is submitted.
    Get the distinct Play signing certificate from App integrity; it must also be
    registered for Play-installed Google sign-in. Never replace the upload key.
 4. **Choose an authorized new version.** Check every track's highest uploaded code
-   in App bundle explorer; 5 is only this repo's current default. Every eventual
+   in App bundle explorer; 5 is only the local Gradle fallback. Every eventual
    upload must exceed previously used codes. The owner supplies the final code/name;
    do not upload a dev-labelled build or reuse a consumed code.
 5. **Run manual android-build on final main** with those inputs. Download only

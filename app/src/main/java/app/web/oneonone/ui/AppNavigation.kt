@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -322,11 +323,26 @@ private fun ConnectionId(code: String, busy: Boolean, onRegenerate: () -> Unit) 
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SecondaryButton("Copy", onClick = copy, modifier = Modifier.weight(1f), enabled = !busy && code.isNotEmpty())
+            SecondaryButton("Share", onClick = {
+                val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, inviteText(code))
+                context.startActivity(Intent.createChooser(send, "Share your ID"))
+            }, modifier = Modifier.weight(1f), enabled = !busy && code.isNotEmpty())
             SecondaryButton("New ID", onClick = onRegenerate, modifier = Modifier.weight(1f), enabled = !busy)
         }
     }
 }
+
+internal fun inviteText(code: String) = """
+    |Let's talk on One on One.
+    |
+    |Download the app on Google Play:
+    |https://play.google.com/store/apps/details?id=app.web.oneonone
+    |
+    |Or use it on the web:
+    |$LEGAL_ORIGIN
+    |
+    |My connection ID: $code
+""".trimMargin()
 
 @Composable
 private fun EnterTheirId(busy: Boolean, onRequest: (String) -> Unit, onBack: () -> Unit) {

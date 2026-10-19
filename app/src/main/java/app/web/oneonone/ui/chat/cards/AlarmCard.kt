@@ -45,7 +45,7 @@ fun AlarmCard(message: ChatMessage, isMine: Boolean, onSend: (type: String, payl
     if (AlarmPolicy.ackOf(message) != null) {
         val who = if (isMine) "You" else "They"
         Text(if (AlarmPolicy.isCancel(message)) "⛔ $who cancelled the alarm" else "✅ $who acknowledged the alarm",
-            style = OneTextStyles.subtitle, color = LocalBubbleColors.current.text, modifier = Modifier.padding(8.dp))
+            style = OneTextStyles.subtitle, color = LocalBubbleColors.current.text, modifier = Modifier.padding(vertical = 4.dp))
         return
     }
     val context = LocalContext.current.applicationContext

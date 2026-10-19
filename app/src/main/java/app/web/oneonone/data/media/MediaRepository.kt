@@ -26,6 +26,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import app.web.oneonone.BuildConfig
 import app.web.oneonone.data.model.*
+import app.web.oneonone.data.chat.writeLetterPdf
+import app.web.oneonone.R
+import androidx.core.content.res.ResourcesCompat
+import android.graphics.Typeface
 import app.web.oneonone.data.stickers.STICKER_MAX_BYTES
 import app.web.oneonone.data.stickers.STICKER_PX
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -83,6 +87,7 @@ interface MediaGateway {
     /** A ready `image` payload for GIPHY gif [id], stored server-side as this connection's attachment. */
     suspend fun attachGif(connection: String, id: String): JsonObject = error("Not supported.")
     suspend fun save(uri: Uri, text: String)
+    suspend fun saveLetterPdf(uri: Uri, message: ChatMessage)
     suspend fun saveAttachment(connection: String, payload: JsonObject, destination: Uri)
     fun playbackFocus(onLost: () -> Unit): Boolean
     fun abandonPlaybackFocus()
@@ -349,6 +354,10 @@ class MediaRepository @Inject constructor(
     }
     override suspend fun save(uri: Uri, text: String) = withContext(Dispatchers.IO) {
         checkNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter().use { it.write(text) }
+    }
+    override suspend fun saveLetterPdf(uri: Uri, message: ChatMessage) = withContext(Dispatchers.IO) {
+        val handwriting = ResourcesCompat.getFont(context, R.font.dancing_script) ?: Typeface.SERIF
+        checkNotNull(context.contentResolver.openOutputStream(uri)).use { writeLetterPdf(message, handwriting, it) }
     }
     override suspend fun saveAttachment(connection: String, payload: JsonObject, destination: Uri) {
         val source = download(connection, payload)

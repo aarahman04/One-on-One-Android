@@ -23,6 +23,8 @@ object FontFamilies {
         Font(R.font.jetbrains_mono_medium, FontWeight.Medium),
         Font(R.font.jetbrains_mono_bold, FontWeight.Bold),
     )
+    /** Readable connected cursive for /letter pages (also drawn into the letter PDF). */
+    val Letter = FontFamily(Font(R.font.dancing_script))
 }
 
 /** Heading style: Figtree semibold, slightly tightened. */

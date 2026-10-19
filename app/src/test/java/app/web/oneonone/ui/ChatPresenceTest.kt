@@ -21,6 +21,13 @@ class ChatPresenceTest {
         assertEquals(ChatPresence("Last seen today at 11:59"), presence(now.minusSeconds(15).toString()))
     }
 
+    @Test fun liveReceiptAgeBeatsClockSkew() {
+        // Phone clock 60 s behind the server: the server time looks in the future, but the live age still expires it.
+        val ahead = now.plusSeconds(60).toString()
+        assertTrue(chatPresence(ConnectionState.Connected, ahead, now, ZoneId.of("UTC"), Locale.US, "HH:mm", liveAgeMs = 14_999).online)
+        assertFalse(chatPresence(ConnectionState.Connected, ahead, now, ZoneId.of("UTC"), Locale.US, "HH:mm", liveAgeMs = 15_000).online)
+    }
+
     @Test fun formatsTodayYesterdayAndOlderInLocalTime() {
         assertEquals("Last seen today at 08:05", presence("2026-10-10T08:05:00Z").label)
         assertEquals("Last seen yesterday at 23:45", presence("2026-10-09T23:45:00Z").label)

@@ -11,6 +11,7 @@ import app.web.oneonone.data.api.BlockedUser
 import app.web.oneonone.data.api.CurrentConnection
 import app.web.oneonone.data.api.Me
 import app.web.oneonone.data.auth.AccountSession
+import app.web.oneonone.data.auth.tokenSubject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -100,7 +101,7 @@ class AppViewModel @Inject constructor(
             mutable.value = AppState(route = BootRoute.SignIn)
             return
         }
-        val gates = preferences.gates()
+        val gates = preferences.gates(gateOwner())
         if (!gates.ageVerified || !gates.termsAccepted) {
             if (state.value.route != BootRoute.UnderAge) mutable.update {
                 it.copy(route = bootRoute(true, gates, null))
@@ -116,10 +117,11 @@ class AppViewModel @Inject constructor(
 
     fun signIn(context: Context) = action { auth.signIn(context); load() }
     fun verifyAge(date: LocalDate) = action {
-        if (isAdult(date)) { preferences.verifyAge(); load() }
+        if (isAdult(date)) { preferences.verifyAge(gateOwner()); load() }
         else mutable.update { it.copy(route = BootRoute.UnderAge) }
     }
-    fun acceptTerms() = action { preferences.acceptTerms(); load() }
+    fun acceptTerms() = action { preferences.acceptTerms(gateOwner()); load() }
+    private suspend fun gateOwner() = auth.accessToken()?.let(::tokenSubject).orEmpty()
     fun request(code: String) = action { account.request(code); load() }
     fun regenerate() = action {
         val code = account.api.regenerate().connectionCode

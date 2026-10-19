@@ -44,12 +44,13 @@ class FakeSession : AccountSession {
 
 class FakeDeviceStore : DeviceStore {
     var savedGates = Gates(true, true)
+    var gatesOwner: String? = null
     var token: String? = "device-token"
     var seenOnboarding = true
-    override suspend fun gates() = savedGates
-    override suspend fun verifyAge() { savedGates = savedGates.copy(ageVerified = true) }
-    override suspend fun acceptTerms() { savedGates = savedGates.copy(termsAccepted = true) }
-    override suspend fun resetGates() { savedGates = Gates() }
+    override suspend fun gates(owner: String) = if (gatesOwner == null || gatesOwner == owner) savedGates else Gates()
+    override suspend fun verifyAge(owner: String) { gatesOwner = owner; savedGates = savedGates.copy(ageVerified = true) }
+    override suspend fun acceptTerms(owner: String) { gatesOwner = owner; savedGates = savedGates.copy(termsAccepted = true) }
+    override suspend fun resetGates() { savedGates = Gates(); gatesOwner = null }
     override suspend fun pushToken() = token
     override suspend fun savePushToken(token: String?) { this.token = token }
     override suspend fun onboardingSeen() = seenOnboarding
@@ -180,7 +181,8 @@ class AccountTest {
         repository.signOut()
         assertEquals(listOf("unregister", "signout"), session.operations)
         assertNull(preferences.token)
-        assertEquals(Gates(), preferences.savedGates)
+        // Signing back into the same account skips Age and Terms.
+        assertEquals(Gates(true, true), preferences.savedGates)
     }
 
     @Test fun deletionOnlyClearsSessionAfterServerSuccess() = runTest {
@@ -227,6 +229,9 @@ class AccountTest {
             assertNotNull(vm.state.value.error)
             vm.signOut().join(); runCurrent()
             assertEquals(BootRoute.SignIn, vm.state.value.route)
+            api.failCurrent = false
+            session.token = "old"; session.signedIn.value = true; runCurrent()
+            assertEquals(BootRoute.Chat, vm.state.value.route)
             vm.viewModelScope.cancel(); runCurrent()
         } finally { Dispatchers.resetMain() }
     }

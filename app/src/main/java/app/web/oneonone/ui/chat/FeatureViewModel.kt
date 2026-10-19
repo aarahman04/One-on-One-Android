@@ -255,7 +255,7 @@ class FeatureViewModel @Inject constructor(
         val text = withContext(Dispatchers.Default) { exportChat(messages, connection.myUserId, connection.otherNickname ?: "Them", format) }
         media.save(uri, text)
     }
-    fun saveLetter(uri: Uri, message: ChatMessage) = action { media.save(uri, letterHtml(message)) }
+    fun saveLetter(uri: Uri, message: ChatMessage) = action { media.saveLetterPdf(uri, message) }
     override fun onCleared() {
         recordingJob?.cancel(); stopPlayback()
         // The application-scoped recorder must release even after this ViewModel's scope is cancelled.

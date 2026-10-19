@@ -38,7 +38,7 @@ class AlarmCoordinator @Inject constructor(
             combine(messages.active, messages.messages) { session, list -> session to list }.collect { (session, list) ->
                 if (session == null) return@collect
                 val now = System.currentTimeMillis()
-                AlarmPolicy.confirmedAcks(list).forEach { stop(it) }
+                (AlarmPolicy.confirmedAcks(list) + AlarmPolicy.ownAcks(list, session.ownerId)).forEach { stop(it) }
                 AlarmPolicy.raisesToRing(list, session.ownerId, now).forEach { (id, at) -> raise(id, at) }
                 sendSilencedAcks(list)
             }

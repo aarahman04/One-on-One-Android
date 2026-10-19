@@ -18,6 +18,7 @@ import app.web.oneonone.call.CallLauncher
 import app.web.oneonone.data.DevicePreferences
 import app.web.oneonone.data.AccountMutationLock
 import app.web.oneonone.data.stickers.StickerLibrary
+import app.web.oneonone.data.stickers.builtInStickers
 import app.web.oneonone.data.api.AccountApi
 import app.web.oneonone.data.api.CurrentConnection
 import app.web.oneonone.data.auth.AccountSession
@@ -59,7 +60,11 @@ import java.util.UUID
 class DemoChatActivity : ComponentActivity() {
     private val json = Json { ignoreUnknownKeys = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val transport by lazy { DemoTransport(this, json, scope) }
+    private val storeScene by lazy { intent.component?.shortClassName?.takeIf { it.startsWith(".Store") } }
+    private val storeDemo get() = storeScene != null
+    private val transport by lazy {
+        DemoTransport(this, json, scope, storeScene)
+    }
     private val service by lazy {
         val db = Room.inMemoryDatabaseBuilder(applicationContext, ChatDatabase::class.java).build()
         MessageService(transport, RoomMessageStore(db, json), DemoSession, json, scope)
@@ -87,8 +92,8 @@ class DemoChatActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val connection = CurrentConnection(id = DemoTransport.CONNECTION, status = "active", myUserId = DemoTransport.ME, isRequester = true,
-            otherNickname = "Alex", otherConnectionCode = "", myLeaveStep = 0, otherLeaveStep = 0, daysRemaining = null, bothLeaving = false,
-            canAdvanceLeave = true, otherLastReadAt = null, otherLastDeliveredAt = null, wallpaper = "off", messageStyle = "bubbles")
+            otherNickname = if (storeDemo) "Arjun" else "Alex", otherConnectionCode = "", myLeaveStep = 0, otherLeaveStep = 0, daysRemaining = null, bothLeaving = false,
+            canAdvanceLeave = true, otherLastReadAt = null, otherLastDeliveredAt = null, wallpaper = if (storeDemo) "love" else "off", messageStyle = "bubbles")
         setContent {
             OneOnOneTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
@@ -149,7 +154,7 @@ private class DemoMedia(private val context: Context, real: MediaGateway) : Medi
     override suspend fun signedUrl(connection: String, path: String): String = File(dir, path.substringAfterLast('/')).absolutePath
 }
 
-private class DemoTransport(context: Context, private val json: Json, private val scope: CoroutineScope) : Transport {
+private class DemoTransport(context: Context, private val json: Json, private val scope: CoroutineScope, storeScene: String?) : Transport {
     companion object {
         const val ME = "00000000-0000-4000-8000-000000000001"
         const val ALEX = "00000000-0000-4000-8000-000000000002"
@@ -175,14 +180,59 @@ private class DemoTransport(context: Context, private val json: Json, private va
 
     init {
         val first = msg(ALEX, "Hey! Did you see this? https://www.youtube.com/watch?v=dQw4w9WgXcQ", 180, id = "00000000-0000-4000-8000-0000000000b1")
-        listOf(
+        val seed = if (storeScene == ".StoreAlarmActivity") listOf(
+            msg(ALEX, "Maya, can you call me? I need you right now.", 8),
+            msg(ME, "I'm here, Arjun. What's going on?", 7),
+            msg(ALEX, "Please call as soon as you see this.", 1),
+        ) else if (storeScene == ".StoreStickersActivity") listOf(
+            msg(ALEX, "Maya, this is me when I see your name.", 8),
+            msg(ME, "Arjun, you always make me smile.", 7),
+        ) else if (storeScene != null) listOf(
+            msg(ALEX, "Hey Maya, made it home. How was your day?", 30),
+            msg(ME, "Hey Arjun. A little busy. Your message made it better.", 28),
+            msg(ALEX, "Saving a walk and a sunset for us.", 26),
+            msg(ME, "Same time tomorrow? I missed you today.", 24),
+            msg(ALEX, "Always, Maya. Tell me the little things.", 22),
+            msg(ME, "You are my favourite part of the day, Arjun.", 20),
+        ) else listOf(
             first,
             msg(ME, "Haha classic. This is on repeat for me today https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT", 175),
             msg(ALEX, "Also thinking of getting this https://www.amazon.in/dp/B0CHX1W1XY", 120),
             msg(ME, "Call me on +91 98765 43210 when you're free, or check shirt.online", 110, replyTo = first.id),
             msg(ALEX, "My new profile 👉 https://www.instagram.com/instagram/", 60),
             msg(ME, "Typo-ed message you can still edit or delete (sent 5 min ago)", 5),
-        ).forEach { all[checkNotNull(it.id)] = it }
+        )
+        seed.forEach { all[checkNotNull(it.id)] = it }
+        val card = when (storeScene) {
+            ".StoreLetterActivity" -> msg(ME, "Thank you for turning ordinary days into something I look forward to. Here is to more walks, more stories, and more little moments with you.", 2)
+                .copy(type = "letter", payload = buildJsonObject { put("appearance", "dawn"); put("from", "Maya"); put("to", "Arjun") })
+            ".StoreAlarmActivity" -> msg(ALEX, "", 0).copy(type = "alarm", payload = buildJsonObject {})
+            ".StoreChoicesActivity" -> msg(ALEX, "", 2).copy(type = "thisorthat", payload = buildJsonObject {
+                put("optionA", "A sunset walk"); put("optionB", "A cosy movie night"); put("pickSender", "a"); put("pickRecipient", "a")
+            })
+            ".StoreCountdownActivity" -> msg(ME, "", 2).copy(type = "countdown", payload = buildJsonObject {
+                put("label", "Our next adventure"); put("targetIso", Instant.now().plusSeconds(12 * 24 * 60 * 60L).toString())
+            })
+            else -> null
+        }
+        card?.let {
+            validateFeaturePayload(CONNECTION, it.type, checkNotNull(it.payload))
+            all[checkNotNull(it.id)] = it
+        }
+        if (storeScene == ".StoreStickersActivity") {
+            val assets = builtInStickers(context).filter { it.entry.id in setOf("cat-love", "cat-happy", "signal-love") }
+            check(assets.size == 3) { "Store sticker fixtures are missing." }
+            val dir = File(context.cacheDir, "demo-media").apply { mkdirs() }
+            assets.forEachIndexed { index, asset ->
+                val file = File(dir, "store-${asset.entry.id}.webp").apply { writeBytes(asset.bytes) }
+                val sticker = msg(if (index == 1) ME else ALEX, "", 3L - index).copy(type = "image", payload = buildJsonObject {
+                    put("path", "$CONNECTION/${file.name}"); put("mime", "image/webp"); put("size", file.length())
+                    put("width", 512); put("height", 512)
+                })
+                validateFeaturePayload(CONNECTION, sticker.type, sticker.payload)
+                all[checkNotNull(sticker.id)] = sticker
+            }
+        }
     }
 
     override suspend fun start() {}

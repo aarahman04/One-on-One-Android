@@ -1,0 +1,9 @@
+steps:
+  - tool: restart-app
+    args: { bundleId: app.web.oneonone, activity: .StoreStickersActivity }
+  - await: { visible: { text: "you always make me smile." } }
+  - await: { visible: { text: Sticker } }
+  - await: { hidden: { text: "Retry photo" } }
+  - await: { visible: { text: Arjun } }
+  - await: { visible: { text: Message } }
+  - await: { idle: true }

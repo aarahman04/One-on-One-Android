@@ -3,6 +3,8 @@ package app.web.oneonone.ui.chat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import android.os.SystemClock
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -23,6 +25,7 @@ internal fun chatPresence(
     zone: ZoneId,
     locale: Locale,
     timePattern: String,
+    liveAgeMs: Long? = null,
 ): ChatPresence {
     when (state) {
         ConnectionState.Offline -> return ChatPresence("Waiting for network")
@@ -30,7 +33,8 @@ internal fun chatPresence(
         ConnectionState.Connected -> Unit
     }
     val lastRead = lastReadAt?.let(Instant::parse) ?: return ChatPresence("Offline")
-    if (now.toEpochMilli() - lastRead.toEpochMilli() < 15_000) return ChatPresence("Online", online = true)
+    // A receipt that arrived while watching is aged by the phone's own clock, so server/phone clock skew can't stretch "Online".
+    if ((liveAgeMs ?: (now.toEpochMilli() - lastRead.toEpochMilli())) < 15_000) return ChatPresence("Online", online = true)
     val seen = lastRead.atZone(zone)
     val today = now.atZone(zone).toLocalDate()
     val time = seen.format(DateTimeFormatter.ofPattern(timePattern, locale))
@@ -45,14 +49,17 @@ internal fun chatPresence(
 @Composable
 internal fun rememberChatPresence(state: ConnectionState, lastReadAt: String?): ChatPresence {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val initial = remember { lastReadAt }
+    val arrivedAt = remember(lastReadAt) { SystemClock.elapsedRealtime() }
     val now by produceState(Instant.now(), lastReadAt, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (isActive) {
                 value = Instant.now()
-                delay(5_000)
+                delay(1_000)
             }
         }
     }
+    val liveAge = if (lastReadAt != initial) SystemClock.elapsedRealtime() - arrivedAt else null
     // Same 12-hour AM/PM clock as message times.
-    return chatPresence(state, lastReadAt, now, ZoneId.systemDefault(), Locale.ENGLISH, "h:mm a")
+    return chatPresence(state, lastReadAt, now, ZoneId.systemDefault(), Locale.ENGLISH, "h:mm a", liveAge)
 }

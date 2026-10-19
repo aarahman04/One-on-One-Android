@@ -11,6 +11,8 @@ keystore.properties
 *.aab
 *.hprof
 captures/
+goldie/out/
+.argent/reports/
 .DS_Store
 
 # Owner's local design/source folders (never commit)

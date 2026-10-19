@@ -34,6 +34,8 @@ object CallNotifications {
     @Volatile private var ringingCallId: String? = null
     /** MainActivity is started (on screen). The call screen then rings itself, so the notification stays quiet. */
     @Volatile var appVisible = false
+    /** A silent copy of the ringing notification (same intents), for the call screen to swap in. */
+    @Volatile private var quietCopy: Notification? = null
 
     fun tokenValid(value: String?, callId: String?): Boolean =
         token != null && token == value && callId != null && callId == ringingCallId
@@ -50,7 +52,7 @@ object CallNotifications {
         val decline = PendingIntent.getBroadcast(context, 3_003,
             Intent(context, CallActionReceiver::class.java).setAction(ACTION_DECLINE).putExtra(EXTRA_CALL_ID, callId), FLAGS)
         val person = Person.Builder().setName(peer).setImportant(true).build()
-        val notification = NotificationCompat.Builder(context, NotificationChannels.CALLS)
+        val builder = NotificationCompat.Builder(context, NotificationChannels.CALLS)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setContentTitle(peer)
             .setContentText(if (kind == CallKind.Video) "Incoming video call" else "Incoming voice call")
@@ -64,8 +66,21 @@ object CallNotifications {
             .setContentIntent(activity(3_002, ACTION_SHOW))
             .setStyle(NotificationCompat.CallStyle.forIncomingCall(person, decline, activity(3_001, ACTION_ANSWER))
                 .setIsVideo(kind == CallKind.Video))
-            .build().apply { flags = flags or Notification.FLAG_INSISTENT } // ring until answered/declined/ended
+        post(context, builder.build())
+        quietCopy = builder.setSilent(true).build()
+    }
+
+    private fun post(context: Context, notification: Notification) {
+        notification.flags = notification.flags or Notification.FLAG_INSISTENT // ring until answered/declined/ended
         runCatching { context.getSystemService(NotificationManager::class.java)?.notify(INCOMING_ID, notification) }
+    }
+
+    /**
+     * The in-app incoming screen rings itself; a notification posted while the app was in the background
+     * is still ringing, so replace it with a silent copy (Android stops the old sound) to avoid a double ring.
+     */
+    fun quietIncoming(context: Context) {
+        quietCopy?.let { post(context, it) }
     }
 
     /** [callId] null cancels whatever is ringing. */
@@ -73,6 +88,7 @@ object CallNotifications {
         if (callId != null && callId != ringingCallId) return
         token = null
         ringingCallId = null
+        quietCopy = null
         context.getSystemService(NotificationManager::class.java)?.cancel(INCOMING_ID)
     }
 

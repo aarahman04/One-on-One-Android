@@ -1,0 +1,9 @@
+steps:
+  - tool: restart-app
+    args: { bundleId: app.web.oneonone, activity: .StoreCallActivity }
+  - await: { visible: { text: "Arjun's video" } }
+  - await: { visible: { text: "3:42" } }
+  - await: { visible: { text: Mute } }
+  - await: { visible: { text: "Camera off" } }
+  - await: { visible: { text: End } }
+  - await: { idle: true }
