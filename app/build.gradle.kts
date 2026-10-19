@@ -41,6 +41,8 @@ android {
             "SUPABASE_ANON_KEY" to "VITE_SUPABASE_ANON_KEY",
             "GOOGLE_WEB_CLIENT_ID" to "VITE_GOOGLE_WEB_CLIENT_ID",
         ).forEach { (field, key) -> buildConfigField("String", field, quoted(setting(key))) }
+        // Off until the private Railway `speech` service is deployed (docs SPEECH-SERVICE.md): device voice + device recognition only.
+        buildConfigField("boolean", "SERVER_SPEECH", if (setting("SERVER_SPEECH") == "true") "true" else "false")
     }
 
     signingConfigs {

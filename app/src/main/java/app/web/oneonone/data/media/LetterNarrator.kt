@@ -28,7 +28,7 @@ interface NarrationAudio {
 
 /** One letter session, at most two prepared players: the current part and its prefetched successor. */
 class LetterNarrator(private val api: SpeechGateway, private val audio: NarrationAudio, private val scope: CoroutineScope,
-                     private val io: CoroutineDispatcher = Dispatchers.IO) {
+                     private val io: CoroutineDispatcher = Dispatchers.IO, private val server: Boolean = true) {
     private val mutableState = MutableStateFlow(NarrationState())
     val state = mutableState.asStateFlow()
     private data class Track(val player: NarrationPlayer, val part: NarrationPart?)
@@ -57,7 +57,7 @@ class LetterNarrator(private val api: SpeechGateway, private val audio: Narratio
         mutableState.value = NarrationState(key = key)
         if (message == null) { notice("This letter can't be read aloud"); return }
         this.connection = connection; this.message = message; text = localText
-        begin(device = false)
+        begin(device = !server)
     }
 
     private fun begin(device: Boolean) {

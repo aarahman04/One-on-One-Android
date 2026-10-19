@@ -1,6 +1,7 @@
 package app.web.oneonone.ui.chat
 
 import androidx.lifecycle.ViewModel
+import app.web.oneonone.BuildConfig
 import androidx.lifecycle.viewModelScope
 import app.web.oneonone.data.DeviceStore
 import app.web.oneonone.data.chat.ChatSession
@@ -19,7 +20,7 @@ data class DictatedText(val id: Long, val owner: ChatSession, val text: String)
 @HiltViewModel
 class SpeechViewModel @Inject constructor(api: SpeechGateway, audio: NarrationAudio, recorder: DictationRecorder, device: DeviceSpeech,
     private val preferences: DeviceStore, private val messages: MessageService) : ViewModel() {
-    private val narrator = LetterNarrator(api, audio, viewModelScope)
+    private val narrator = LetterNarrator(api, audio, viewModelScope, server = BuildConfig.SERVER_SPEECH)
     val narration = narrator.state
     private val mutableNotice = MutableStateFlow<String?>(null)
     val notice = mutableNotice.asStateFlow()
@@ -32,7 +33,7 @@ class SpeechViewModel @Inject constructor(api: SpeechGateway, audio: NarrationAu
     private var dictationOwner: ChatSession? = null
     private val transcriber = SpeechTranscriber(api, recorder, device, viewModelScope, { words ->
         dictationOwner?.takeIf { it == messages.active.value }?.let { mutableText.value = DictatedText(++textId, it, words) }
-    }, ::showNotice)
+    }, ::showNotice, server = BuildConfig.SERVER_SPEECH)
     val dictation = transcriber.state
 
     init {
