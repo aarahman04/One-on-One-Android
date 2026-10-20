@@ -1646,3 +1646,25 @@ table tennis rally and countdown). `./gradlew` still not runnable here; no devic
   `quota_exceeded`, network error) the app still falls back to the device voice/recognizer.
 - `android-build` dispatch defaults bumped to **versionCode 14 / 2.0.7** (13 was used for 2.0.6).
 - [ ] Phone: play a letter (first one after idle wakes the service, can take ~1 min), dictate a phrase.
+
+## Chess: smoother piece motion (2026-10-21, branch `claude/chess-smooth-moves`)
+
+Android only (`ui/games/ChessUi.kt`); board, pieces, highlights, sounds and rules unchanged.
+- Slide time scales with distance (150 ms for a step up to 280 ms for a long diagonal) instead of a
+  fixed 170 ms, with the theme's standard easing.
+- A dropped piece glides from under the finger onto its square (spring, no overshoot) instead of
+  jumping; an illegal or cancelled drop glides back home instead of teleporting.
+- Lift scale (1.2x) springs in and out instead of popping.
+- Pieces move in the draw phase (`graphicsLayer` translation, float offsets): no per-frame relayout,
+  no whole-pixel stepping.
+- A captured piece fades over the attacker's travel time, so it disappears as the attacker lands.
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` passed; new `ChessMotionTest`.
+Not device-tested.
+
+### Xiaomi checklist
+- [ ] Opponent's pawn step looks quick, a long bishop/queen move glides smoothly end to end.
+- [ ] Drag and drop on a legal square: the piece settles from your finger, no jump.
+- [ ] Drop on an illegal square or outside the board: the piece glides back to where it started.
+- [ ] Capture: the taken piece fades out as the attacker arrives; castling slides king and rook together.
+- [ ] Promotion by drag: piece returns to its square while the picker shows, then slides after picking.
