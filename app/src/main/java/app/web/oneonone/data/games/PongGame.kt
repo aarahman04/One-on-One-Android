@@ -3,121 +3,94 @@ package app.web.oneonone.data.games
 import kotlinx.serialization.json.*
 import kotlin.math.abs
 import kotlin.math.exp
-import kotlin.math.min
-import kotlin.math.sign
-import kotlin.math.sqrt
 
-/** Host simulation and guest presentation share normalized court coordinates; velocities are units/second. */
-class PongGame {
-    var x = .5f; private set
-    var y = .5f; private set
-    var vx = 0f; private set
-    var vy = 0f; private set
-    var hostY = .5f; private set
-    var guestY = .5f; private set
-    var hostScore = 0; private set
-    var guestScore = 0; private set
-    var countdown = 3f; private set
+/**
+ * Renders the server's table tennis (contract §12). The server owns the ball and the score; this only
+ * smooths its ~30 frames/s for display and owns the local paddle position.
+ *
+ * View coordinates: x 0..1, y 0..[CourtH], own paddle always at the bottom. Seat 2 sees the server court
+ * rotated by 180°, so both players face each other.
+ */
+class PongClient(val seat: Int) {
+    var ballX = .5f; private set
+    var ballY = CourtH / 2; private set
+    var theirX = .5f; private set
+    var myX = .5f; private set
+    var myScore = 0; private set
+    var theirScore = 0; private set
+    var countdownMs = 0; private set
     var hits = 0; private set
-    val winner get() = when { hostScore == 7 -> 1; guestScore == 7 -> 2; else -> 0 }
-    private val expected = IntArray(2)
-    private var serveDirection = 1f
-    private var targetX = .5f
-    private var targetY = .5f
-    private var snapshotAge = 0f
+    /** True once at least one frame arrived. */
+    var live = false; private set
+    private var frame = FloatArray(4)
+    private var frameTheirX = .5f
+    private var frameCountdown = 0
+    private var frameAt = 0L
+    private var lastAdvance = 0L
 
-    fun paddle(player: Int, value: Float) {
-        require(player in 1..2 && value.isFinite())
-        if (player == 1) hostY = value.coerceIn(PaddleHalf, 1f - PaddleHalf)
-        else guestY = value.coerceIn(PaddleHalf, 1f - PaddleHalf)
+    private fun viewX(x: Float) = if (seat == 1) x else 1f - x
+    private fun viewY(y: Float) = if (seat == 1) y else CourtH - y
+
+    /** Applies one `match:pong` frame. Returns false (and changes nothing) for a malformed or foreign one. */
+    fun receive(data: JsonObject, matchId: String, nowNanos: Long): Boolean {
+        val parsed = runCatching {
+            require((data["id"] as JsonPrimitive).content == matchId)
+            val b = (data["b"] as JsonArray).map { (it as JsonPrimitive).float }
+            val p = (data["p"] as JsonArray).map { (it as JsonPrimitive).float }
+            val s = (data["s"] as JsonArray).map { (it as JsonPrimitive).int }
+            require(b.size == 4 && p.size == 2 && s.size == 2 && (b + p).all { it.isFinite() })
+            Triple(b, p, s)
+        }.getOrNull() ?: return false
+        val (b, p, s) = parsed
+        // Velocities are rotated with the court.
+        frame = floatArrayOf(viewX(b[0]), viewY(b[1]), if (seat == 1) b[2] else -b[2], if (seat == 1) b[3] else -b[3])
+        frameTheirX = viewX(p[2 - seat])
+        myScore = s[seat - 1]; theirScore = s[2 - seat]
+        frameCountdown = (data["c"] as? JsonPrimitive)?.intOrNull ?: 0
+        hits = (data["h"] as? JsonPrimitive)?.intOrNull ?: hits
+        frameAt = nowNanos
+        if (!live || frame[2] == 0f && frame[3] == 0f) { ballX = frame[0]; ballY = frame[1]; theirX = frameTheirX }
+        live = true
+        return true
     }
 
-    fun receive(player: Int, seq: Int, data: JsonObject) {
-        require(player in 1..2 && seq == expected[player - 1]) { "Moves arrived out of order." }
-        require(data.keys == if (player == 1) setOf("b", "p", "s") else setOf("p")) { "Invalid table tennis move." }
-        val paddle = number(data["p"])
-        require(paddle in PaddleHalf..(1f - PaddleHalf)) { "Invalid paddle position." }
-        if (player == 1) {
-            val ball = data["b"] as? JsonArray
-            val score = data["s"] as? JsonArray
-            require(ball?.size == 4 && score?.size == 2) { "Invalid court state." }
-            val bx = number(ball[0]); val by = number(ball[1]); val bvx = number(ball[2]); val bvy = number(ball[3])
-            val a = (score[0] as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull
-            val b = (score[1] as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull
-            require(bx in 0f..1f && by in 0f..1f && abs(bvx) <= MaxSpeed && abs(bvy) <= MaxSpeed) { "Invalid ball position." }
-            require(a != null && b != null && a in hostScore..7 && b in guestScore..7 &&
-                a - hostScore + b - guestScore <= 1 && !(a == 7 && b == 7)) { "Invalid score." }
-            val newServe = a != hostScore || b != guestScore
-            if (!newServe && vx * bvx < 0f) hits++
-            hostScore = a; guestScore = b; hostY = paddle
-            targetX = bx; targetY = by; vx = bvx; vy = bvy; snapshotAge = 0f
-            if (newServe) { countdown = 3f; x = bx; y = by }
-            if (bvx != 0f || bvy != 0f) countdown = 0f
-        } else guestY = paddle
-        expected[player - 1]++
+    /** Moves the drawn ball and opponent paddle toward the server's state, extrapolated to `nowNanos`. */
+    fun advance(nowNanos: Long) {
+        if (!live) return
+        val dt = if (lastAdvance == 0L) 0f else ((nowNanos - lastAdvance) / 1e9f).coerceIn(0f, .1f)
+        lastAdvance = nowNanos
+        val age = ((nowNanos - frameAt) / 1e9f).coerceIn(0f, MaxExtrapolation)
+        countdownMs = (frameCountdown - (age * 1000).toInt()).coerceAtLeast(0)
+        var x = frame[0] + frame[2] * age
+        var y = frame[1] + frame[3] * age
+        // Straight line with wall reflections between frames: exactly what the server simulates.
+        while (x < BallR || x > 1f - BallR) x = if (x < BallR) 2 * BallR - x else 2 * (1f - BallR) - x
+        // Never draw the ball through a paddle the server hasn't ruled on yet.
+        val bottom = CourtH - PaddleInset - BallR
+        val top = PaddleInset + BallR
+        if (frame[3] > 0 && frame[1] <= bottom) y = y.coerceAtMost(bottom)
+        if (frame[3] < 0 && frame[1] >= top) y = y.coerceAtLeast(top)
+        if (abs(x - ballX) + abs(y - ballY) > SnapDistance) { ballX = x; ballY = y }
+        else {
+            val k = 1f - exp(-Smoothing * dt)
+            ballX += (x - ballX) * k; ballY += (y - ballY) * k
+        }
+        theirX += (frameTheirX - theirX) * (1f - exp(-Smoothing * dt))
     }
 
-    fun tick(seconds: Float, authority: Boolean) {
-        if (winner != 0) return
-        val dt = seconds.coerceIn(0f, .05f)
-        if (!authority) {
-            countdown = (countdown - dt).coerceAtLeast(0f)
-            snapshotAge += dt
-            val prediction = min(snapshotAge, .12f)
-            val blend = 1f - exp(-22f * dt)
-            x += ((targetX + vx * prediction).coerceIn(0f, 1f) - x) * blend
-            y += ((targetY + vy * prediction).coerceIn(0f, 1f) - y) * blend
-            return
-        }
-        if (countdown > 0f) {
-            countdown = (countdown - dt).coerceAtLeast(0f)
-            if (countdown == 0f) { vx = .48f * serveDirection; vy = .19f }
-            return
-        }
-        // Substeps prevent a fast ball crossing a paddle between two display frames.
-        repeat(4) {
-            if (countdown > 0f || winner != 0) return@repeat
-            val oldX = x
-            x += vx * dt / 4; y += vy * dt / 4
-            if (y < BallRadius) { y = BallRadius * 2f - y; vy = abs(vy) }
-            if (y > 1f - BallRadius) { y = 2f * (1f - BallRadius) - y; vy = -abs(vy) }
-            if (vx < 0f && oldX >= PaddleX + BallRadius && x < PaddleX + BallRadius && abs(y - hostY) <= PaddleHalf + BallRadius) {
-                x = PaddleX + BallRadius; bounce(hostY, 1f)
-            } else if (vx > 0f && oldX <= 1f - PaddleX - BallRadius && x > 1f - PaddleX - BallRadius && abs(y - guestY) <= PaddleHalf + BallRadius) {
-                x = 1f - PaddleX - BallRadius; bounce(guestY, -1f)
-            }
-            if (x < 0f || x > 1f) {
-                if (x < 0f) guestScore++ else hostScore++
-                serveDirection = if (x < 0f) -1f else 1f
-                x = .5f; y = .5f; vx = 0f; vy = 0f; countdown = 3f
-            }
-        }
-    }
-
-    private fun bounce(paddleY: Float, direction: Float) {
-        val speed = min(MaxSpeed, sqrt(vx * vx + vy * vy) * 1.07f)
-        vy = ((y - paddleY) / PaddleHalf).coerceIn(-1f, 1f) * speed * .72f
-        vx = sqrt(speed * speed - vy * vy) * direction.sign
-        hits++
-    }
-
-    fun packet(authority: Boolean): JsonObject = buildJsonObject {
-        put("p", if (authority) hostY else guestY)
-        if (authority) {
-            put("b", buildJsonArray { add(x); add(y); add(vx); add(vy) })
-            put("s", buildJsonArray { add(hostScore); add(guestScore) })
-        }
+    /** Sets the own paddle (view x) and returns the server x to send. */
+    fun paddle(viewXValue: Float): Float {
+        myX = viewXValue.coerceIn(PaddleHalf, 1f - PaddleHalf)
+        return viewX(myX)
     }
 
     companion object {
-        const val PaddleHalf = .105f
-        const val PaddleX = .055f
-        const val BallRadius = .014f
-        const val MaxSpeed = 1.8f
-        private fun number(value: JsonElement?): Float {
-            val number = (value as? JsonPrimitive)?.takeUnless { it.isString }?.floatOrNull
-            require(number != null && number.isFinite()) { "Invalid court state." }
-            return number
-        }
+        const val CourtH = 1.6f
+        const val PaddleHalf = .12f
+        const val PaddleInset = .08f
+        const val BallR = .022f
+        private const val MaxExtrapolation = .15f
+        private const val SnapDistance = .25f
+        private const val Smoothing = 28f
     }
 }
