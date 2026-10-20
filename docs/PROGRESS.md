@@ -1592,7 +1592,7 @@ Table tennis (backend `games/pong.ts` + Android `PongUi.kt`, `PongGame.kt`):
   countdown chip, pause banner, haptics on hits and points. Canvas redraws per frame; nothing else does.
 
 Chess (`ChessUi.kt`, `GameSounds.kt`, `Boards.kt`):
-- Chessnut pieces (Apache-2.0) on the green board, chess.com-style yellow last-move/selection, check
+- Shaded "Celtic" Staunton pieces (MIT, converted to vector drawables with gradients) on the green board, chess.com-style yellow last-move/selection, check
   glow, dot/ring hints, white hover outline while dragging, lifted 1.2x piece above the finger.
 - Your move appears instantly (predicted with chesslib, confirmed or reverted by the server); 170 ms
   slides for everything else, capture fade, castling/en passant/promotion tracked.

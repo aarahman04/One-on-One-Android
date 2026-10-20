@@ -1,23 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Chessnut piece set by Alexis Luengas, Apache License 2.0 (docs/THIRD-PARTY-LICENSES.md). Converted from SVG. -->
+<!-- "Celtic" chess piece by Maurizio Monge (github.com/maurimo/chess-art), MIT License (docs/THIRD-PARTY-LICENSES.md). Converted from SVG. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="48dp"
     android:height="48dp"
-    android:viewportWidth="800"
-    android:viewportHeight="800">
+    android:viewportWidth="933.3"
+    android:viewportHeight="933.3">
     <path
-        android:pathData="M489.3 418.3c.1-17 12-25.1 65.1-29.9V330h-90.7c32-19.5 52.8-53.5 52.8-92.9 0-61.9-51.3-110.4-116.7-110.4s-116.7 48.5-116.7 110.4a108 108 0 0 0 52.8 92.9h-91.4v58.4c53.7 4.8 65.2 12.9 65.2 29.8 0 60.7-37.6 131.5-115.5 200.1l.1 64c0 18.6 93.2 32 205.3 32s205.4-13.5 205.4-32l.1-64c-77.9-68.5-115.8-139.4-115.8-200"
-        android:fillColor="#FF000000" />
-    <path
-        android:pathData="M232.1 627.2c0 13.7 76 25.7 167.6 25.7 91.5 0 167.4-11 167.4-24.6"
-        android:strokeColor="#FFF2F2F2"
-        android:strokeWidth="19.4"
+        android:pathData="M464 199.7c-72.1.9-129.8 57.9-134.5 124.2-2.4 33 45.3 89 73.2 106.6-137.4 31-2.7 70.6-2.7 127.7 0 39.4-53.5 65.7-24.2 91-15.9 64.2-62.6 87.4-119.2 113.5-27.9 35.7-13 95.3 39.4 98.7 36.7 2.4 307.5 3 345.4-1.1 58.3-6.4 67.4-67.3 40.5-101-57-17.6-118.7-42.6-131.1-108.7 30.3-25.4-31.6-52.2-31.6-92.4 0-57.1 150.2-90.4 6.4-127.7 27.9-17.6 72.4-73.6 73.2-106.6 1.6-64.7-65.8-125-134.7-124.2Z"
+        android:fillType="evenOdd"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="35"
         android:strokeLineCap="round"
-        android:strokeMiterLimit="10" />
+        android:strokeLineJoin="round"
+        android:strokeMiterLimit="4" />
     <path
-        android:pathData="M400.9 150.3c-24-.2-47.6 8.6-66.3 27.3a87.5 87.5 0 0 0-20 95.3"
-        android:strokeColor="#FFF2F2F2"
-        android:strokeWidth="16.2"
+        android:pathData="M464 199.7c-72.1.9-129.8 57.9-134.5 124.2-2.4 33 45.3 89 73.2 106.6-137.4 31-2.7 70.6-2.7 127.7 0 39.4-53.5 65.7-24.2 91-15.9 64.2-62.6 87.4-119.2 113.5-27.9 35.7-13 95.3 39.4 98.7 36.7 2.4 307.5 3 345.4-1.1 58.3-6.4 67.4-67.3 40.5-101-57-17.6-118.7-42.6-131.1-108.7 30.3-25.4-31.6-52.2-31.6-92.4 0-57.1 150.2-90.4 6.4-127.7 27.9-17.6 72.4-73.6 73.2-106.6 1.6-64.7-65.8-125-134.7-124.2Z"
+        android:fillType="evenOdd"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="20"
         android:strokeLineCap="round"
-        android:strokeMiterLimit="10" />
+        android:strokeLineJoin="round"
+        android:strokeMiterLimit="4">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="271.68" android:startY="593.55" android:endX="706.46" android:endY="634.52">
+                <item android:offset="0.0" android:color="#FF7F899B" />
+                <item android:offset="1.0" android:color="#FF1C1C2F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M617.8 863.6c58.3-6.4 67.4-58 40.5-91.6-57-17.7-118.7-52-131.1-118 30.2-25.5-31.6-52.3-31.6-92.5 0-57.1 150.2-90.4 6.4-127.7 27.9-17.6 72.4-73.6 73.2-106.6 1.6-64.7-58.2-120-127.2-119.2"
+        android:fillType="evenOdd"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="20"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeMiterLimit="4"
+        android:strokeAlpha="0.5" />
+    <path
+        android:pathData="M416.6 466h94.8zM408 627.7h112.2zm-99.4 153.5h320z"
+        android:fillType="evenOdd"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="20"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeMiterLimit="4"
+        android:strokeAlpha="0.5" />
 </vector>
