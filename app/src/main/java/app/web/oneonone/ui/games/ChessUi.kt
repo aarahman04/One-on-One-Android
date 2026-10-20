@@ -2,6 +2,10 @@ package app.web.oneonone.ui.games
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -37,7 +41,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -96,7 +99,17 @@ private class SpriteTrack {
     }
 }
 
-private const val SlideMs = 170
+/** Slide time grows with distance (a one-square step is quick, a long diagonal still reads as one glide). */
+internal fun slideMillis(fromCell: Int, toCell: Int): Int {
+    val dx = (fromCell % 8 - toCell % 8).toFloat(); val dy = (fromCell / 8 - toCell / 8).toFloat()
+    return (150 + 45 * kotlin.math.sqrt(kotlin.math.sqrt(dx * dx + dy * dy))).roundToInt().coerceAtMost(280)
+}
+
+/** Where a released piece was under the finger, so it settles from there instead of jumping. */
+private class Release(val id: Int, val at: Offset)
+
+/** Top-left of a dragged piece: centred on the finger and raised so the finger doesn't hide it. */
+private fun liftedAt(finger: Offset, tilePx: Float) = Offset(finger.x - tilePx / 2, finger.y - tilePx * .85f)
 
 @Composable
 internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Boolean, busy: Boolean,
@@ -114,11 +127,10 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
     var promotion by remember(matchId) { mutableStateOf<List<String>?>(null) }
     var dragPos by remember { mutableStateOf<Offset?>(null) }
     var dragFrom by remember { mutableIntStateOf(-1) }
-    // The square and position of a piece the finger dropped: it is already there, so it doesn't slide.
-    var dropSquare by remember { mutableIntStateOf(-1) }
-    var dropPosition by remember { mutableStateOf("") }
+    var release by remember { mutableStateOf<Release?>(null) }
     val currentEnabled by rememberUpdatedState(enabled && pending == null)
     val currentShown by rememberUpdatedState(shown)
+    val currentSprites by rememberUpdatedState(sprites)
 
     // Sounds follow what the board shows: once per new position, never again for the server's echo.
     val heard = remember(matchId) { intArrayOf(-1) }
@@ -134,9 +146,7 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
     }
 
     fun own(square: Int) = currentShown.pieces[square] != '.' && currentShown.pieces[square].isUpperCase() == white
-    fun play(uci: String, dropped: Boolean) {
-        dropSquare = if (dropped) squareIndex(uci.substring(2, 4)) else -1
-        dropPosition = if (dropped) currentShown.played(uci)?.position.orEmpty() else ""
+    fun play(uci: String) {
         pending = uci
         move(buildJsonObject { put("uci", uci) })
     }
@@ -145,7 +155,7 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
         val options = if (selected >= 0) currentShown.movesFrom(selected).filter { squareIndex(it.substring(2, 4)) == square } else emptyList()
         when {
             options.size > 1 -> promotion = options
-            options.size == 1 -> { play(options.single(), dropped); selected = -1 }
+            options.size == 1 -> { play(options.single()); selected = -1 }
             own(square) && !dropped -> selected = if (selected == square) -1 else square
             else -> selected = -1
         }
@@ -165,9 +175,15 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
         detectDragGestures(onDragStart = { pos ->
             val square = at(pos)
             if (currentEnabled && square >= 0 && own(square)) { selected = square; dragFrom = square; dragPos = pos }
-        }, onDragCancel = { dragPos = null; dragFrom = -1 }, onDragEnd = {
+        }, onDragCancel = {
+            dragPos?.let { p -> currentSprites.firstOrNull { it.square == dragFrom }?.let { release = Release(it.id, liftedAt(p, size.width / 8f)) } }
+            dragPos = null; dragFrom = -1
+        }, onDragEnd = {
             val end = dragPos
-            if (end != null && dragFrom >= 0) currentDestination(at(end), true)
+            if (end != null && dragFrom >= 0) {
+                currentSprites.firstOrNull { it.square == dragFrom }?.let { release = Release(it.id, liftedAt(end, size.width / 8f)) }
+                currentDestination(at(end), true)
+            }
             dragPos = null; dragFrom = -1
         }) { change, amount -> dragPos?.let { change.consume(); dragPos = it + amount } }
     }) {
@@ -212,34 +228,48 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
                     color = if (isLight(rankSquare)) ChessColors.dark else ChessColors.light)
             }
         }
+        // The capture fades while the attacker travels, finishing as it lands.
+        val captureMs = if (shown.lastFrom >= 0) slideMillis(cellOf(shown.lastFrom, white), cellOf(shown.lastTo, white)) else 200
         for (sprite in track.gone) key("gone-${sprite.id}") {
             val fade = remember { Animatable(1f) }
-            LaunchedEffect(Unit) { fade.animateTo(0f, tween(SlideMs)) }
+            LaunchedEffect(Unit) { fade.animateTo(0f, tween(captureMs, easing = LinearOutSlowInEasing)) }
             val cell = cellOf(sprite.square, white)
             Image(painterResource(pieceDrawable(sprite.piece)), null, Modifier.size(tile)
-                .offset { IntOffset((cell % 8 * tilePx).roundToInt(), (cell / 8 * tilePx).roundToInt()) }
-                .graphicsLayer { alpha = fade.value; scaleX = .8f + .2f * fade.value; scaleY = .8f + .2f * fade.value }
+                .graphicsLayer {
+                    translationX = cell % 8 * tilePx; translationY = cell / 8 * tilePx
+                    alpha = fade.value; scaleX = .85f + .15f * fade.value; scaleY = .85f + .15f * fade.value
+                }
                 .padding(tile * .04f))
         }
         val easing = OneTheme.motion.standard
         for (sprite in sprites) key(sprite.id) {
             val cell = cellOf(sprite.square, white)
-            val target = IntOffset((cell % 8 * tilePx).roundToInt(), (cell / 8 * tilePx).roundToInt())
-            val position = remember { Animatable(target, IntOffset.VectorConverter) }
-            LaunchedEffect(target) {
-                // A piece dropped by the finger is already there; everything else slides.
-                if (sprite.square == dropSquare && shown.position == dropPosition) position.snapTo(target)
-                else position.animateTo(target, tween(SlideMs, easing = easing))
-            }
+            val target = Offset(cell % 8 * tilePx, cell / 8 * tilePx)
+            val position = remember { Animatable(target, Offset.VectorConverter) }
             val lifted = dragFrom == sprite.square && dragPos != null
+            val lift by animateFloatAsState(if (lifted) 1.2f else 1f, spring(dampingRatio = .8f, stiffness = Spring.StiffnessMedium), label = "lift")
+            LaunchedEffect(target, lifted) {
+                if (lifted) return@LaunchedEffect
+                val r = release
+                if (r?.id == sprite.id) {
+                    // Released: glide from under the finger onto its square (or back home), no jump.
+                    release = null
+                    position.snapTo(r.at)
+                    position.animateTo(target, spring(dampingRatio = .85f, stiffness = 900f))
+                } else if (position.value != target) {
+                    val from = position.value
+                    val fromCell = (from.y / tilePx).roundToInt().coerceIn(0, 7) * 8 + (from.x / tilePx).roundToInt().coerceIn(0, 7)
+                    position.animateTo(target, tween(slideMillis(fromCell, cell), easing = easing))
+                }
+            }
             Image(painterResource(pieceDrawable(sprite.piece)), null, Modifier.size(tile)
                 .zIndex(if (lifted) 2f else if (position.isRunning) 1f else 0f)
-                .offset {
-                    val p = dragPos
-                    // Lifted above the finger so it stays visible while dragging.
-                    if (lifted && p != null) IntOffset((p.x - tilePx / 2).roundToInt(), (p.y - tilePx * .85f).roundToInt()) else position.value
+                .graphicsLayer {
+                    // Lifted above the finger so it stays visible while dragging; draw-phase only, so no relayout per frame.
+                    val at = dragPos?.takeIf { lifted }?.let { liftedAt(it, tilePx) } ?: position.value
+                    translationX = at.x; translationY = at.y
+                    scaleX = lift; scaleY = lift
                 }
-                .graphicsLayer { if (lifted) { scaleX = 1.2f; scaleY = 1.2f } }
                 .padding(tile * .04f))
         }
         CellGrid(8, 8, description = { cell ->
@@ -248,7 +278,7 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
                 (if (targets[sq]) ", legal move" else "") + (if (sq == shown.checkSquare) ", in check" else "")
         }, enabled = { enabled }, click = { destination(squareAt(it, white), false) })
         promotion?.let { options -> PromotionPicker(options, white, tile, cellOf(squareIndex(options.first().substring(2, 4)), white) % 8,
-            onPick = { uci -> promotion = null; play(uci, dropped = false) }, onCancel = { promotion = null; selected = -1 }) }
+            onPick = { uci -> promotion = null; play(uci) }, onCancel = { promotion = null; selected = -1 }) }
     }
 }
 
