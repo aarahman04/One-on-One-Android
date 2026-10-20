@@ -1507,3 +1507,70 @@ sign-in gates, share sheet targets, calls, real alarm FCM, presence.
 - [ ] App backgrounded, receive call, open full-screen call: only one ringtone.
 - [ ] Receive alarm, tap Acknowledge: ring stops immediately; ack row layout.
 - [ ] Partner opens/closes chat: Online/Last seen within ~15 s (instant after backend presence).
+
+## Games rebuilt on server authority + speech cost rework (2026-10-20, 2.0.7, branch `claude/pensive-franklin-l096wx`)
+
+Status: implemented; **build-verified only in part, not device-tested** (see Verification).
+
+Backend (owner-authorised changes in `aarahman04/One-on-One`, same branch name, contract §11/§12):
+authoritative `match:*` games (seats, server-side rules with chess.js, 60 Hz table tennis
+simulation, reconnection, rematch, cleanup) and the speech service cost rework (Whisper
+base.en, lazy load/unload, Serverless wake retry, daily quotas). Web client not changed: web
+and Android players can't play each other until the web adopts §12.
+
+Root causes found in the audit:
+- Table tennis: the old relay did an async DB lookup per 30 Hz packet, so packets could be
+  reordered; the strict `seq` check then ended the game ("out-of-sequence move"). Any relay
+  hiccup also ended it. Both clients ran their own physics view of a host-owned ball.
+- Chess: pieces were tinted "mine vs theirs" (accent colours), never white/black, so both
+  players saw their own army in the same colour at the bottom; no move animation; colours
+  and validation lived only on the clients.
+- All games: no server validation, a restarted app ended the game, rematch didn't swap sides.
+
+Android changes:
+- `data/games`: `Match` (strict decoder), `Boards` (Chess/Grid/Dots views, sprite tracking),
+  `PongClient` (render-only), `MatchSession` (pure, testable). Removed the client engines
+  (`BoardGames`, `GameProtocol`) and the relay API from `Transport`.
+- Chess: classic board, white/black pieces with outlines, "Playing as White/Black" chip,
+  flipped for black, 200 ms slides + capture fade, legal dots/capture rings, last move and
+  check highlights, file/rank labels, piece-picture promotion picker, offer/accept/decline/
+  claim draw, captured rows, resign.
+- Table tennis: portrait court, own paddle bottom, drag/tap control, server score, countdown,
+  pause while backgrounded (`match:away`) or while the partner is away.
+- Tic-tac-toe, Connect 4, Dots & Boxes: identity/turn text, last-move animation keyed to the
+  server's `last`, consistent result screen with series score, rematch (accept partner's
+  request), "Play something else". Hub closes when inviting; declined/expired invites show a notice.
+- Speech: `SpeechApi` timeouts 95 s read / 125 s call (cold wake of the sleeping service);
+  `quota_exceeded` falls back to the device voice/recognizer like 503/504.
+
+Verification (what actually ran):
+- This container has no Android SDK and Google Maven (`dl.google.com`) is blocked, so
+  `./gradlew assembleDebug lintDebug testDebugUnitTest` **could not run**. Instead:
+  - JVM harness: `Match.kt`, `Boards.kt`, `PongGame.kt`, `MatchSession.kt` compiled with
+    Kotlin 2.4.20 + chesslib 1.3.7 (built from source) and their unit tests run:
+    **14/14 pass** (`MatchTest`, `PongClientTest`, `MatchSessionTest`).
+  - Compose type-check: the real `GameBoards.kt`, `GameHost.kt`, `GameVectors.kt`,
+    `GameViewModel.kt`, `GameService.kt` compiled against Compose Multiplatform 1.6.11 with
+    stubs for app-only symbols (theme, buttons, R, Coil, lifecycle): **compiles, no warnings**.
+    Not a substitute for AGP + lint on the real Compose BOM.
+  - `GameViewModelTest` and the `SpeechTest` additions were rewritten/extended but **not run**.
+- Backend: 75/75 tests incl. two real Socket.IO clients playing chess and table tennis.
+- Speech service: 7/7 tests with the real models; end-to-end HTTP benchmark (docs/SPEECH-SERVICE.md).
+- Two phones were **not** used; no device testing.
+
+### Xiaomi checklist (two phones, both on this build, backend from this branch deployed)
+- [ ] Start chess from each phone: one shows "Playing as White", the other "Playing as Black";
+      each sees its own pieces at the bottom; white moves first.
+- [ ] Moves slide (~0.2 s), captures fade, castling moves the rook, en passant removes the pawn,
+      promotion shows the four pieces; illegal taps never move anything.
+- [ ] Check highlight; checkmate/stalemate end the game on both phones with the same result.
+- [ ] Offer draw → partner sees Accept/Decline; repeat a position 3x → "Claim draw" appears for the side to move.
+- [ ] Turn Wi-Fi off mid-chess for 30 s, back on: same board, same colours, game continues.
+- [ ] Rematch from both: colours swap; series score shows.
+- [ ] Table tennis: both phones show the same score; ball moves smoothly; paddle follows the
+      finger; ball resets after a point; first to 7 ends both.
+- [ ] Table tennis: background one app → both pause; return → 3 s countdown, play resumes.
+- [ ] Tic-tac-toe, Connect 4, Dots & Boxes: turn text correct, last move animates, result + rematch.
+- [ ] Partner offline: inviting shows "Games need … to be online."
+- [ ] With `SERVER_SPEECH=true` and the speech service deployed: first letter read after
+      ~15 min idle waits (spinner) then plays in the natural voice; dictation inserts text, never sends.

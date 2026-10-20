@@ -146,7 +146,8 @@ class SpeechTest {
     }
 
     @Test fun narrationNetworkAndServiceFailuresUseDeviceVoiceButNotMissingLetter() = runTest {
-        for (error in listOf(IOException("offline"), SpeechFailure(503, "speech_unavailable"), SpeechFailure(504, "speech_timeout"))) {
+        for (error in listOf(IOException("offline"), SpeechFailure(503, "speech_unavailable"), SpeechFailure(504, "speech_timeout"),
+            SpeechFailure(429, "quota_exceeded"))) {
             val api = FakeSpeech().apply { fetch = { throw error } }; val audio = FakeAudio()
             val narrator = LetterNarrator(api, audio, backgroundScope, StandardTestDispatcher(testScheduler))
             narrator.toggle("connection", "letter", "private local text"); runCurrent()
@@ -161,6 +162,12 @@ class SpeechTest {
         assertEquals(NarrationPhase.Idle, narrator.state.value.phase)
         assertEquals("This letter can't be read aloud", narrator.state.value.notice)
         assertNull(audio.deviceText); narrator.stop()
+        // The per-minute limit is not the daily budget: no device fallback, just "busy".
+        val busy = LetterNarrator(FakeSpeech().apply { fetch = { throw SpeechFailure(429, "rate_limited") } }, FakeAudio(), backgroundScope,
+            StandardTestDispatcher(testScheduler))
+        busy.toggle("connection", "letter", "text"); runCurrent()
+        assertEquals("Reading is busy. Try again in a moment.", busy.state.value.notice)
+        busy.stop()
     }
 
     @Test fun inconsistentPartTotalsRejectTheSequenceAndDeleteFiles() = runTest {
@@ -202,7 +209,8 @@ class SpeechTest {
     }
 
     @Test fun transcriptionServiceAndNetworkFailuresCleanFileAndFallBackToDevice() = runTest {
-        for (error in listOf(IOException("offline"), SpeechFailure(503, "speech_unavailable"), SpeechFailure(504, "speech_timeout"))) {
+        for (error in listOf(IOException("offline"), SpeechFailure(503, "speech_unavailable"), SpeechFailure(504, "speech_timeout"),
+            SpeechFailure(429, "quota_exceeded"))) {
             val api = FakeSpeech().apply { upload = { throw error } }; val recorder = FakeRecorder(); val device = FakeDevice()
             val delivered = mutableListOf<String>(); val notices = mutableListOf<String>()
             val transcriber = SpeechTranscriber(api, recorder, device, backgroundScope, delivered::add, notices::add, StandardTestDispatcher(testScheduler))
