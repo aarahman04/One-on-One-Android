@@ -1668,3 +1668,34 @@ Not device-tested.
 - [ ] Drop on an illegal square or outside the board: the piece glides back to where it started.
 - [ ] Capture: the taken piece fades out as the attacker arrives; castling slides king and rook together.
 - [ ] Promotion by drag: piece returns to its square while the picker shows, then slides after picking.
+
+## Games round: sidespin, Reversi, Connect 4 / tic-tac-toe polish (2026-10-21, branch `claude/games-spin-reversi-android`)
+
+Backend (merged, aarahman04/One-on-One#119): table tennis sidespin (`w` in `match:pong`), Reversi
+rules (`reversi` match game), contract §12. Backend tests 88/88.
+
+Android:
+- Table tennis: `PongClient` reads optional `w`, curves the extrapolated ball, rolls a seam on the
+  ball with the spin (`PongUi`). Older servers (no `w`) behave as before.
+- Reversi (`ReversiView`, `ReversiBoard`): green board like chess, black/white discs, legal-move dots,
+  new disc drops in, flips turn edge-on in a wave from it, pass notice in the status line, disc
+  counts, results "32–30 discs" / "Equal discs" (a draw). Replaces Dots & Boxes in the hub.
+- Connect 4: drop time follows free fall (≈200 ms from one row, ≈360 ms from six), small landing
+  hop, winning ring fades in after the disc lands. Tic-tac-toe: win line strikes after the last mark.
+- Reference APK: Unity IL2CPP base split without native libraries; only names recoverable. REA MCP
+  Android tools need a jadx-headless-mcp JAR (`REA_JADX_MCP_JAR`), not configured. Details:
+  `docs/games/GAME-INVENTORY.md`.
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` passed (new `PongClientTest`
+spin, `MatchTest` Reversi, `GameMotionTest`). Not device-tested; two-phone play not tested.
+
+### Xiaomi checklist (two phones on this build)
+- [ ] Table tennis: swipe sideways while hitting: the ball curves in flight and its seam spins; a
+      plain block flies straight; a curving ball that hits the side wall goes straight after.
+- [ ] Hub shows Reversi, not Dots & Boxes. Start Reversi: seat 1 is Black and moves first;
+      dots show your legal squares; tapping one drops your disc and flips a wave of discs.
+- [ ] Reversi pass: when one side has no move the status says so and the other plays again.
+- [ ] Reversi end: board full or no moves for either side: result shows disc count; rematch swaps colours.
+- [ ] Connect 4: a disc dropped into an empty column falls visibly longer than one onto a high stack,
+      lands with a small hop; the winning four get rings after the last disc lands.
+- [ ] Tic-tac-toe: the winning line draws after the final mark.

@@ -73,6 +73,20 @@ class PongClientTest {
         assertEquals(0f, p.height, 0f)
     }
 
+    @Test fun sidespinCurvesTheDrawnBallAndRotatesWithTheTable() {
+        for (seat in 1..2) {
+            val p = PongClient(seat)
+            val f = buildJsonObject { frame(listOf(.5f, .9f, 0f, -1f)).forEach { (k, v) -> put(k, v) }; put("w", 2) }
+            p.receive(f, "m", 0)
+            repeat(16) { p.advance(it * 10 * ms) }
+            if (seat == 1) assertTrue("curves right, x ${p.ballX}", p.ballX > .51f) else assertTrue("mirrored, x ${p.ballX}", p.ballX < .49f)
+            assertTrue(p.spinAngle != 0f)
+        }
+        val plain = PongClient(1)
+        plain.receive(frame(listOf(.5f, .9f, 0f, -1f)), "m", 0)
+        assertEquals(0f, plain.spin, 0f) // older servers send no `w`
+    }
+
     @Test fun rejectsMalformedAndForeignFrames() {
         val p = PongClient(1)
         assertFalse(p.receive(frame(listOf(.5f, .5f, 0f, 0f), id = "other"), "m", 0))

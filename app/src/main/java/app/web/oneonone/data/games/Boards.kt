@@ -128,3 +128,21 @@ class DotsView(val horizontal: IntArray, val vertical: IntArray, val boxes: IntA
         }.getOrNull()
     }
 }
+
+/** Reversi: 64 cells row-major from the top-left, seat 1 black. [legal] is for the side to move (display only). */
+class ReversiView(val cells: IntArray, val last: Int, val flipped: IntArray, val passed: Boolean, val legal: IntArray) {
+    fun count(seat: Int) = cells.count { it == seat }
+    /** Flip order: discs nearer the new disc turn first, like a wave (0 = adjacent). */
+    fun flipRank(cell: Int): Int = if (last < 0) 0 else maxOf(kotlin.math.abs(cell / 8 - last / 8), kotlin.math.abs(cell % 8 - last % 8)) - 1
+    companion object {
+        fun from(board: JsonObject?): ReversiView? = runCatching {
+            val cells = board!!.ints("cells", 64)!!
+            require(cells.all { it in 0..2 })
+            ReversiView(cells, board.int("last")?.takeIf { it in 0..63 } ?: -1,
+                (board.ints("flipped") ?: IntArray(0)).filter { it in 0..63 }.toIntArray(),
+                (board["passed"] as? JsonPrimitive)?.booleanOrNull == true,
+                (board.ints("legal") ?: IntArray(0)).filter { it in 0..63 && cells[it] == 0 }.toIntArray())
+        }.getOrNull()
+    }
+}
+

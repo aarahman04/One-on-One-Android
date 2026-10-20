@@ -1,6 +1,7 @@
 package app.web.oneonone.ui.games
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -18,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
@@ -34,6 +36,7 @@ internal fun GameBoard(vm: GameViewModel, state: GameUi) {
         GameKind.Connect4 -> GridView.from(match.board, 42)?.let { ConnectFourBoard(match.id, it, state.seat, enabled, vm::move) }
         GameKind.TicTacToe -> GridView.from(match.board, 9)?.let { TicTacToeBoard(match.id, it, state.seat, enabled, vm::move) }
         GameKind.Dots -> DotsView.from(match.board)?.let { DotsBoard(match.id, it, state.seat, vm.nickname, enabled, vm::move) }
+        GameKind.Reversi -> ReversiView.from(match.board)?.let { ReversiBoard(match.id, it, state.seat, enabled, vm::move) }
         GameKind.Chess, GameKind.Pong -> Unit // ChessUi.kt, PongUi.kt
     }
 }
@@ -59,7 +62,8 @@ private fun TicTacToeBoard(matchId: String, game: GridView, seat: Int, enabled: 
     val progress = remember(matchId) { Animatable(1f) }
     val win = remember(matchId) { Animatable(0f) }
     LaunchedEffect(game.last) { if (game.last >= 0) { progress.snapTo(0f); progress.animateTo(1f, tween(motion.base200, easing = motion.standard)) } }
-    LaunchedEffect(game.line.size) { if (game.line.isNotEmpty()) win.animateTo(1f, tween(motion.slow320, easing = motion.emphasized)) }
+    // The winning line strikes through once the last mark is drawn.
+    LaunchedEffect(game.line.size) { if (game.line.isNotEmpty()) win.animateTo(1f, tween(motion.slow320, delayMillis = motion.base200, easing = motion.emphasized)) }
     val stroke = with(LocalDensity.current) { OneTheme.spacing.xs4.toPx() }
     val arcStroke = remember(stroke) { Stroke(stroke, cap = StrokeCap.Round) }
     Box(Modifier.fillMaxSize().clip(RoundedCornerShape(OneTheme.radii.lg16)).background(c.bgRaised)) {
@@ -96,7 +100,16 @@ private fun ConnectFourBoard(matchId: String, game: GridView, seat: Int, enabled
     val c = OneTheme.colors
     val motion = OneTheme.motion
     val drop = remember(matchId) { Animatable(1f) }
-    LaunchedEffect(game.last) { if (game.last >= 0) { drop.snapTo(0f); drop.animateTo(1f, spring(motion.springDamping, motion.springStiffness)) } }
+    val glow = remember(matchId) { Animatable(0f) }
+    LaunchedEffect(game.last) {
+        if (game.last < 0) return@LaunchedEffect
+        // Falls like a disc: accelerating, longer from higher up, then a small settle bounce on landing.
+        val rows = game.last / 7 + 1
+        drop.snapTo(0f)
+        drop.animateTo(1f, tween(dropMillis(rows), easing = Gravity))
+        drop.animateTo(1f, spring(.45f, 1400f), initialVelocity = -6f / rows) // same ~0.15-row hop from any height
+    }
+    LaunchedEffect(game.line.size) { if (game.line.isNotEmpty()) { glow.snapTo(0f); glow.animateTo(1f, tween(motion.slow320, delayMillis = 350, easing = motion.emphasized)) } }
     val ring = remember { Stroke(5f) }
     Box(Modifier.fillMaxSize().clip(RoundedCornerShape(OneTheme.radii.lg16)).background(c.border)) {
         Canvas(Modifier.fillMaxSize()) {
@@ -108,7 +121,7 @@ private fun ConnectFourBoard(matchId: String, game: GridView, seat: Int, enabled
                     val animatedY = if (i == game.last) y - (i / 7 + 1) * h * (1f - drop.value) else y
                     drawCircle(if (game.cells[i] == seat) c.accentYou else c.accentOther, w * .35f, Offset(x, animatedY))
                 }
-                if (game.line.contains(i)) drawCircle(c.bg, w * .22f, Offset(x, y), style = ring)
+                if (game.line.contains(i)) drawCircle(c.bg.copy(alpha = glow.value), w * (.12f + .1f * glow.value), Offset(x, y), style = ring)
             }
         }
         CellGrid(6, 7, { "Column ${it % 7 + 1}, row ${it / 7 + 1}, ${if (game.cells[it] == 0) "empty" else if (game.cells[it] == seat) "your disc" else "partner's disc"}" },
@@ -155,5 +168,68 @@ private fun DotsBoard(matchId: String, game: DotsView, seat: Int, nickname: Stri
                     move(buildJsonObject { put("h", horizontal); put("r", row); put("c", col) })
                 })
         }
+    }
+}
+
+/** Ease-in like free fall. */
+private val Gravity = androidx.compose.animation.core.CubicBezierEasing(.5f, 0f, .9f, .5f)
+
+/** Drop time grows with the square root of the height fallen, as in free fall (1 row ≈ 200 ms, 6 rows ≈ 360 ms). */
+internal fun dropMillis(rows: Int): Int = (90 + 110 * kotlin.math.sqrt(rows.coerceIn(1, 6).toFloat())).toInt()
+
+private const val FlipMs = 260
+private const val FlipStaggerMs = 70
+
+/**
+ * Reversi on the same green as the chess board, black and white discs. The new disc drops in, then the
+ * outflanked discs turn over edge-on (narrowing, swapping colour, widening) in a wave from it.
+ */
+@Composable
+private fun ReversiBoard(matchId: String, game: ReversiView, seat: Int, enabled: Boolean, move: (JsonObject) -> Unit) {
+    val c = OneTheme.colors
+    val clock = remember(matchId) { Animatable(Float.MAX_VALUE) }
+    val waves = (game.flipped.maxOfOrNull { game.flipRank(it) } ?: 0) + 1
+    val total = 120 + waves * FlipStaggerMs + FlipMs
+    LaunchedEffect(game.last, game.flipped.size) {
+        if (game.last >= 0) { clock.snapTo(0f); clock.animateTo(total.toFloat(), tween(total, easing = LinearEasing)) }
+    }
+    val flipped = remember(game) { game.flipped.toHashSet() }
+    Box(Modifier.fillMaxSize().clip(RoundedCornerShape(OneTheme.radii.sm6)).background(ChessColors.dark)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val t = size.width / 8
+            val ms = clock.value
+            for (i in 1..7) {
+                drawLine(ChessColors.light.copy(alpha = .35f), Offset(i * t, 0f), Offset(i * t, size.height), 1.5f)
+                drawLine(ChessColors.light.copy(alpha = .35f), Offset(0f, i * t), Offset(size.width, i * t), 1.5f)
+            }
+            if (game.last >= 0) drawRect(ChessColors.lastDark.copy(alpha = .55f), Offset(game.last % 8 * t, game.last / 8 * t), Size(t, t))
+            for (i in 0..63) {
+                val owner = game.cells[i]
+                if (owner == 0) continue
+                val center = Offset((i % 8 + .5f) * t, (i / 8 + .5f) * t)
+                var shown = owner
+                var widthScale = 1f
+                var scale = 1f
+                if (i == game.last) scale = (ms / 120f).coerceIn(0f, 1f).let { 1f - (1f - it) * (1f - it) }
+                else if (i in flipped) {
+                    val k = ((ms - 120 - game.flipRank(i) * FlipStaggerMs) / FlipMs).coerceIn(0f, 1f)
+                    widthScale = kotlin.math.abs(kotlin.math.cos(Math.PI.toFloat() * k)).coerceAtLeast(.06f)
+                    if (k < .5f) shown = 3 - owner
+                }
+                if (scale <= 0f) continue
+                val r = t * .41f * scale
+                val size2 = Size(r * 2 * widthScale, r * 2)
+                val topLeft = Offset(center.x - size2.width / 2, center.y - r)
+                drawOval(Color.Black.copy(alpha = .25f), topLeft + Offset(0f, t * .04f), size2)
+                drawOval(if (shown == 1) ChessColors.blackFill else ChessColors.whiteFill, topLeft, size2)
+                if (shown == 2) drawOval(ChessColors.whiteOutline.copy(alpha = .35f), topLeft, size2, style = Stroke(1.5f))
+            }
+            // Where you may play: a soft dot in your colour.
+            if (enabled) for (i in game.legal) drawCircle((if (seat == 1) ChessColors.blackFill else ChessColors.whiteFill).copy(alpha = .45f),
+                t * .12f, Offset((i % 8 + .5f) * t, (i / 8 + .5f) * t))
+        }
+        val legal = remember(game) { game.legal.toHashSet() }
+        CellGrid(8, 8, { "${'a' + it % 8}${8 - it / 8}, ${when (game.cells[it]) { 1 -> "black"; 2 -> "white"; else -> if (it in legal) "empty, you can play here" else "empty" }}" },
+            { enabled && it in legal }, { move(buildJsonObject { put("cell", it) }) })
     }
 }

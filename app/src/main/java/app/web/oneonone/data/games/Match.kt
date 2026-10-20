@@ -7,6 +7,8 @@ enum class GameKind(val wire: String, val title: String, val description: String
     Pong("pong", "Table Tennis", "Keep the rally going · first to 7"),
     Connect4("connect4", "Connect 4", "Drop a disc, connect four"),
     TicTacToe("tictactoe", "Tic-Tac-Toe", "Three in a row, one good move"),
+    Reversi("reversi", "Reversi", "Outflank and flip · most discs wins"),
+    /** Retired from the hub (2026-10-21); still decoded so older apps' invites and logs work. */
     Dots("dots", "Dots & Boxes", "Close a box, take another turn"),
 }
 
