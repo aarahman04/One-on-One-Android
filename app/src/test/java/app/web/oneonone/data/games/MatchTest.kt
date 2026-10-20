@@ -77,6 +77,25 @@ class MatchTest {
         assertNull(ChessView.from(buildJsonObject { put("fen", 3) }))
     }
 
+    @Test fun predictedMoveMatchesTheServersPositionAndKeepsHistory() {
+        val start = ChessView.from(buildJsonObject {
+            put("fen", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"); put("last", JsonNull); put("check", false); put("claim", JsonNull)
+            putJsonArray("history") {}
+        })!!
+        val predicted = start.played("e2e4")!!
+        val server = ChessView.from(chessBoard("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1", "e2", "e4"))!!
+        assertEquals(server.position, predicted.position)
+        assertEquals(squareIndex("e2") to squareIndex("e4"), predicted.lastFrom to predicted.lastTo)
+        assertNull(start.played("e2e5")) // illegal: no prediction
+        val withHistory = ChessView.from(buildJsonObject {
+            put("fen", server.fen); putJsonObject("last") { put("from", "e2"); put("to", "e4") }; put("check", false); put("claim", JsonNull)
+            putJsonArray("history") { add("e4") }
+        })!!
+        assertEquals(listOf("e4"), withHistory.history)
+        assertEquals(0, withHistory.material())
+        assertEquals(-1, ChessView.from(chessBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPP1/RNBQKBNR w KQkq - 0 1"))!!.material())
+    }
+
     private fun step(before: String, after: String, from: String, to: String): Pair<List<Sprite>, List<Sprite>> {
         var id = 0
         val first = advanceSprites(null, ChessView.from(chessBoard(before))!!) { id++ }

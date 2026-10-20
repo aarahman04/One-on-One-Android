@@ -1574,3 +1574,41 @@ Verification (what actually ran):
 - [ ] Partner offline: inviting shows "Games need … to be online."
 - [ ] With `SERVER_SPEECH=true` and the speech service deployed: first letter read after
       ~15 min idle waits (spinner) then plays in the natural voice; dictation inserts text, never sends.
+
+## Chess polish (chess.com-style) and table tennis rebuild (2026-10-20, 2.0.7, same branch)
+
+Reference: the owner's table tennis screenshot (no video arrived), used for layout and mechanics only;
+colours and type follow One on One.
+
+Table tennis (backend `games/pong.ts` + Android `PongUi.kt`, `PongGame.kt`):
+- Vertical table 1 : 1.8, centre line and net; round racket heads centred on each end line with short
+  handles outside the table (own racket always at the bottom, opponent's rotated to the top).
+- Server physics: circle contact — centre hit straight back, edge hit angled up to 62°, plus 30 % of the
+  racket's sideways swing; substeps shorter than the ball radius with an overlap test (no tunnelling,
+  tested at max speed with 50 ms frames); side edges bounce; past the end line = point; serve to the
+  loser; first to 7. Assumptions in place of the missing video are written in contract §12.
+- Client: drag anywhere (no scroll), cosmetic ball height arc + shadow and a bounce mark on the far
+  half, ball held on the racket surface until the server rules, scoreboard animates only on change,
+  countdown chip, pause banner, haptics on hits and points. Canvas redraws per frame; nothing else does.
+
+Chess (`ChessUi.kt`, `GameSounds.kt`, `Boards.kt`):
+- Chessnut pieces (Apache-2.0) on the green board, chess.com-style yellow last-move/selection, check
+  glow, dot/ring hints, white hover outline while dragging, lifted 1.2x piece above the finger.
+- Your move appears instantly (predicted with chesslib, confirmed or reverted by the server); 170 ms
+  slides for everything else, capture fade, castling/en passant/promotion tracked.
+- Promotion strip over the file; player bars with captured pieces and material lead; scrolling SAN
+  move list (backend adds `history`); synthesized move/capture/check/end sounds; finished games keep
+  the final position under a result card (rematch / new game / done).
+
+Verification: backend 82/82 (incl. two real Socket.IO bots that rally 9 s without a miss, then a 7-0
+when one stops, and a rematch). Android: data-layer harness 16/16; real UI composables type-check on
+Compose 1.6.11 with no warnings and were rendered to PNG (dark/light chess, black's view, result,
+table tennis rally and countdown). `./gradlew` still not runnable here; no device test.
+
+### Xiaomi checklist (additions)
+- [ ] Chess: your move lands the instant you release; opponent's move slides; sounds play once.
+- [ ] Drag a piece: it lifts above your finger, the target square outlines; illegal drop snaps back.
+- [ ] Promote: the four-piece strip appears over the file; tapping outside cancels.
+- [ ] Table tennis: drag anywhere moves your racket without scrolling; edge hits angle the ball;
+      swinging while hitting curves it; a miss scores for the other side; ball resets and serves to you.
+- [ ] Both phones show the same score through a full game to 7; rematch swaps ends.

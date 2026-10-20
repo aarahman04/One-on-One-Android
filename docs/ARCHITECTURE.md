@@ -971,3 +971,28 @@ flowchart LR
 Chess renders real white/black pieces on a fixed classic board; black's board is flipped;
 legal-move hints come from chesslib on the server's FEN (display only, the server validates).
 Table tennis uses a portrait court (1 : 1.6) with each player's paddle at the bottom.
+
+## Chess and table tennis screens (2026-10-20, 2.0.7)
+
+```mermaid
+flowchart TB
+  subgraph Chess [ChessUi.kt]
+    ML[Move list: server SAN history] --> OB[Opponent bar: captured, +material, Thinking]
+    OB --> CB[ChessBoard]
+    CB --> MB[Your bar: Your move / Check]
+    CB -->|tap or drag| P[pending uci -> ChessView.played: shown at once]
+    P -->|match:move| S[(server)]
+    S -->|match:state same position| K[SpriteTrack: same position, no re-animation]
+    S -->|rejected, busy=false| R[pending cleared: board reverts]
+    CB --> SND[GameSounds: move / capture / check, once per position]
+  end
+  subgraph Pong [PongUi.kt]
+    SB[Scoreboard: HUD state changes only] --> T[Canvas table: reads frame in draw phase]
+    T -->|awaitEachGesture, consumed| PD[vm.paddle x 0..1, sent <= 30/s]
+    F[match:pong frames] --> PC[PongClient: rotate seat 2, extrapolate, hold on racket head, ball height arc]
+    PC --> T
+  end
+```
+
+Chess result keeps the final board with a result card. Screenshots rendered from the real composables
+(Compose desktop offscreen, stubbed app theme/resources): `docs/design/games-2026-10-20/`.

@@ -27,6 +27,8 @@ class ChessView(
     val lastFrom: Int,
     val lastTo: Int,
     val claim: String?,
+    /** Every move so far in SAN, from the server (empty for a locally predicted position's new move). */
+    val history: List<String> = emptyList(),
 ) {
     fun movesFrom(square: Int) = legal.filter { squareIndex(it.substring(0, 2)) == square }
     /** Pieces no longer on the board, by colour (promotions can make this approximate). */
@@ -34,21 +36,42 @@ class ChessView(
         val piece = if (white) type else type.lowercaseChar()
         List((Start.getValue(type) - pieces.count { it == piece }).coerceAtLeast(0)) { piece }
     }
+    /** Placement + side to move: equal for a predicted position and the server's copy of it (FEN texts may differ). */
+    val position: String get() = String(pieces) + if (whiteToMove) "w" else "b"
+
+    /** Material balance in pawns from white's side (P1 N3 B3 R5 Q9). */
+    fun material(): Int = pieces.sumOf { Value[it.uppercaseChar()]?.let { v -> if (it.isUpperCase()) v else -v } ?: 0 }
+
+    /**
+     * The position after one of [legal]'s moves, computed on the phone so the player's own move shows at
+     * once; the server's answer replaces it (and a rejected move simply falls back to this view).
+     */
+    fun played(uci: String): ChessView? = runCatching {
+        val b = Board().apply { loadFromFen(fen) }
+        b.doMove(b.legalMoves().first { it.toString() == uci })
+        build(b, squareIndex(uci.substring(0, 2)), squareIndex(uci.substring(2, 4)), null, history)
+    }.getOrNull()
+
     companion object {
         private val Start = mapOf('Q' to 1, 'R' to 2, 'B' to 2, 'N' to 2, 'P' to 8)
+        private val Value = mapOf('Q' to 9, 'R' to 5, 'B' to 3, 'N' to 3, 'P' to 1)
         private val squares = Square.values()
+        private fun build(b: Board, lastFrom: Int, lastTo: Int, claim: String?, history: List<String>) = ChessView(
+            fen = b.fen, pieces = CharArray(64) { i -> b.getPiece(squares[i]).fenSymbol.first() },
+            whiteToMove = b.sideToMove == Side.WHITE,
+            legal = b.legalMoves().map { it.toString() },
+            checkSquare = if (b.isKingAttacked) b.getKingSquare(b.sideToMove).ordinal else -1,
+            lastFrom = lastFrom, lastTo = lastTo, claim = claim, history = history,
+        )
         fun from(board: JsonObject?): ChessView? = runCatching {
             val fen = (board!!["fen"] as JsonPrimitive).content
             val b = Board().apply { loadFromFen(fen) }
-            val pieces = CharArray(64) { i -> b.getPiece(squares[i]).fenSymbol.first() }
             val last = board["last"] as? JsonObject
-            ChessView(
-                fen = fen, pieces = pieces, whiteToMove = b.sideToMove == Side.WHITE,
-                legal = b.legalMoves().map { it.toString() },
-                checkSquare = if (b.isKingAttacked) b.getKingSquare(b.sideToMove).ordinal else -1,
+            build(b,
                 lastFrom = last?.let { squareIndex((it["from"] as JsonPrimitive).content) } ?: -1,
                 lastTo = last?.let { squareIndex((it["to"] as JsonPrimitive).content) } ?: -1,
                 claim = (board["claim"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
+                history = (board["history"] as? JsonArray)?.map { (it as JsonPrimitive).content }.orEmpty(),
             )
         }.getOrNull()
     }

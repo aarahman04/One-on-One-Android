@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chessnut piece set by Alexis Luengas, Apache License 2.0 (docs/THIRD-PARTY-LICENSES.md). Converted from SVG. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="800"
+    android:viewportHeight="800">
+    <path
+        android:pathData="M497.9 240c0 53.6-44 93.9-98.1 93.9s-98.1-40.3-98.1-93.9 44-93.9 98.1-93.9c54.2.1 98.1 40.4 98.1 93.9zm28.5 97.6v55.3c-30.2 3-42.8 12.1-42.8 28 0 56.9 36 123.4 109.1 187.9v60.9c0 17.4-87.5 30.8-192.7 30.8s-192.7-13.4-192.7-30.8l-.1-60.6c73.1-64.5 108.1-131.1 108.1-188 0-15.9-13.6-25.2-43.8-28.2v-55.3z"
+        android:fillColor="#FFFFFFFF"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="30.24"
+        android:strokeMiterLimit="10" />
+    <path
+        android:pathData="M207.2 608c0 17.4 87.5 30.3 192.7 30.3s192.6-12.9 192.6-30.2"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="16.2"
+        android:strokeMiterLimit="10" />
+    <path
+        android:pathData="M272.6 386.7h252.7"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="14.04"
+        android:strokeMiterLimit="10" />
+</vector>

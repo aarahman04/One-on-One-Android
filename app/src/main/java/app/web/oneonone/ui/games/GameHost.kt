@@ -4,7 +4,6 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -18,7 +17,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -165,18 +163,6 @@ internal fun outcomeDetail(match: Match, me: String, nickname: String): String {
 }
 
 @Composable
-private fun ColorChip(white: Boolean) {
-    val c = OneTheme.colors
-    Row(Modifier.clip(CircleShape).background(c.bgRaised).border(1.dp, c.border, CircleShape)
-        .padding(horizontal = OneTheme.spacing.md12, vertical = OneTheme.spacing.xs4),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
-        Box(Modifier.size(14.dp).clip(CircleShape).background(if (white) ChessColors.whiteFill else ChessColors.blackFill)
-            .border(1.dp, ChessColors.whiteOutline.copy(alpha = .6f), CircleShape))
-        Text(if (white) "Playing as White" else "Playing as Black", style = MaterialTheme.typography.labelLarge, color = c.text)
-    }
-}
-
-@Composable
 private fun GameSurface(vm: GameViewModel, state: GameUi, photo: Pair<Any, String>?, confirm: String?, onConfirm: (String?) -> Unit) {
     val c = OneTheme.colors
     val s = OneTheme.spacing
@@ -190,7 +176,12 @@ private fun GameSurface(vm: GameViewModel, state: GameUi, photo: Pair<Any, Strin
     BackHandler { if (state.stage == GameStage.Playing) onConfirm("leave") else vm.done() }
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(match.id, match.seq) { if (match.seq > 0 && match.game != GameKind.Pong) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
-    LaunchedEffect(state.stage) { if (state.stage == GameStage.Result && match.outcome?.winner == state.me) haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+    val sounds = rememberGameSounds()
+    LaunchedEffect(state.stage) {
+        if (state.stage != GameStage.Result) return@LaunchedEffect
+        if (match.outcome?.winner == state.me) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        sounds.play(GameSound.End)
+    }
     val series = seriesText(match, state.me, state.partner, vm.nickname)
     Surface(Modifier.fillMaxSize(), color = c.bg, contentColor = c.text) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -208,8 +199,8 @@ private fun GameSurface(vm: GameViewModel, state: GameUi, photo: Pair<Any, Strin
                 if (state.stage == GameStage.Playing) TextLink("Resign", { onConfirm("resign") })
             }
             HorizontalDivider(color = c.border)
-            if (state.stage == GameStage.Result) GameResultContent(vm, state, Modifier.weight(1f))
-            else PlayingContent(vm, state, Modifier.weight(1f), onConfirm)
+            if (state.stage == GameStage.Result) GameResultContent(vm, state, photo?.first, sounds, Modifier.weight(1f))
+            else PlayingContent(vm, state, photo?.first, sounds, Modifier.weight(1f), onConfirm)
         }
     }
     confirm?.let { action -> FeatureModal(onDismissRequest = { onConfirm(null) }, title = { Text(if (action == "resign") "Resign this game?" else "Leave this game?") },
@@ -219,45 +210,16 @@ private fun GameSurface(vm: GameViewModel, state: GameUi, photo: Pair<Any, Strin
 }
 
 @Composable
-private fun PlayingContent(vm: GameViewModel, state: GameUi, modifier: Modifier, onConfirm: (String?) -> Unit) {
+private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds: GameSounds, modifier: Modifier, onConfirm: (String?) -> Unit) {
     val c = OneTheme.colors
     val s = OneTheme.spacing
     val match = state.match ?: return
-    val chess = if (match.game == GameKind.Chess) ChessView.from(match.board) else null
-    val partnerAway = state.partner in match.away
-    val status = when {
-        match.paused || partnerAway -> "Waiting for ${vm.nickname} to come back…"
-        match.game == GameKind.Pong -> vm.pong?.let { "You ${it.myScore} · ${it.theirScore} ${vm.nickname}" } ?: "Get ready"
-        state.busy -> "Sending your move…"
-        match.turn == state.me -> if (chess?.checkSquare?.let { it >= 0 } == true) "Check · your move" else "Your move"
-        chess?.checkSquare?.let { it >= 0 } == true -> "Check · ${vm.nickname} is thinking…"
-        else -> "${vm.nickname} is thinking…"
-    }
-    Column(modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = s.lg16, vertical = s.md12), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(s.sm8)) {
-            when (match.game) {
-                GameKind.Chess -> ColorChip(state.seat == 1)
-                GameKind.TicTacToe -> Text(if (state.seat == 1) "You are X · X moves first" else "You are O · X moves first", color = c.textDim, style = MaterialTheme.typography.bodySmall)
-                GameKind.Connect4 -> Text("${if (state.seat == 1) "You drop first" else "${vm.nickname} drops first"} · connect four in any direction", color = c.textDim, style = MaterialTheme.typography.bodySmall)
-                GameKind.Dots -> DotsView.from(match.board)?.let { Text("You ${it.score(state.seat)} · ${vm.nickname} ${it.score(3 - state.seat)} boxes", color = c.textDim, style = MaterialTheme.typography.bodySmall) }
-                GameKind.Pong -> Text("First to 7 · your paddle is at the bottom", color = c.textDim, style = MaterialTheme.typography.bodySmall)
-            }
-            Text(status, style = MaterialTheme.typography.titleLarge, color = if (match.turn == state.me || match.game == GameKind.Pong) c.text else c.textDim,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        }
-        if (chess != null) CapturedRow(chess, byWhite = state.seat != 1, label = "${vm.nickname} captured")
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = s.md12), contentAlignment = Alignment.Center) {
-            if (match.game == GameKind.Pong) GameBoard(vm, state)
-            else Box(Modifier.size(minOf(maxWidth, maxHeight))) { GameBoard(vm, state) }
-        }
-        if (chess != null) CapturedRow(chess, byWhite = state.seat == 1, label = "You captured")
-        if (chess != null) ChessActions(vm, state, chess)
+    val footer: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth().padding(horizontal = s.xl24, vertical = s.sm8), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
             Text(when (match.game) {
                 GameKind.Chess -> "Tap or drag a piece"
-                GameKind.Pong -> "Drag left and right"
+                GameKind.Pong -> "Drag left and right to move your racket"
                 GameKind.Connect4 -> "Tap a column"
                 GameKind.TicTacToe -> "Tap an empty square"
                 GameKind.Dots -> "Close a box to go again"
@@ -265,70 +227,86 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, modifier: Modifier,
             TextLink("Leave game", { onConfirm("leave") })
         }
     }
-}
-
-/** The pieces the `byWhite` side has taken (opposite-colour pieces no longer on the board). */
-@Composable
-private fun CapturedRow(view: ChessView, byWhite: Boolean, label: String) {
-    val pieces = view.captured(!byWhite)
-    Row(Modifier.fillMaxWidth().height(24.dp).padding(horizontal = OneTheme.spacing.lg16), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.xxs2)) {
-        if (pieces.isEmpty()) return@Row
-        Text(label, color = OneTheme.colors.textDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = OneTheme.spacing.xs4))
-        pieces.forEach { piece ->
-            val vector = remember(piece) { if (piece.isUpperCase()) chessVector(piece, ChessColors.whiteFill, ChessColors.whiteOutline) else chessVector(piece, ChessColors.blackFill, ChessColors.blackOutline) }
-            Image(rememberVectorPainter(vector), "${if (piece.isUpperCase()) "white" else "black"} ${pieceName(piece)}", Modifier.size(18.dp))
+    when (match.game) {
+        GameKind.Chess -> ChessContent(vm, state, photo, modifier, sounds) { ChessDrawControls(vm, state); footer() }
+        GameKind.Pong -> PongContent(vm, state, modifier, footer)
+        else -> Column(modifier.fillMaxWidth()) {
+            val status = when {
+                match.paused || state.partner in match.away -> "Waiting for ${vm.nickname} to come back…"
+                state.busy -> "Sending your move…"
+                match.turn == state.me -> "Your move"
+                else -> "${vm.nickname} is thinking…"
+            }
+            Column(Modifier.fillMaxWidth().padding(horizontal = s.lg16, vertical = s.md12), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(s.sm8)) {
+                when (match.game) {
+                    GameKind.TicTacToe -> Text(if (state.seat == 1) "You are X · X moves first" else "You are O · X moves first", color = c.textDim, style = MaterialTheme.typography.bodySmall)
+                    GameKind.Connect4 -> Text("${if (state.seat == 1) "You drop first" else "${vm.nickname} drops first"} · connect four in any direction", color = c.textDim, style = MaterialTheme.typography.bodySmall)
+                    GameKind.Dots -> DotsView.from(match.board)?.let { Text("You ${it.score(state.seat)} · ${vm.nickname} ${it.score(3 - state.seat)} boxes", color = c.textDim, style = MaterialTheme.typography.bodySmall) }
+                    else -> Unit
+                }
+                Text(status, style = MaterialTheme.typography.titleLarge, color = if (match.turn == state.me) c.text else c.textDim,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = s.md12), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(minOf(maxWidth, maxHeight))) { GameBoard(vm, state) }
+            }
+            footer()
         }
     }
 }
 
+/** Title, reason, series and the rematch choices. */
 @Composable
-private fun ChessActions(vm: GameViewModel, state: GameUi, view: ChessView) {
+private fun ResultActions(vm: GameViewModel, state: GameUi, compact: Boolean) {
     val c = OneTheme.colors
     val s = OneTheme.spacing
     val match = state.match ?: return
-    if (match.drawOffer == state.partner) Surface(color = c.bgRaised, border = BorderStroke(1.dp, c.accentOther.copy(alpha = .4f)),
-        shape = RoundedCornerShape(OneTheme.radii.lg16), modifier = Modifier.padding(horizontal = s.lg16, vertical = s.xs4)) {
-        Row(Modifier.fillMaxWidth().padding(s.md12), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
-            Text("${vm.nickname} offers a draw", Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
-            PrimaryButton("Accept", { vm.draw("accept") })
-            SecondaryButton("Decline", { vm.draw("decline") })
-        }
-    } else Row(Modifier.fillMaxWidth().padding(horizontal = s.lg16, vertical = s.xs4), horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
-        if (view.claim != null && state.myTurn) PrimaryButton(if (view.claim == "fifty_moves") "Claim draw (50 moves)" else "Claim draw (repetition)",
-            { vm.draw("claim") }, Modifier.weight(1f))
-        SecondaryButton(if (match.drawOffer == state.me) "Draw offered" else "Offer draw", { vm.draw("offer") }, Modifier.weight(1f),
-            enabled = match.drawOffer == null)
-    }
-}
-
-@Composable
-private fun GameResultContent(vm: GameViewModel, state: GameUi, modifier: Modifier) {
-    val c = OneTheme.colors
-    val s = OneTheme.spacing
-    val match = state.match ?: return
-    val vector = remember(match.game, c.accentYou) { gameVector(match.game.wire, c.accentYou) }
     val series = seriesText(match, state.me, state.partner, vm.nickname)
     val iAsked = state.me in match.rematch
     val theyAsked = state.partner in match.rematch
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (compact) s.sm8 else s.lg16)) {
+        Text(outcomeTitle(match, state.me, vm.nickname), style = if (compact) MaterialTheme.typography.titleLarge else OneTextStyles.screenTitle,
+            textAlign = TextAlign.Center, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        Text(listOfNotNull(outcomeDetail(match, state.me, vm.nickname), series.takeIf { compact }).joinToString(" · "),
+            color = c.textDim, style = OneTextStyles.subtitle, textAlign = TextAlign.Center)
+        if (series != null && !compact) Text(series, style = MaterialTheme.typography.titleMedium)
+        if (theyAsked) Text("${vm.nickname} wants a rematch", color = c.accentOther, style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        if (match.outcome?.reason != "connection_ended") {
+            if (iAsked) SecondaryButton("Waiting for ${vm.nickname}…", {}, Modifier.fillMaxWidth(), enabled = false)
+            else PrimaryButton(if (theyAsked) "Accept rematch" else "Rematch", vm::rematch, Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
+                SecondaryButton("New game", vm::hub, Modifier.weight(1f))
+                SecondaryButton("Done", vm::done, Modifier.weight(1f))
+            }
+        } else SecondaryButton("Done", vm::done, Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun GameResultContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds: GameSounds, modifier: Modifier) {
+    val c = OneTheme.colors
+    val s = OneTheme.spacing
+    val match = state.match ?: return
+    // Chess keeps the final position on screen, as a finished game should.
+    if (match.game == GameKind.Chess) {
+        ChessContent(vm, state, photo, modifier, sounds) {
+            Surface(Modifier.fillMaxWidth().padding(s.md12), shape = RoundedCornerShape(OneTheme.radii.lg16), color = c.bgRaised,
+                border = BorderStroke(1.dp, c.border)) {
+                Box(Modifier.padding(s.lg16)) { ResultActions(vm, state, compact = true) }
+            }
+        }
+        return
+    }
+    val vector = remember(match.game, c.accentYou) { gameVector(match.game.wire, c.accentYou) }
     BoxWithConstraints(modifier.fillMaxWidth()) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(s.xl24),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(s.lg16, Alignment.CenterVertically)) {
         Box(Modifier.size(96.dp).clip(CircleShape).background(c.accentYou.copy(alpha = .1f)), contentAlignment = Alignment.Center) {
             Icon(vector, null, Modifier.size(56.dp), tint = c.accentYou)
         }
-        Text(outcomeTitle(match, state.me, vm.nickname), style = OneTextStyles.screenTitle, textAlign = TextAlign.Center,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        Text(outcomeDetail(match, state.me, vm.nickname), color = c.textDim, style = OneTextStyles.subtitle, textAlign = TextAlign.Center)
-        if (series != null) Text(series, style = MaterialTheme.typography.titleMedium)
-        if (theyAsked) Text("${vm.nickname} wants a rematch", color = c.accentOther, style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        if (match.outcome?.reason != "connection_ended") {
-            if (iAsked) SecondaryButton("Waiting for ${vm.nickname}…", {}, Modifier.fillMaxWidth(), enabled = false)
-            else PrimaryButton(if (theyAsked) "Accept rematch" else "Rematch", vm::rematch, Modifier.fillMaxWidth())
-            SecondaryButton("Play something else", vm::hub, Modifier.fillMaxWidth())
-        }
-        SecondaryButton("Done", vm::done, Modifier.fillMaxWidth())
+        ResultActions(vm, state, compact = false)
     }
     }
 }
