@@ -30,5 +30,9 @@ object MediaModule {
     @Provides fun speech(repository: SpeechRepository): SpeechGateway = repository
     @Provides fun narrationAudio(audio: AndroidNarrationAudio): NarrationAudio = audio
     @Provides fun deviceSpeech(device: AndroidDeviceSpeech): DeviceSpeech = device
-    @Provides @Singleton fun speechApi(retrofit: Retrofit): SpeechApi = retrofit.create(SpeechApi::class.java)
+    // The speech service sleeps when idle; a first request includes its wake-up and model load
+    // (backend timeouts: 90 s narration part, 120 s transcription; docs SPEECH-SERVICE.md).
+    @Provides @Singleton fun speechApi(retrofit: Retrofit, client: OkHttpClient): SpeechApi = retrofit.newBuilder()
+        .client(client.newBuilder().callTimeout(125, TimeUnit.SECONDS).readTimeout(95, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS).build()).build().create(SpeechApi::class.java)
 }

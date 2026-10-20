@@ -25,7 +25,8 @@ data class NarrationPart(val file: File, val index: Int, val total: Int)
 class SpeechFailure(val status: Int, val code: String) : IOException(code)
 
 internal fun canUseDeviceSpeech(error: Exception) = when (error) {
-    is SpeechFailure -> error.status == 503 || error.status == 504
+    // Includes the server's daily speech budget (contract §11): the device voice/recognizer is free.
+    is SpeechFailure -> error.status == 503 || error.status == 504 || (error.status == 429 && error.code == "quota_exceeded")
     is IOException -> true
     else -> false
 }

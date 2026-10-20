@@ -8,10 +8,13 @@
   Its license and attribution ship in `app/src/main/assets/licenses/chesslib/`.
 - Apache Commons Lang 3.18.0 (chesslib transitive dependency), Apache-2.0.
   Upstream license and NOTICE ship in `app/src/main/assets/licenses/commons-lang3/`.
+- Chess pieces (`res/drawable/chess_*.xml`) are original artwork drawn for One on One
+  (`docs/design/chess-pieces/`); no third-party piece set is used.
+- Game sounds (`res/raw/chess_*.ogg`, `game_end.ogg`) were synthesized for One on One (no third-party audio).
 
 Existing sticker attribution remains in `app/src/main/assets/stickers/NOTICE.txt`;
 font attribution remains in `docs/design/fonts-LICENSE.txt`.
 
 ## Server-side speech models (not shipped in the APK)
 - Kokoro-82M (hexgrad), Apache-2.0 — letter narration, voice `af_heart`.
-- NVIDIA Parakeet TDT 0.6B v3, CC-BY-4.0 — speech-to-text. Attribution: "Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)."
+- OpenAI Whisper base.en (int8 ONNX export by sherpa-onnx), MIT — speech-to-text since 2.0.7 (replaced NVIDIA Parakeet TDT 0.6B v3, whose CC-BY-4.0 attribution is no longer needed).

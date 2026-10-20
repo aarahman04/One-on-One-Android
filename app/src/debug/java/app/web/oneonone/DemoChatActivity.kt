@@ -92,7 +92,7 @@ class DemoChatActivity : ComponentActivity() {
         }
     }
     private val chat: ChatViewModel by viewModels { viewModelFactory { initializer { ChatViewModel(service, account, launcher, createSavedStateHandle()) } } }
-    private val games: GameViewModel by viewModels { viewModelFactory { initializer { GameViewModel(GameService(transport, service), createSavedStateHandle()) } } }
+    private val games: GameViewModel by viewModels { viewModelFactory { initializer { GameViewModel(GameService(transport, service)) } } }
     private val features: FeatureViewModel by viewModels { viewModelFactory { initializer {
         FeatureViewModel(service, account, DemoMedia(applicationContext, realMedia),
             DevicePreferences(applicationContext), createSavedStateHandle())

@@ -2,16 +2,18 @@ package app.web.oneonone.ui.games
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
-/** Original geometric silhouettes, drawn for One on One; all paint comes from OneTheme. */
-internal fun chessVector(piece: Char, paint: Color): ImageVector = ImageVector.Builder(
+/** Original geometric silhouettes, drawn for One on One. `outline` makes white and black pieces read on any square. */
+internal fun chessVector(piece: Char, paint: Color, outline: Color? = null): ImageVector = ImageVector.Builder(
     name = "Chess ${piece.uppercaseChar()}", defaultWidth = 32.dp, defaultHeight = 32.dp,
     viewportWidth = 32f, viewportHeight = 32f,
 ).apply {
-    path(fill = SolidColor(paint)) {
+    path(fill = SolidColor(paint), stroke = outline?.let(::SolidColor), strokeLineWidth = if (outline != null) 1.4f else 0f,
+        strokeLineJoin = StrokeJoin.Round) {
         moveTo(6f, 27f); lineTo(26f, 27f); lineTo(26f, 30f); lineTo(6f, 30f); close()
         moveTo(9f, 23f); lineTo(23f, 23f); lineTo(25f, 26f); lineTo(7f, 26f); close()
         when (piece.uppercaseChar()) {

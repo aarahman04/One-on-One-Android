@@ -945,3 +945,54 @@ instead of after the server echo. Presence ages a live receipt by the phone's mo
 the backend `presence` socket event (see the [backend handoff prompt](prompts/backend-presence-prompt.md)).
 This is a proposal, not the current API contract. Backend support and Android event
 emission/subscription are still pending; the receipt-based fallback remains in use.
+
+## Server-authoritative games (2026-10-20, 2.0.7)
+
+The client no longer runs game engines over a peer relay. The backend owns every match
+(contract §12); Android renders `match:state` snapshots and sends actions. The message path
+rule holds: `GameViewModel -> MatchSession -> GameService -> Transport -> InternetTransport`
+(only InternetTransport touches Socket.IO).
+
+```mermaid
+flowchart LR
+  UI[GameHost / GameBoards] --> VM[GameViewModel<br/>stage = stageOf match, hub, dismissed]
+  VM --> MS[MatchSession<br/>newest version wins, move retry by seq,<br/>paddle throttle 30/s, sync on connect]
+  MS --> GS[GameService : MatchChannel]
+  GS --> T[Transport.match / paddle<br/>matchStates / pongFrames]
+  T --> IT[InternetTransport<br/>match:* emitWithAck, match:paddle emit]
+  IT <-->|Socket.IO| BE[(Backend MatchManager)]
+  BE -->|match:state| IT
+  BE -->|match:pong 30/s| IT
+  MS --> PC[PongClient<br/>rotate court for seat 2,<br/>extrapolate + smooth, hold at paddle plane]
+  MS --> BV[ChessView / GridView / DotsView<br/>read-only views of board JSON]
+  BV --> SP[advanceSprites<br/>stable piece ids -> 200 ms slides,<br/>capture fade, castling, en passant, promotion]
+```
+
+Chess renders real white/black pieces on a fixed classic board; black's board is flipped;
+legal-move hints come from chesslib on the server's FEN (display only, the server validates).
+Table tennis uses a portrait court (1 : 1.6) with each player's paddle at the bottom.
+
+## Chess and table tennis screens (2026-10-20, 2.0.7)
+
+```mermaid
+flowchart TB
+  subgraph Chess [ChessUi.kt]
+    ML[Move list: server SAN history] --> OB[Opponent bar: captured, +material, Thinking]
+    OB --> CB[ChessBoard]
+    CB --> MB[Your bar: Your move / Check]
+    CB -->|tap or drag| P[pending uci -> ChessView.played: shown at once]
+    P -->|match:move| S[(server)]
+    S -->|match:state same position| K[SpriteTrack: same position, no re-animation]
+    S -->|rejected, busy=false| R[pending cleared: board reverts]
+    CB --> SND[GameSounds: move / capture / check, once per position]
+  end
+  subgraph Pong [PongUi.kt]
+    SB[Scoreboard: HUD state changes only] --> T[Canvas table: reads frame in draw phase]
+    T -->|awaitEachGesture, consumed| PD[vm.paddle x 0..1, sent <= 30/s]
+    F[match:pong frames] --> PC[PongClient: rotate seat 2, extrapolate, hold on racket head, ball height arc]
+    PC --> T
+  end
+```
+
+Chess result keeps the final board with a result card. Screenshots rendered from the real composables
+(Compose desktop offscreen, stubbed app theme/resources): `docs/design/games-2026-10-20/`.
