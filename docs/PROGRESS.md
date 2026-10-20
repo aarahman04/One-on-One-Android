@@ -1,5 +1,10 @@
 # Android milestone progress
 
+## Release 2.0.8 (2026-10-20, versionCode 15)
+- Signed build from main (run 39444598003) uploaded to Play by the owner. Contents: Android #37 (below), backend #115 (invite push, `game` rows, migration 040 applied in Supabase).
+- Speech fixed on Railway (no app change): the `speech` service now runs in the backend's project (`fabulous-connection`), so `speech.railway.internal` resolves, and the backend's `SPEECH_SERVICE_TOKEN` references `${{speech.SPEECH_SERVICE_TOKEN}}` (verified equal, values not read). The old separate `speech` project is deleted.
+- Release workflow defaults bumped to 15 / 2.0.8.
+
 ## Game invites, game history, letter mic, polish (2026-10-20, fix/game-invites-history-icons; backend #115)
 - Game invites reached nobody off the chat screen: the app keeps its socket in the background, so the server created the invite but the banner only lives in the chat. Backend #115 now sends a data-only `game_invite` push; the app shows "Alex wants to play Chess" (30 s timeout) only when the chat isn't resumed, with the same owner/connection gates as message pushes.
 - Played games appear in the chat as server-authored `game` rows (migration 040): game icon, "Chess", "You won · 12 min 14 sec". Not editable, no reply, no receipts. Call logs now read "Voice call · 5 min 12 sec" instead of an ambiguous "5:12".

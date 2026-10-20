@@ -9,11 +9,11 @@ on:
       versionCode:
         description: 'Play versionCode (at least 5; increase for every upload)'
         required: true
-        default: '14'
+        default: '15'
       versionName:
         description: 'Human-readable release version'
         required: true
-        default: '2.0.7'
+        default: '2.0.8'
 
 permissions:
   contents: read
