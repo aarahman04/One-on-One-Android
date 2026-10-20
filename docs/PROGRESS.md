@@ -1612,3 +1612,12 @@ table tennis rally and countdown). `./gradlew` still not runnable here; no devic
 - [ ] Table tennis: drag anywhere moves your racket without scrolling; edge hits angle the ball;
       swinging while hitting curves it; a miss scores for the other side; ball resets and serves to you.
 - [ ] Both phones show the same score through a full game to 7; rematch swaps ends.
+
+## 2.0.7 release prep — natural voice on (2026-10-20)
+
+- Owner configured the `speech` Railway service and the backend's `SPEECH_SERVICE_URL` /
+  `SPEECH_SERVICE_TOKEN`. The release job now builds with `SERVER_SPEECH=true` (public
+  client flag only; no secret). If the service is down or over quota (503/504/429
+  `quota_exceeded`, network error) the app still falls back to the device voice/recognizer.
+- `android-build` dispatch defaults bumped to **versionCode 14 / 2.0.7** (13 was used for 2.0.6).
+- [ ] Phone: play a letter (first one after idle wakes the service, can take ~1 min), dictate a phrase.
