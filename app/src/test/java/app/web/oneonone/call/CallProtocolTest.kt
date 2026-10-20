@@ -50,7 +50,11 @@ class CallProtocolTest {
     }
 
     @Test fun `call log text matches outcome and side`() {
-        assertEquals("Voice call · 1:05", CallProtocol.logText("audio", "completed", 65, isMine = true))
+        assertEquals("Voice call · 1 min 5 sec", CallProtocol.logText("audio", "completed", 65, isMine = true))
+        assertEquals("45 sec", CallProtocol.spokenDuration(45))
+        assertEquals("12 min", CallProtocol.spokenDuration(720))
+        assertEquals("1 hr 1 min", CallProtocol.spokenDuration(3661))
+        assertEquals("2 hr", CallProtocol.spokenDuration(7200))
         assertEquals("Missed video call", CallProtocol.logText("video", "missed", 0, isMine = false))
         assertEquals("No answer · voice call", CallProtocol.logText("audio", "missed", 0, isMine = true))
         assertEquals("1:01:01", CallProtocol.duration(3661))

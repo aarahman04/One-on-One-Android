@@ -81,6 +81,18 @@ internal suspend fun deliverMessagePush(context: Context, push: MessagePush) {
     }
 }
 
+/** Partner's game invite: same gates as a message push; the title is built locally, never taken from the push. */
+internal suspend fun deliverGameInvitePush(context: Context, push: GameInvitePush) {
+    val dependencies = dependencies(context)
+    val owner = dependencies.auth().accessToken()?.let(::tokenSubject) ?: return
+    val connection = try { dependencies.api().current().connection ?: return }
+    catch (error: HttpException) { if (error.code() in setOf(401, 403, 404, 409)) return else throw error }
+    if (connection.id != push.connectionId || connection.status != "active") return
+    if (dependencies.messages().isChatResumed(push.connectionId)) return
+    if (dependencies.auth().accessToken()?.let(::tokenSubject) != owner) return
+    dependencies.notifications().gameInvite(push, connection.otherNickname ?: "Your One on One")
+}
+
 /** Partner left: replaces the conversation's notification with one that opens the save screen. Signed-in users only. */
 internal suspend fun deliverLeftPush(context: Context, push: LeftPush) {
     val dependencies = dependencies(context)

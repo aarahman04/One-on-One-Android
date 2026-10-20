@@ -107,5 +107,6 @@ fun messageSummary(message: ChatMessage): String = if (message.deletedAt != null
     "letter" -> "Letter to ${message.payload.text("to")}" 
     "alarm" -> "Emergency alarm"
     "call" -> "Call"
+    "game" -> "Game"
     else -> message.content
 }.take(120)

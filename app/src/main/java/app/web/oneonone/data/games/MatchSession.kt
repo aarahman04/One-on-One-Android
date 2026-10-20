@@ -66,7 +66,9 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
 
     private fun handle(event: String, ack: JsonObject?): Boolean {
-        if (ack == null) { mutableErrors.tryEmit("network"); return false }
+        // match:sync runs on its own (chat opened, reconnect); its failure is retried then, so it never shows an error.
+        val quiet = event == "match:sync"
+        if (ack == null) { if (!quiet) mutableErrors.tryEmit("network"); return false }
         val ok = (ack["ok"] as? JsonPrimitive)?.booleanOrNull == true
         when (val m = ack["match"]) {
             is JsonObject -> offer(MatchCodec.decode(m))
@@ -76,7 +78,7 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
             }
             else -> Unit
         }
-        if (!ok) mutableErrors.tryEmit((ack["error"] as? JsonPrimitive)?.contentOrNull ?: "invalid_payload")
+        if (!ok && !quiet) mutableErrors.tryEmit((ack["error"] as? JsonPrimitive)?.contentOrNull ?: "invalid_payload")
         return ok
     }
 

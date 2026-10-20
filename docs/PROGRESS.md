@@ -1,5 +1,25 @@
 # Android milestone progress
 
+## Game invites, game history, letter mic, polish (2026-10-20, fix/game-invites-history-icons; backend #115)
+- Game invites reached nobody off the chat screen: the app keeps its socket in the background, so the server created the invite but the banner only lives in the chat. Backend #115 now sends a data-only `game_invite` push; the app shows "Alex wants to play Chess" (30 s timeout) only when the chat isn't resumed, with the same owner/connection gates as message pushes.
+- Played games appear in the chat as server-authored `game` rows (migration 040): game icon, "Chess", "You won · 12 min 14 sec". Not editable, no reply, no receipts. Call logs now read "Voice call · 5 min 12 sec" instead of an ambiguous "5:12".
+- `/letter` has a mic in the corner of "Your letter": same `/audio` dictation pipeline, words are appended to the letter instead of the composer; closing the letter cancels a running dictation. The letter body field has a proper writing height. Dictation hint now says English only (Whisper base.en).
+- Profile/partner photo decoding uses the platform ImageDecoder on API 28+ (orientation applied like the gallery, including mirrored tags); manual EXIF rotation stays only for API 26-27.
+- Header phone icon: current Lucide path with a 1-unit inset; video icon inset too (strokes touched the viewport edge).
+- Background `match:sync` failures no longer flash "Couldn't reach the game" when the chat opens; user actions still report errors.
+- Speech: no app change needed. Railway backend had `SPEECH_SERVICE_URL=http://speech.railway.internal:8000` pointing into a different Railway project and an empty `SPEECH_SERVICE_TOKEN`, so every request was 503 (owner fixes in the dashboard).
+- Verification: `gradlew assembleDebug lintDebug testDebugUnitTest` passed (202 tests). Debug demo checked on the emulator (game/call rows, letter mic states). Not device-tested.
+
+### Xiaomi checklist
+- [ ] Partner in background or on Settings: invite shows a notification; tapping opens the chat with the Accept banner; it disappears after 30 s.
+- [ ] Partner in the chat: no notification, banner only.
+- [ ] Finish a game (and a rematch): both phones show one game row each with winner and duration; declined/expired invites add nothing.
+- [ ] Call log rows read "Voice call · N min N sec".
+- [ ] /letter: mic → speak → stop → words appear in "Your letter"; close mid-recording stops the mic.
+- [ ] /audio and letter "Listen" use the server voice once Railway is fixed.
+- [ ] Settings → change photo with a portrait camera photo: upright for you and your partner.
+- [ ] Chat header phone/video icons look complete in light and dark.
+
 ## Polish + 2.0.6 release (2026-10-19, versionCode 13 / 2.0.6, fix/pro-polish)
 - Card headings use vector icons (letter, ask, this-or-that, check-in, countdown, location pin, alarm siren) instead of emoji; `alarm_title` and alarm status lines are plain text.
 - Call log icon reads "Video call"/"Voice call" to TalkBack instead of emoji names.

@@ -95,17 +95,19 @@ import java.time.ZoneId
 import kotlin.math.*
 
 @Composable
-fun FeatureComposer(type: String, connection: CurrentConnection, vm: FeatureViewModel, reply: String?, close: () -> Unit) {
+fun FeatureComposer(type: String, connection: CurrentConnection, vm: FeatureViewModel, reply: String?, close: () -> Unit,
+    letterMic: (@Composable (append: (String) -> Unit) -> Unit)? = null) {
     val signature by vm.signature.collectAsState()
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
     FeatureComposerContent(type, connection, signature, busy, error, reply,
-        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close)
+        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close, letterMic)
 }
 
 @Composable
 internal fun FeatureComposerContent(type: String, connection: CurrentConnection, signature: String, busy: Boolean, error: String?, reply: String?,
-    onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, close: () -> Unit) {
+    onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, close: () -> Unit,
+    letterMic: (@Composable (append: (String) -> Unit) -> Unit)? = null) {
     var first by rememberSaveable(type) { mutableStateOf("") }
     var second by rememberSaveable(type) { mutableStateOf("") }
     var third by rememberSaveable(type) { mutableStateOf("") }
@@ -133,7 +135,9 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
                 "letter" -> {
                     // Every letter renders as one white handwritten page; the contract still needs an appearance, so it stays "dawn".
                     Field("From", from, 40) { from = it }; Field("To", to, 40) { to = it }
-                    Field("Your letter", third, 4_000) { third = it }
+                    Field("Your letter", third, 4_000, trailing = letterMic?.let { mic -> {
+                        mic { words -> third = listOf(third.trimEnd(), words.trim()).filter { it.isNotEmpty() }.joinToString(" ").take(4_000) }
+                    } }) { third = it }
                 }
                 "ask" -> { Field("Question", first, 300) { first = it }; Field("Your answer (sealed until they answer)", second, 500) { second = it } }
                 "thisorthat" -> {
@@ -164,12 +168,17 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
         dismissButton = { SecondaryButton(if (preview) "Edit" else "Cancel", enabled = !busy, onClick = { if (preview) preview = false else close() }) })
 }
 
-@Composable private fun Field(label: String, value: String, maximum: Int, bubble: Boolean = false, change: (String) -> Unit) {
+@Composable private fun Field(label: String, value: String, maximum: Int, bubble: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null, change: (String) -> Unit) {
     val hint = if (bubble) LocalBubbleColors.current.text.copy(alpha = .8f) else OneTheme.colors.textDim
     val counter = if (bubble) LocalBubbleColors.current.text.copy(alpha = .8f) else OneTheme.colors.muted
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = OneTextStyles.cardHint, color = hint)
-        OneTextField(value, { change(it.take(maximum)) }, Modifier.fillMaxWidth().heightIn(max = if (maximum > 100) 212.dp else 68.dp).semantics { contentDescription = label },
+        if (trailing == null) Text(label, style = OneTextStyles.cardHint, color = hint)
+        else Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, Modifier.weight(1f), style = OneTextStyles.cardHint, color = hint)
+            trailing()
+        }
+        OneTextField(value, { change(it.take(maximum)) }, Modifier.fillMaxWidth().then(if (maximum > 1_000) Modifier.heightIn(min = 132.dp, max = 212.dp) else Modifier.heightIn(max = if (maximum > 100) 212.dp else 68.dp)).semantics { contentDescription = label },
             singleLine = false, textStyle = MaterialTheme.typography.bodyLarge)
         Text("${value.length}/$maximum", style = MaterialTheme.typography.labelMedium, color = counter)
     }

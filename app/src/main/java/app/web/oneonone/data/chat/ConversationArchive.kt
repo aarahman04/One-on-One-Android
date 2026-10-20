@@ -214,7 +214,7 @@ img{max-width:100%;border-radius:10px;display:block}.sticker img{max-width:160px
         val date = day(message, zone)
         if (date != lastDay) { append("<div class=\"day\">${htmlEscape(date)}</div>\n"); lastDay = date }
         val time = htmlEscape(stamp(message, zone).substringAfter(' '))
-        if (message.type == "call") {
+        if (message.type == "call" || message.type == "game") {
             append("<div class=\"event\">${htmlEscape(archiveLine(message, owner, saved))} · $time</div>\n"); continue
         }
         val mine = message.senderId == owner

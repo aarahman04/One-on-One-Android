@@ -996,3 +996,16 @@ flowchart TB
 
 Chess result keeps the final board with a result card. Screenshots rendered from the real composables
 (Compose desktop offscreen, stubbed app theme/resources): `docs/design/games-2026-10-20/`.
+
+## Game invite push and game history (2026-10-20)
+
+```mermaid
+flowchart LR
+  A[Inviter: match:invite] --> S[(backend MatchManager)]
+  S -->|match:state| R[Invitee socket: banner in chat]
+  S -->|FCM data game_invite| P[PushRouter -> deliverGameInvitePush]
+  P -->|chat not resumed, same owner + connection| N[Notification 30 s -> opens chat]
+  S -->|played match ends| M[saveMessage type game]
+  M -->|message:new| C[GameLogCard: title, result, duration]
+  L[/letter mic/] --> D[SpeechTranscriber same as /audio] --> T[appended to letter body]
+```
