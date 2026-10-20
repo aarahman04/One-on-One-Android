@@ -57,6 +57,24 @@ class MatchTest {
         assertEquals(GameStage.Hub, stageOf(null, "me", true, null))
     }
 
+    @Test fun reversiViewDecodesStrictlyAndRanksFlipsOutward() {
+        fun board(cells: List<Int>, legal: List<Any> = listOf(19), last: Int = 19) = buildJsonObject {
+            putJsonArray("cells") { cells.forEach { add(it) } }; put("last", last)
+            putJsonArray("flipped") { add(27); add(35) }; put("passed", true)
+            putJsonArray("legal") { legal.forEach { if (it is Int) add(it) else add(it.toString()) } }
+        }
+        val cells = List(64) { 0 }.toMutableList().apply { this[19] = 1; this[27] = 1; this[35] = 1; this[36] = 2 }
+        val v = ReversiView.from(board(cells, legal = listOf(20, 19, 70)))!!
+        assertEquals(3, v.count(1)); assertEquals(1, v.count(2))
+        assertTrue(v.passed)
+        assertArrayEquals(intArrayOf(20), v.legal) // occupied and off-board cells dropped
+        assertEquals(0, v.flipRank(27)); assertEquals(1, v.flipRank(35))
+        assertNull(ReversiView.from(board(cells.dropLast(1))))
+        assertNull(ReversiView.from(board(cells.toMutableList().apply { this[0] = 3 })))
+        assertNull(ReversiView.from(board(cells, legal = listOf("x"))))
+        assertEquals(GameKind.Reversi, MatchCodec.decode(matchJson(game = "reversi"))?.game)
+    }
+
     @Test fun chessViewReadsFenLegalMovesCheckAndCaptures() {
         val start = ChessView.from(chessBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))!!
         assertTrue(start.whiteToMove)

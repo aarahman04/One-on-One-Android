@@ -1009,3 +1009,24 @@ flowchart LR
   M -->|message:new| C[GameLogCard: title, result, duration]
   L[/letter mic/] --> D[SpeechTranscriber same as /audio] --> T[appended to letter body]
 ```
+
+## Smoother games, sidespin and Reversi (2026-10-21)
+
+Rules and physics stay on the server (§12). The client only animates what the server decided.
+
+```mermaid
+flowchart LR
+  subgraph Server [backend games]
+    PS[PongSim: swing at contact -> spin w<br/>vx += w dt, decays, side bounce clears,<br/>incoming spin kicks the return] -->|match:pong ... w| IT
+    RR[ReversiRules: flips, auto-pass,<br/>most discs] -->|match:state board| IT
+  end
+  IT[InternetTransport] --> MS[MatchSession]
+  MS --> PC[PongClient: x += vx age + 1/2 w age^2,<br/>spinAngle rolls the seam]
+  MS --> RV[ReversiView: cells, last, flipped,<br/>passed, legal]
+  RV --> RB[ReversiBoard: drop-in, edge-on flip wave<br/>ranked by distance from last]
+  MS --> CB[ChessBoard: distance-scaled slides,<br/>drop settles from finger, graphicsLayer motion]
+  MS --> C4[ConnectFourBoard: gravity-timed drop + hop,<br/>win ring after landing]
+```
+
+The hub lists Reversi instead of Dots & Boxes; `GameKind.Dots` still decodes so invites and game-log
+rows from older apps keep working.

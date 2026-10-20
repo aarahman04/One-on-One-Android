@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
@@ -208,6 +209,9 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
             val ball = at(game.ballX, game.ballY)
             drawCircle(Color.White, r, ball)
             drawCircle(c.text.copy(alpha = .45f), r, ball, style = Stroke(.006f * u))
+            // A seam that rolls with the sidespin, so a curving shot visibly spins.
+            if (game.spin != 0f) drawArc(c.text.copy(alpha = .4f), game.spinAngle, 110f, false, ball - Offset(r * .6f, r * .6f),
+                Size(r * 1.2f, r * 1.2f), style = Stroke(.005f * u, cap = StrokeCap.Round))
         }
     }
 }

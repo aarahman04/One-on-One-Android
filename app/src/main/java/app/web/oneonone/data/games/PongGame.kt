@@ -31,6 +31,9 @@ class PongClient(val seat: Int) {
     var bounceX = 0f; private set
     var bounceY = 0f; private set
     var bounceAt = 0L; private set
+    /** Sidespin (view x acceleration, units/s²) and the drawn ball's roll angle in degrees, which turns with it. */
+    var spin = 0f; private set
+    var spinAngle = 0f; private set
     private var frame = FloatArray(4)
     private var frameTheirX = .5f
     private var frameCountdown = 0
@@ -56,6 +59,8 @@ class PongClient(val seat: Int) {
         frame = floatArrayOf(viewX(b[0]), viewY(b[1]), if (seat == 1) b[2] else -b[2], if (seat == 1) b[3] else -b[3])
         frameTheirX = viewX(p[2 - seat])
         myScore = s[seat - 1]; theirScore = s[2 - seat]
+        // Optional since 2026-10-21; rotated with the table like vx.
+        spin = (data["w"] as? JsonPrimitive)?.floatOrNull?.takeIf { it.isFinite() }?.let { if (seat == 1) it else -it } ?: 0f
         frameCountdown = (data["c"] as? JsonPrimitive)?.intOrNull ?: 0
         hits = (data["h"] as? JsonPrimitive)?.intOrNull ?: hits
         frameAt = nowNanos
@@ -71,9 +76,10 @@ class PongClient(val seat: Int) {
         lastAdvance = nowNanos
         val age = ((nowNanos - frameAt) / 1e9f).coerceIn(0f, MaxExtrapolation)
         countdownMs = (frameCountdown - (age * 1000).toInt()).coerceAtLeast(0)
-        var x = frame[0] + frame[2] * age
+        var x = frame[0] + frame[2] * age + .5f * spin * age * age
         var y = frame[1] + frame[3] * age
-        // Straight line with side reflections between frames: exactly what the server simulates.
+        spinAngle = (spinAngle + spin * dt * SpinRoll) % 360f
+        // Sidespin curve with side reflections between frames, like the server (decay over ≤150 ms is negligible).
         while (x < BallR || x > 1f - BallR) x = if (x < BallR) 2 * BallR - x else 2 * (1f - BallR) - x
         // Never draw the ball into a racket head the server hasn't ruled on yet: stop it on the head's
         // surface (own racket at the finger's position, the opponent's where it was last seen).
@@ -124,5 +130,7 @@ class PongClient(val seat: Int) {
         private const val MaxExtrapolation = .15f
         private const val SnapDistance = .3f
         private const val Smoothing = 28f
+        /** Degrees of drawn roll per second per unit of spin: a strong curve visibly whirls. */
+        private const val SpinRoll = 900f
     }
 }

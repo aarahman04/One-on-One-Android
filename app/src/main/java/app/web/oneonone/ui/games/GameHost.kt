@@ -61,7 +61,7 @@ fun GameHost(vm: GameViewModel, connection: CurrentConnection, photo: Pair<Any, 
             Text("A little time together", style = OneTextStyles.screenTitle, color = c.text)
             Text("Choose a game to play with ${vm.nickname}.", style = OneTextStyles.subtitle, color = c.textDim)
             Spacer(Modifier.height(s.xs4))
-            GameKind.entries.forEach { kind ->
+            GameKind.entries.filter { it != GameKind.Dots }.forEach { kind ->
                 val vector = remember(kind, c.accentYou) { gameVector(kind.wire, c.accentYou) }
                 Surface(onClick = { vm.invite(kind) }, shape = RoundedCornerShape(OneTheme.radii.lg16),
                     color = c.bg, border = BorderStroke(1.dp, c.border), modifier = Modifier.semantics { role = Role.Button }) {
@@ -125,7 +125,7 @@ private fun seriesText(match: Match, me: String, partner: String, nickname: Stri
 }
 
 internal val DrawReasons = setOf("stalemate", "insufficient_material", "fivefold_repetition", "seventy_five_moves",
-    "threefold_repetition", "fifty_moves", "agreement", "board_full")
+    "threefold_repetition", "fifty_moves", "agreement", "board_full", "equal_discs")
 
 internal fun outcomeTitle(match: Match, me: String, nickname: String): String = when (val winner = match.outcome?.winner) {
     me -> "You won"
@@ -149,6 +149,8 @@ internal fun outcomeDetail(match: Match, me: String, nickname: String): String {
         "four_connected" -> "Four connected"
         "board_full" -> "The board is full"
         "most_boxes" -> DotsView.from(match.board)?.let { "${it.score(match.seat(me))}–${it.score(3 - match.seat(me))} boxes" } ?: "Most boxes"
+        "most_discs" -> ReversiView.from(match.board)?.let { "${it.count(match.seat(me))}–${it.count(3 - match.seat(me))} discs" } ?: "Most discs"
+        "equal_discs" -> "Equal discs"
         "first_to_7" -> (match.board?.get("score") as? kotlinx.serialization.json.JsonArray)?.let { score ->
             val seat = match.seat(me)
             "${score[seat - 1]}–${score[2 - seat]} · first to 7"
@@ -223,6 +225,7 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds
                 GameKind.Connect4 -> "Tap a column"
                 GameKind.TicTacToe -> "Tap an empty square"
                 GameKind.Dots -> "Close a box to go again"
+                GameKind.Reversi -> "Tap a dotted square to outflank"
             }, color = c.textDim, style = MaterialTheme.typography.bodySmall)
             TextLink("Leave game", { onConfirm("leave") })
         }
@@ -234,6 +237,9 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds
             val status = when {
                 match.paused || state.partner in match.away -> "Waiting for ${vm.nickname} to come back…"
                 state.busy -> "Sending your move…"
+                // Reversi skips a player with no move; say so, or the repeat turn looks like a bug.
+                match.game == GameKind.Reversi && ReversiView.from(match.board)?.passed == true ->
+                    if (match.turn == state.me) "${vm.nickname} has no move · your move again" else "You have no move · ${vm.nickname} goes again"
                 match.turn == state.me -> "Your move"
                 else -> "${vm.nickname} is thinking…"
             }
@@ -243,6 +249,7 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds
                     GameKind.TicTacToe -> Text(if (state.seat == 1) "You are X · X moves first" else "You are O · X moves first", color = c.textDim, style = MaterialTheme.typography.bodySmall)
                     GameKind.Connect4 -> Text("${if (state.seat == 1) "You drop first" else "${vm.nickname} drops first"} · connect four in any direction", color = c.textDim, style = MaterialTheme.typography.bodySmall)
                     GameKind.Dots -> DotsView.from(match.board)?.let { Text("You ${it.score(state.seat)} · ${vm.nickname} ${it.score(3 - state.seat)} boxes", color = c.textDim, style = MaterialTheme.typography.bodySmall) }
+                    GameKind.Reversi -> ReversiView.from(match.board)?.let { Text("You are ${if (state.seat == 1) "Black" else "White"} · You ${it.count(state.seat)} · ${vm.nickname} ${it.count(3 - state.seat)} discs", color = c.textDim, style = MaterialTheme.typography.bodySmall) }
                     else -> Unit
                 }
                 Text(status, style = MaterialTheme.typography.titleLarge, color = if (match.turn == state.me) c.text else c.textDim,

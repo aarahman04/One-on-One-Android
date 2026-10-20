@@ -72,6 +72,12 @@ internal fun gameVector(name: String, paint: Color): ImageVector {
                     moveTo(22f, 20f); curveTo(16f, 20f, 16f, 27f, 22f, 27f)
                     curveTo(28f, 27f, 28f, 20f, 22f, 20f)
                 }
+                "reversi" -> {
+                    // A full disc and a ring: one black, one white.
+                    moveTo(11f, 4f); curveTo(20f, 4f, 20f, 18f, 11f, 18f); curveTo(2f, 18f, 2f, 4f, 11f, 4f)
+                    moveTo(21f, 14f); curveTo(30f, 14f, 30f, 28f, 21f, 28f); curveTo(12f, 28f, 12f, 14f, 21f, 14f)
+                    moveTo(21f, 17f); curveTo(16f, 17f, 16f, 25f, 21f, 25f); curveTo(26f, 25f, 26f, 17f, 21f, 17f)
+                }
                 "connect4" -> {
                     for (r in 0..2) for (c in 0..2) {
                         val x = 4f + c * 9f; val y = 4f + r * 9f
