@@ -8,9 +8,8 @@
   Its license and attribution ship in `app/src/main/assets/licenses/chesslib/`.
 - Apache Commons Lang 3.18.0 (chesslib transitive dependency), Apache-2.0.
   Upstream license and NOTICE ship in `app/src/main/assets/licenses/commons-lang3/`.
-- Chess pieces: "Celtic" piece set by Maurizio Monge (https://github.com/maurimo/chess-art), MIT.
-  Converted from SVG to Android vector drawables with their gradients (`res/drawable/chess_*.xml`,
-  paths unchanged). License in `app/src/main/assets/licenses/celtic-chess-pieces/`.
+- Chess pieces (`res/drawable/chess_*.xml`) are original artwork drawn for One on One
+  (`docs/design/chess-pieces/`); no third-party piece set is used.
 - Game sounds (`res/raw/chess_*.ogg`, `game_end.ogg`) were synthesized for One on One (no third-party audio).
 
 Existing sticker attribution remains in `app/src/main/assets/stickers/NOTICE.txt`;
