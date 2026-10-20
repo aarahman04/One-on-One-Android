@@ -2,7 +2,7 @@
 
 ## Release 2.0.8 (2026-10-20, versionCode 15)
 - Signed build from main (run 39444598003) uploaded to Play by the owner. Contents: Android #37 (below), backend #115 (invite push, `game` rows, migration 040 applied in Supabase).
-- Speech fixed on Railway (no app change): the `speech` service now runs in the backend's project (`fabulous-connection`), so `speech.railway.internal` resolves, and the backend's `SPEECH_SERVICE_TOKEN` references `${{speech.SPEECH_SERVICE_TOKEN}}` (verified equal, values not read). The old separate `speech` project is deleted.
+- Speech fixed on Railway (no app change): the `speech` service now runs in the backend's project (`One on One`, renamed from `fabulous-connection` on 2026-10-20), so `speech.railway.internal` resolves, and the backend's `SPEECH_SERVICE_TOKEN` references `${{speech.SPEECH_SERVICE_TOKEN}}` (verified equal, values not read). The old separate `speech` project is deleted.
 - Release workflow defaults bumped to 15 / 2.0.8.
 
 ## Game invites, game history, letter mic, polish (2026-10-20, fix/game-invites-history-icons; backend #115)
