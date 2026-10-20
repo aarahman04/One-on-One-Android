@@ -1,10 +1,13 @@
 package app.web.oneonone.ui.chat
 
+import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.net.Uri
+import android.os.Build
 import androidx.exifinterface.media.ExifInterface
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -49,17 +52,26 @@ internal fun downscaledJpeg(context: Context, uri: Uri): ByteArray {
     resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
     check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Couldn't read that photo." }
     val sample = sampleSize(bounds.outWidth, bounds.outHeight, PHOTO_MAX_PX)
-    val decoded = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
-        ?: error("Couldn't read that photo.")
-    // Camera photos are stored sideways with an EXIF rotation; apply it before EXIF is dropped.
-    val degrees = runCatching { resolver.openInputStream(uri)?.use { ExifInterface(it).rotationDegrees } }.getOrNull() ?: 0
-    val bitmap = if (degrees == 0) decoded else Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height,
-        Matrix().apply { postRotate(degrees.toFloat()) }, true).also { if (it !== decoded) decoded.recycle() }
+    // API 28+: the platform decoder applies the photo's orientation (rotations and mirrored tags) exactly as the
+    // gallery shows it; rotating by hand on top of it came out upside down on some Xiaomi photos.
+    val bitmap = if (Build.VERSION.SDK_INT >= 28) ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, uri)) { decoder, _, _ ->
+        decoder.setTargetSampleSize(sample)
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+    } else legacyDecode(resolver, uri, sample)
     try {
         val out = ByteArrayOutputStream()
         check(bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)) { "Couldn't save that photo." }
         return out.toByteArray()
     } finally { bitmap.recycle() }
+}
+
+private fun legacyDecode(resolver: ContentResolver, uri: Uri, sample: Int): Bitmap {
+    val decoded = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+        ?: error("Couldn't read that photo.")
+    // Camera photos are stored sideways with an EXIF rotation; apply it before EXIF is dropped.
+    val degrees = runCatching { resolver.openInputStream(uri)?.use { ExifInterface(it).rotationDegrees } }.getOrNull() ?: 0
+    return if (degrees == 0) decoded else Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height,
+        Matrix().apply { postRotate(degrees.toFloat()) }, true).also { if (it !== decoded) decoded.recycle() }
 }
 
 /** Largest power-of-two sample that keeps the longer side at or above [maxPx] (BitmapFactory.inSampleSize). */

@@ -66,12 +66,22 @@ object CallProtocol {
     fun logText(kind: String?, outcome: String?, durationSec: Int, isMine: Boolean): String {
         val what = if (kind == "video") "video call" else "voice call"
         return when (outcome) {
-            "completed" -> "${what.replaceFirstChar { it.uppercase() }} · ${duration(durationSec)}"
+            "completed" -> "${what.replaceFirstChar { it.uppercase() }} · ${spokenDuration(durationSec)}"
             "missed" -> if (isMine) "No answer · $what" else "Missed $what"
             "declined" -> if (isMine) "Declined · $what" else "You declined a $what"
             "cancelled" -> if (isMine) "Cancelled $what" else "Missed $what"
             "unreachable" -> if (isMine) "Couldn't reach them · $what" else "Missed $what"
             else -> "${what.replaceFirstChar { it.uppercase() }} failed"
+        }
+    }
+
+    /** For history rows, where a bare "5:12" is ambiguous: "45 sec", "12 min 14 sec", "1 hr 3 min". */
+    fun spokenDuration(seconds: Int): String {
+        val s = seconds.coerceAtLeast(0)
+        return when {
+            s < 60 -> "$s sec"
+            s < 3600 -> if (s % 60 == 0) "${s / 60} min" else "${s / 60} min ${s % 60} sec"
+            else -> if (s / 60 % 60 == 0) "${s / 3600} hr" else "${s / 3600} hr ${s / 60 % 60} min"
         }
     }
 

@@ -275,11 +275,11 @@ internal fun MessageBubble(
         TimeFormat.withZone(ZoneId.systemDefault()).format(Instant.parse(message.createdAt)).let { if (message.editedAt != null && !deleted) "edited $it" else it }
     }
     val failed = message.id == null && message.deliveryState == "failed"
-    val status = if (mine && message.type != "call" && !failed) receiptOf(receipt) else Receipt.None
+    val status = if (mine && message.type !in setOf("call", "game") && !failed) receiptOf(receipt) else Receipt.None
     var reacting by remember { mutableStateOf(false) }
     var showReactors by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val canReply = message.id != null && message.type != "call" && !deleted
+    val canReply = message.id != null && message.type !in setOf("call", "game") && !deleted
     val scope = rememberCoroutineScope()
     val currentOnReply by rememberUpdatedState(onReply)
     val currentOnSelect by rememberUpdatedState(onSelect)

@@ -86,6 +86,19 @@ class MessageNotifications @Inject constructor(@ApplicationContext private val c
             .setStyle(NotificationCompat.BigTextStyle().bigText(push.body)).setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setContentIntent(tap).setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build())
     }
+    /** Opens the chat, where the invite banner is; gone with the invite after 30 s. */
+    fun gameInvite(push: GameInvitePush, nickname: String) {
+        if (!allowed()) return
+        val tap = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java)
+            .setData("oneonone://message/${push.connectionId}".toUri())
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        manager.notify("game:${push.connectionId}", MESSAGE_ID, NotificationCompat.Builder(context, NotificationChannels.MESSAGES)
+            .setSmallIcon(R.drawable.ic_stat_notify).setContentTitle("$nickname wants to play ${push.game.title}")
+            .setContentText("Open the chat to accept.").setCategory(NotificationCompat.CATEGORY_SOCIAL)
+            .setTimeoutAfter(30_000).setContentIntent(tap).setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build())
+    }
     fun generic(title: String, body: String) {
         if (!allowed()) return
         val tap = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)

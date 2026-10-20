@@ -213,6 +213,10 @@ private class DemoTransport(context: Context, private val json: Json, private va
             msg(ALEX, "Also thinking of getting this https://www.amazon.in/dp/B0CHX1W1XY", 120),
             msg(ME, "Call me on +91 98765 43210 when you're free, or check shirt.online", 110, replyTo = first.id),
             msg(ALEX, "My new profile 👉 https://www.instagram.com/instagram/", 60),
+            msg(ALEX, "Played Chess · 12 min", 30).copy(type = "game", payload = buildJsonObject {
+                put("game", "chess"); put("inviter", ALEX); put("winner", ME); put("reason", "checkmate"); put("durationSec", 734)
+            }),
+            msg(ME, "", 25).copy(type = "call", payload = buildJsonObject { put("kind", "audio"); put("outcome", "completed"); put("durationSec", 312) }),
             msg(ME, "Typo-ed message you can still edit or delete (sent 5 min ago)", 5),
         )
         seed.forEach { all[checkNotNull(it.id)] = it }

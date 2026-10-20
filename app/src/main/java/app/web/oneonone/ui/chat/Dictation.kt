@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
 import app.web.oneonone.R
+import app.web.oneonone.data.api.CurrentConnection
 import app.web.oneonone.data.media.DictationPhase
 import app.web.oneonone.data.media.DictationState
 import app.web.oneonone.ui.components.OneIconButton
@@ -82,7 +83,7 @@ internal fun DictationBar(state: DictationState, hint: Boolean, onStop: () -> Un
     val pulse by rememberInfiniteTransition(label = "dictation-dot").animateFloat(1f, .3f,
         infiniteRepeatable(tween(OneTheme.motion.slow320 * 2, easing = OneTheme.motion.standard), RepeatMode.Reverse), label = "alpha")
     Column(Modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))) {
-        if (hint) Text("Works best in English and European languages.", Modifier.padding(horizontal = s.lg16, vertical = s.xs4),
+        if (hint) Text("Works best in English.", Modifier.padding(horizontal = s.lg16, vertical = s.xs4),
             color = c.textDim, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(Modifier.fillMaxWidth().padding(horizontal = s.sm8, vertical = s.xs4), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
@@ -101,6 +102,39 @@ internal fun DictationBar(state: DictationState, hint: Boolean, onStop: () -> Un
             }
             if (!busy) OneIconButton(R.drawable.ic_stop, "Stop and transcribe", onStop,
                 Modifier.size(OneTheme.sizes.send48).clip(CircleShape).background(c.sendBg), tint = c.sendFg)
+        }
+    }
+}
+
+/** Mic in the corner of the letter body: the /audio pipeline, but the words land in the letter, not the composer. */
+@Composable
+internal fun LetterDictation(vm: SpeechViewModel, connection: CurrentConnection, begin: () -> Unit, append: (String) -> Unit) {
+    val c = OneTheme.colors
+    val state by vm.dictation.collectAsState()
+    val dictated by vm.text.collectAsState()
+    val add by rememberUpdatedState(append)
+    LaunchedEffect(dictated?.id) {
+        val result = dictated ?: return@LaunchedEffect
+        if (result.owner.ownerId == connection.myUserId && result.owner.connectionId == connection.id) add(result.text)
+        vm.consumeText(result.id)
+    }
+    // Closing the letter mid-dictation drops the recording rather than leaving the mic on.
+    DisposableEffect(vm) { onDispose { if (vm.dictation.value.active) vm.cancelDictation() } }
+    val busy = state.phase == DictationPhase.Starting || state.phase == DictationPhase.Transcribing
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.xs4)) {
+        if (state.active) Text(when (state.phase) {
+            DictationPhase.Transcribing -> "Adding your words…"
+            DictationPhase.Starting -> "Starting…"
+            DictationPhase.Recording -> "Listening ${state.seconds / 60}:${(state.seconds % 60).toString().padStart(2, '0')}"
+            else -> "Listening…"
+        }, style = OneTextStyles.cardHint, color = c.textDim, maxLines = 1,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        when {
+            busy -> Box(Modifier.size(OneTheme.sizes.touch40), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(OneTheme.spacing.lg16), color = c.accentYou, strokeWidth = OneTheme.spacing.xxs2)
+            }
+            state.active -> OneIconButton(R.drawable.ic_stop, "Stop and add to your letter", vm::stopDictation, tint = c.danger)
+            else -> OneIconButton(R.drawable.ic_mic, "Speak your letter", begin, tint = c.accentYou)
         }
     }
 }

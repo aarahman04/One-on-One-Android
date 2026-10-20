@@ -124,7 +124,7 @@ private fun seriesText(match: Match, me: String, partner: String, nickname: Stri
     return if (mine + theirs == 0) null else "You $mine · $nickname $theirs"
 }
 
-private val DrawReasons = setOf("stalemate", "insufficient_material", "fivefold_repetition", "seventy_five_moves",
+internal val DrawReasons = setOf("stalemate", "insufficient_material", "fivefold_repetition", "seventy_five_moves",
     "threefold_repetition", "fifty_moves", "agreement", "board_full")
 
 internal fun outcomeTitle(match: Match, me: String, nickname: String): String = when (val winner = match.outcome?.winner) {

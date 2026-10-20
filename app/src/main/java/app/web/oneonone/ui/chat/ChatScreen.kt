@@ -83,6 +83,7 @@ import app.web.oneonone.data.model.*
 import app.web.oneonone.data.realtime.ConnectionState
 import app.web.oneonone.ui.chat.cards.AlarmCard
 import app.web.oneonone.ui.chat.cards.CallLogCard
+import app.web.oneonone.ui.chat.cards.GameLogCard
 import app.web.oneonone.ui.theme.BubbleTokens
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
@@ -176,6 +177,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(dictated?.id) {
         val result = dictated ?: return@LaunchedEffect
+        if (command == "letter") return@LaunchedEffect // the open letter takes it (LetterDictation)
         if (result.owner.ownerId == connection.myUserId && result.owner.connectionId == connection.id) {
             vm.appendDictation(result.text)
             speech.consumeText(result.id)
@@ -332,7 +334,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             val single = picked.singleOrNull()
             val now = System.currentTimeMillis()
             fun recentMine(m: ChatMessage) = m.id != null && m.senderId == connection.myUserId && m.deletedAt == null &&
-                m.type !in setOf("call", "system", "alarm") && now - Instant.parse(m.createdAt).toEpochMilli() <= EditWindowMs
+                m.type !in setOf("call", "system", "alarm", "game") && now - Instant.parse(m.createdAt).toEpochMilli() <= EditWindowMs
             fun unsentMine(m: ChatMessage) = m.id == null && m.tempId != null && m.senderId == connection.myUserId && m.deliveryState in setOf("failed", "unknown")
             SelectionBar(
                 onEdit = single?.takeIf { recentMine(it) && it.type == "text" }?.let { m -> { vm.startEdit(checkNotNull(m.id), m.content); clearSelection()
@@ -341,7 +343,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                 onDelete = picked.takeIf { it.isNotEmpty() && it.all { m -> recentMine(m) || unsentMine(m) } }?.let { all -> { confirmDelete = all } },
                 count = selectedKeys.size,
                 onClose = clearSelection,
-                onReply = single?.takeIf { it.id != null && it.type != "call" && it.deletedAt == null }?.let { { startReply(it.id); clearSelection() } },
+                onReply = single?.takeIf { it.id != null && it.type !in setOf("call", "game") && it.deletedAt == null }?.let { { startReply(it.id); clearSelection() } },
                 onCopy = {
                     copyMessages(context, picked.sortedBy { Instant.parse(it.createdAt) })
                     if (android.os.Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(context, if (picked.size > 1) "Messages copied" else "Message copied", android.widget.Toast.LENGTH_SHORT).show()
@@ -469,6 +471,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
                                 when (message.type) {
                                     "alarm" -> AlarmCard(message, mine, vm::sendCard)
                                     "call" -> CallLogCard(message, mine, vm::sendCard)
+                                    "game" -> GameLogCard(message, connection.myUserId, connection.otherNickname ?: "Your One on One")
                                     else -> FeatureCard(message, mine, original, connection, features, speech)
                                 }
                             })
@@ -510,7 +513,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             val original = messages.find { it.id == id }
             ReplyBar(authorOf(original, connection).ifEmpty { "Earlier message" }, original?.let(::messageSummary) ?: "earlier message") { vm.reply(null) }
         } }
-        if (dictation.active) DictationBar(dictation, dictationHint, onStop = speech::stopDictation, onCancel = speech::cancelDictation)
+        if (dictation.active && command != "letter") DictationBar(dictation, dictationHint, onStop = speech::stopDictation, onCancel = speech::cancelDictation)
         else ChatComposer(
             draft = draft, onDraft = vm::draft,
             canSend = !busy, // Text is queued instantly; an uploading voice note or sticker must not block it.
@@ -545,7 +548,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     command?.let { type ->
         val close = { command = null; vm.draft(""); vm.reply(null) }
         if (type == "location") LocationConfirmation(connection, features, replyTo, close)
-        else FeatureComposer(type, connection, features, replyTo, close)
+        else FeatureComposer(type, connection, features, replyTo, close,
+            letterMic = if (type == "letter") { append -> LetterDictation(speech, connection, beginDictation, append) } else null)
     }
     reactingTo?.let { id ->
         EmojiPickerSheet(onDismiss = { reactingTo = null }, onPick = { emoji ->

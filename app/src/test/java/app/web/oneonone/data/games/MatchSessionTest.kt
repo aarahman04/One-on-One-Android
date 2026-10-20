@@ -36,6 +36,19 @@ class MatchSessionTest {
         assertEquals("m2", s.match.value!!.id)
     }
 
+    @Test fun backgroundSyncFailuresStayQuietButActionsReportThem() = runTest {
+        val (s, ch) = session()
+        val errors = mutableListOf<String>()
+        backgroundScope.launch { s.errors.collect { errors += it } }; runCurrent()
+        ch.reply = { _, _ -> throw IOException("offline") }
+        s.sync(); runCurrent()
+        ch.reply = { _, _ -> buildJsonObject { put("ok", false); put("error", "rate_limited") } }
+        s.sync(); runCurrent()
+        assertEquals(emptyList<String>(), errors)
+        s.invite(GameKind.Chess); runCurrent()
+        assertEquals(listOf("rate_limited"), errors)
+    }
+
     @Test fun moveSendsSeqLocksBoardAndRetriesOnceAfterLostAck() = runTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(seq = 4)); runCurrent()

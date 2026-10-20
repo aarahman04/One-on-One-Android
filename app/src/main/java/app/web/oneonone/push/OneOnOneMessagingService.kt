@@ -22,6 +22,9 @@ class OneOnOneMessagingService : FirebaseMessagingService() {
         router.route(message.data, left = { push ->
             // No network needed: the app re-reads /connections/current when opened and shows the save screen.
             runCatching { runBlocking { withTimeoutOrNull(8_000) { deliverLeftPush(this@OneOnOneMessagingService, push) } } }
+        }, game = { push ->
+            // An invite lives 30 s, so there's no deferred-work fallback: show it inside the FCM window or not at all.
+            runCatching { runBlocking { withTimeoutOrNull(8_000) { deliverGameInvitePush(this@OneOnOneMessagingService, push) } } }
         }) { push ->
             // Inside the high-priority FCM window (onMessageReceived runs off the main thread): show now. WorkManager was the
             // only path and Xiaomi/Doze defer even expedited work, so notifications arrived late or not at all in the background.

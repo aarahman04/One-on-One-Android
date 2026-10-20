@@ -183,7 +183,7 @@ class MessageService @Inject constructor(
     suspend fun send(content: String, type: String = "text", payload: JsonObject? = null, replyTo: String? = null, clientTempId: String? = null): String = lifecycle.withLock {
         val session = checkNotNull(active.value) { "No active connection." }
         check(auth.accessToken() != null) { "Sign in to continue." }
-        require(type !in setOf("call", "system")) { "This message type is server-authored." }
+        require(type !in setOf("call", "system", "game")) { "This message type is server-authored." }
         require(content.trim().length <= 4_000 && (content.isNotBlank() || type in setOf("alarm", "voice", "image", "file"))) {
             "Messages must be 1–4000 characters."
         }
