@@ -9,11 +9,11 @@ on:
       versionCode:
         description: 'Play versionCode (at least 5; increase for every upload)'
         required: true
-        default: '13'
+        default: '14'
       versionName:
         description: 'Human-readable release version'
         required: true
-        default: '2.0.6'
+        default: '2.0.7'
 
 permissions:
   contents: read
@@ -77,6 +77,8 @@ jobs:
       VITE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.VITE_GOOGLE_WEB_CLIENT_ID }}
       APP_VERSION_CODE: ${{ inputs.versionCode }}
       APP_VERSION_NAME: ${{ inputs.versionName }}
+      # Natural voice: backend speech service is configured on Railway (2026-10-20).
+      SERVER_SPEECH: 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Require release configuration and restore existing credentials
