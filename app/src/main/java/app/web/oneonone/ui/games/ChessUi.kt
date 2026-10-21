@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -235,10 +236,8 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
             LaunchedEffect(Unit) { fade.animateTo(0f, tween(captureMs, easing = LinearOutSlowInEasing)) }
             val cell = cellOf(sprite.square, white)
             Image(painterResource(pieceDrawable(sprite.piece)), null, Modifier.size(tile)
-                .graphicsLayer {
-                    translationX = cell % 8 * tilePx; translationY = cell / 8 * tilePx
-                    alpha = fade.value; scaleX = .85f + .15f * fade.value; scaleY = .85f + .15f * fade.value
-                }
+                .offset { IntOffset((cell % 8 * tilePx).roundToInt(), (cell / 8 * tilePx).roundToInt()) }
+                .graphicsLayer { alpha = fade.value; scaleX = .85f + .15f * fade.value; scaleY = .85f + .15f * fade.value }
                 .padding(tile * .04f))
         }
         val easing = OneTheme.motion.standard
@@ -253,8 +252,8 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
                 val r = release
                 if (r?.id == sprite.id) {
                     // Released: glide from under the finger onto its square (or back home), no jump.
-                    release = null
                     position.snapTo(r.at)
+                    release = null
                     position.animateTo(target, spring(dampingRatio = .85f, stiffness = 900f))
                 } else if (position.value != target) {
                     val from = position.value
@@ -263,13 +262,15 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
                 }
             }
             Image(painterResource(pieceDrawable(sprite.piece)), null, Modifier.size(tile)
-                .zIndex(if (lifted) 2f else if (position.isRunning) 1f else 0f)
-                .graphicsLayer {
-                    // Lifted above the finger so it stays visible while dragging; draw-phase only, so no relayout per frame.
-                    val at = dragPos?.takeIf { lifted }?.let { liftedAt(it, tilePx) } ?: position.value
-                    translationX = at.x; translationY = at.y
-                    scaleX = lift; scaleY = lift
+                .zIndex(if (lifted || release?.id == sprite.id) 2f else if (position.isRunning) 1f else 0f)
+                .offset {
+                    // Lifted above the finger so it stays visible while dragging; placement only, no recomposition per frame.
+                    // Until the effect has snapped it, a just-released piece is drawn where the finger let go.
+                    val at = dragPos?.takeIf { lifted }?.let { liftedAt(it, tilePx) }
+                        ?: release?.takeIf { it.id == sprite.id }?.at ?: position.value
+                    IntOffset(at.x.roundToInt(), at.y.roundToInt())
                 }
+                .graphicsLayer { scaleX = lift; scaleY = lift }
                 .padding(tile * .04f))
         }
         CellGrid(8, 8, description = { cell ->

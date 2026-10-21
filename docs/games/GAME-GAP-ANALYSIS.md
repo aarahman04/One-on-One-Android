@@ -11,4 +11,15 @@ All games are server-authoritative (`backend/src/games`); the app renders `match
 | Dots & Boxes | Correct | Replace in hub | Still decodes for older apps |
 | Reversi | — | New | Server rules + board |
 
-Reference vs ours: the reference's exact constants, win score and net rules are **unknown** (no code).
+## Ping Pong: reference data vs ours (2026-10-21)
+| | Reference (data) | Ours | Worth changing? |
+|---|---|---|---|
+| Table ratio | 1 : 1.80 | 1 : 1.8 | Same |
+| Win score | 7 | 7 | Same |
+| Net | visual only | visual only | Same |
+| Side walls | none (ball can leave the table) | ball bounces off side edges | **Proposed** (owner decision): out over a side edge = point to the other player; rackets may reach past the edges (as the reference, 1.5 × half-width); needs a smaller max angle (≈30°) and a narrower serve so play stays on the table |
+| Shot model | timed Bézier flight from a swipe vector | continuous sim, contact point + swing + spin | No: ours is server-authoritative and works for two phones |
+| Racket follow | smoothed (lerp 0.5) | exact finger | No: exact is more responsive over the network |
+| Spin | modifier 0.3 on the swipe | swing at contact → curve | Ours is already equivalent in spirit |
+
+Other games: no rule differences found; animations now match the reference's intent (disc bounce, flip).

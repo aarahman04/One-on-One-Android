@@ -1,8 +1,12 @@
 # Game inventory (reference APK, 2026-10-21)
 
 Source: `Offline Games.apk` (analysis outside this repo, `C:\Users\aarah\Game-Reverse-Engineering`).
-Unity IL2CPP, **base split only**: no `lib/`, so `libil2cpp.so` (all game code) is absent. Only class,
-field and method names were recoverable from `global-metadata.dat`; nothing was decompiled, copied or run.
+`com.JindoBlu.OfflineGames` 3.15.3, Unity IL2CPP, **base split only**: manifest
+`requiredSplitTypes="base__abi"`, no `lib/`, so `libil2cpp.so` (all game code) and `libunity.so` are in
+a split this file lacks; `adb install` fails with `INSTALL_FAILED_MISSING_SPLIT`. JADX 1.5.6 decompiles
+the DEX (36 848 classes): Unity bootstrap, ad/analytics SDKs, `com.junglefrog.shared` (activity, log,
+ANR watcher) — no game logic. Recoverable without code: names (metadata v31) and serialized scene data
+(`data.unity3d`). Nothing was copied into the app.
 
 | Game (id) | Players | Notes for One on One |
 |---|---|---|
@@ -16,5 +20,6 @@ field and method names were recoverable from `global-metadata.dat`; nothing was 
 Replacement shortlist: Reversi (low effort, same turn protocol) > Checkers (multi-jump UI) > Mancala >
 Battleship (hidden state). All are public-domain rules with our own drawings.
 
-Tooling: REA 6.7.0 works; its Android tools need `REA_JADX_MCP_JAR` (jadx-headless-mcp 0.7.1), not set.
-Deeper evidence needs the APK's native split (pulled from a phone) or a gameplay recording.
+To recover actual game code: the `split_config.arm64_v8a.apk` from a phone with the game installed
+(`adb shell pm path com.JindoBlu.OfflineGames`), then Il2CppDumper (metadata + libil2cpp.so) and
+Ghidra/IDA for method bodies. Or observe gameplay on that phone.

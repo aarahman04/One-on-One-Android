@@ -1655,8 +1655,8 @@ Android only (`ui/games/ChessUi.kt`); board, pieces, highlights, sounds and rule
 - A dropped piece glides from under the finger onto its square (spring, no overshoot) instead of
   jumping; an illegal or cancelled drop glides back home instead of teleporting.
 - Lift scale (1.2x) springs in and out instead of popping.
-- Pieces move in the draw phase (`graphicsLayer` translation, float offsets): no per-frame relayout,
-  no whole-pixel stepping.
+- Pieces are placed by an `offset {}` lambda (placement only, no recomposition per frame).
+  (2026-10-21 emulator round: the `graphicsLayer` translation was reverted, see below.)
 - A captured piece fades over the attacker's travel time, so it disappears as the attacker lands.
 
 Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` passed; new `ChessMotionTest`.
@@ -1699,3 +1699,33 @@ spin, `MatchTest` Reversi, `GameMotionTest`). Not device-tested; two-phone play 
 - [ ] Connect 4: a disc dropped into an empty column falls visibly longer than one onto a high stack,
       lands with a small hop; the winning four get rings after the last disc lands.
 - [ ] Tic-tac-toe: the winning line draws after the final mark.
+
+## Reference APK analysed with JADX + Unity data; emulator game testing (2026-10-21, branch `claude/games-emulator-fixes`)
+
+Reference APK (`com.JindoBlu.OfflineGames` 3.15.3): JADX 1.5.6 decompiled the DEX; it holds only the
+Unity bootstrap (`UnityPlayer.loadLibrary`), ads/analytics SDKs and a small `com.junglefrog.shared`
+activity. The games are C# compiled by IL2CPP into `libil2cpp.so`, which this file does not contain:
+the manifest has `requiredSplitTypes="base__abi"` and there is no `lib/`; installing it on an emulator
+fails with `INSTALL_FAILED_MISSING_SPLIT`. What could be recovered without code: class/field names
+(IL2CPP metadata v31) and the scene's serialized values and geometry (`data.unity3d`, read with UnityPy
+in the external workspace). Details and confidence: `docs/games/GAME-MECHANICS.md`.
+
+Emulator testing (OneOnOne_D3 AVD, API 36, headless): the debug build gained a debug-only local
+stand-in for the server's matches (`app/src/debug/.../DemoMatches.kt`, used by the demo chat) so the
+real game screens can be played without accounts. All five games were played on the emulator.
+
+Bugs found on the emulator and fixed (Android only):
+- Chess: on drop, the piece was drawn back on its old square for a frame (several on the slow
+  emulator) before gliding; the released position is now used from the first frame.
+- Connect 4, tic-tac-toe, Reversi: the first frame of a new move showed the finished state (disc
+  already landed / discs already flipped), then the animation restarted from zero. Animation state is
+  now created per move, so it starts at zero on its first frame.
+- Table tennis footer text wrapped "Leave game" onto two lines; shortened.
+
+Verification: `./gradlew assembleDebug lintDebug testDebugUnitTest` passed. Emulator: played, with
+screenshots/recordings in the external workspace (`evidence/emulator`). Real two-player play was not
+possible on the emulator (needs two signed-in accounts); the stand-in is not the server.
+
+### Xiaomi checklist
+- [ ] Chess: drag a piece and let go: it glides from your finger to the square, never back first.
+- [ ] Connect 4 / Reversi / tic-tac-toe: a new disc or mark never flashes in its final place before animating.

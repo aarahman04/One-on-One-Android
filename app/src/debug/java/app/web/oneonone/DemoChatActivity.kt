@@ -184,6 +184,13 @@ private class DemoTransport(context: Context, private val json: Json, private va
     override val updates = MutableSharedFlow<ChatMessage>(extraBufferCapacity = 32)
     override val typing = MutableSharedFlow<TypingUpdate>(extraBufferCapacity = 32)
     override val pins = MutableSharedFlow<PinState>(extraBufferCapacity = 8)
+    // Games on the emulator: a local stand-in for the server's matches (DemoMatches), partner always online.
+    private val matches = DemoMatches(scope, ME, ALEX)
+    override val matchStates get() = matches.states
+    override val pongFrames get() = matches.frames
+    override suspend fun match(event: String, payload: JsonObject) = matches.call(event, payload)
+    override fun paddle(matchId: String, x: Float) = matches.paddle(matchId, x)
+    override val presence = kotlinx.coroutines.flow.flow { while (true) { emit(PresenceUpdate(ALEX, true)); kotlinx.coroutines.delay(2000) } }
     private val all = linkedMapOf<String, ChatMessage>()
     private var replies = 0
 
