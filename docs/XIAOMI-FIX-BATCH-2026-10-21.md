@@ -37,6 +37,8 @@ Implementation is merged in Android PR #45 (`727ce59`) and backend PR #123 (`d98
 - [ ] Complete audio and video calls and hang up from either phone. Both chats show exactly one matching call card with plausible duration.
 - [ ] Repeat a video hangup while Wi-Fi/mobile data reconnects. Kill a participant process during an accepted call; after socket-loss detection plus the 30-second grace, a card should appear and another call can start.
 - [ ] Briefly disconnect and reconnect before the grace expires; the ongoing call is not prematurely resolved. Also test two sockets for one account: closing one must not end its call.
+- [ ] Sign the callee into two phones (or phone + web). Answer on one; tap Decline on the other's ring/notification. The answered call continues; ending it writes one `completed` card. (Needs backend with the cross-check fix deployed.)
+- [ ] Dictate, pause until the field stops changing, then tap Stop immediately: the words stay and the bar closes at once (no 3 s "Adding your words…").
 - [ ] /checkin is absent from suggestions/help and cannot open a composer. Existing historical check-ins, old pushes and exports remain readable. The web client needs its separate follow-up.
 
 ## Chat media and navigation (14-19)

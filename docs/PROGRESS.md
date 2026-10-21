@@ -3,6 +3,10 @@
 Current Ping Pong delivery state and Claude Code follow-up:
 [PING-PONG-HANDOFF.md](games/PING-PONG-HANDOFF.md) (2026-10-21).
 
+## Release 2.0.9 (2026-10-21, versionCode 16)
+- Release workflow defaults bumped to 16 / 2.0.9. Contents since 2.0.8: games round 3 and Ping Pong (#43/#44), owner fix batch (#45), logos/viewer/BiRefNet stickers (#46), cross-check (#47); backend #122, #123, #124. No new migration (latest remains 040).
+- Signed build run from main by Claude Code at the owner's request; Play upload is the owner's step.
+
 ## Release 2.0.8 (2026-10-20, versionCode 15)
 - Signed build from main (run 39444598003) uploaded to Play by the owner. Contents: Android #37 (below), backend #115 (invite push, `game` rows, migration 040 applied in Supabase).
 - Speech fixed on Railway (no app change): the `speech` service now runs in the backend's project (`One on One`, renamed from `fabulous-connection` on 2026-10-20), so `speech.railway.internal` resolves, and the backend's `SPEECH_SERVICE_TOKEN` references `${{speech.SPEECH_SERVICE_TOKEN}}` (verified equal, values not read). The old separate `speech` project is deleted.
@@ -1880,3 +1884,20 @@ The 4 GB emulator retry of that **rejected 1024 model** reached 2,764,472 kB hig
 Manual workspace: Original stays untouched; Cut-out contains Auto/Crop/Erase/Restore, Undo/Redo/Reset icons, an offset touch dot/circle, and active-tool-only circle-size/distance sliders. Restore samples original pixels/alpha. Done flattens up to 32 strokes on a worker; Undo/Redo is scoped to the active brush session, and very long strokes are decimated within 1024 points. A bounded scrolling body keeps the footer reachable; Crop Cancel/back/X restores its entry trim and placement. No model/network is needed for manual editing.
 
 Final source validation: `gradlew.bat assembleDebug lintDebug testDebugUnitTest --console=plain --max-workers=1` passed, **243 tests / 39 suites, zero failures/errors/skips**. Lint has no errors or warnings (one existing hint in untouched GameInvite). The debug APK's ten 64-bit native libraries pass LOAD/RELRO and ZIP alignment. Commits: `840d2c7` (logos/reference viewer), `18a7e9d` (model/manual workspace); no version/signing/backend change. The final handoff and Xiaomi checklist explicitly retain runtime checks because the owner requested skipping further emulator work. No new migrations are needed.
+
+## Claude Code cross-check of merged fix batch (2026-10-21, `claude/cross-check-2026-10-21`)
+
+Independent review of Android `492d283..53cccb8` (PRs #45/#46) and backend `9f4081a..d982a84` (PR #123) against the owner brief and the handoff decisions. Both PRs are merged; this supersedes the handoff's "open PR" status. No emulator was launched (owner instruction).
+
+Fixed (clear, bounded, with regression tests):
+
+- **Backend: late decline ended an answered call.** `declineCall` did not check state. A second callee device (or a killed app's never-dismissed ring notification, since accept sends no dismissal push) tapping Decline after another device answered emitted `call:ended declined` and tore down the live call. Decline of a connected call is now a no-op `{ok:true}`; contract updated. Test fails without the fix.
+- **Backend: TURN credential fetch had no timeout.** `call:invite`/`call:accept` ack only after `getIceServers()`; a hung Cloudflare request outlived Android's 10 s ack timeout while server state had already moved on. Fetch now aborts after 5 s and falls back to STUN through the existing catch.
+- **Android: Stop between recognizer segments waited 3 s.** After each pause the recognizer is destroyed and restarted 300 ms later; Stop in that gap had no recognizer to flush and fell through to the 3-second grace showing "Adding your words…". Stop now keeps the words at once when no segment is running.
+- Stale `BigEmojiSize` comment (1/2/3 emoji sizes) corrected to the single-emoji rule.
+
+Reviewed and kept (matches agreed behavior): call attempt ownership/late-ack/early-accepted/ended ordering, finish-then-end with socket wait, 30 s disconnect grace; one EXIF pass via BitmapFactory for all eight orientations; 2048 px/JPEG 85 with PNG alpha and GIF passthrough; payload-sized placeholders and path-keyed Coil caches; single-grapheme big emoji (bare `❤` deliberately counts, per tests); latest arrow; shared warmed TTS with per-player utterance prefixes; preview narration device-only; From = `myNickname` → signature → `me`; check-in creation removed with history retained; BiRefNet download integrity/cancellation/memory guard and brush preview/worker parity (Clear vs Src shader in both).
+
+Noted, not changed (judgement or larger scope): every Auto run re-hashes the 192 MB model (integrity over ~0.5 s); emoji text-presentation symbols such as bare `♥`/`✔` render large; photo pending upload holds the feature `busy` flag like GIF/sticker sends; accept still sends no push to dismiss a killed second device's ring (now harmless, but the notification lingers until the 45 s ring timeout or call end).
+
+Verification: Android `gradlew.bat assembleDebug lintDebug testDebugUnitTest` PASS: **244 tests / 39 suites, zero failures/errors/skips**, lint zero errors/warnings (Android Studio JBR). Backend fix: [PR #124](https://github.com/aarahman04/One-on-One/pull/124), open, not deployed. Backend `npm test` **117/117**, `npx tsc --noEmit` pass (local run needed `npm ci` in `backend/` and `client/` for socket tests; no lockfile change). No device testing.

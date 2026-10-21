@@ -1188,3 +1188,25 @@ Automatic removal is an explicit Cut-out action. The app reports the one-time **
 Original is an untouched photo preview. Cut-out is the editing workspace: automatic removal, crop and offset Erase/Restore, with Undo/Redo icons above the preview. The brush has a touch dot and an erase/restore circle above it; circle size (8–80 dp) and distance (0–120 dp) controls appear only for that tool. Restore uses the original photo's pixels/alpha to recover subject details the model removed. Manual tools require no model or network. Stroke history is bounded to 32 strokes/1024 points per stroke; Done applies it on a worker and starts a new baseline, so Undo/Redo applies within the active brush session. Very long strokes are decimated to preserve the endpoints within that bound. The body scrolls inside a bounded maker with a fixed footer; Crop Cancel restores its entry trim/placement. The existing crop/placement, private per-account save and WebP encoding remain the final save path.
 
 MIT notices ship in `assets/stickers/`; the ONNX JNI package has an explicit R8 keep rule. Version 1.24.3 has no telemetry initializer; both ARM64 library ELF load alignments were inspected as 16 KB. APK/AAB package alignment and minified runtime still require their separate checks. No backend, speech-service, web-client, API, database, signing or release-version change is needed for this follow-up.
+
+## Cross-check: decline after answer and dictation stop (2026-10-21)
+
+A call answered on one of the callee's devices ignores a later `call:decline` from any other device; only `call:end` (or the disconnect grace) resolves it. TURN minting is bounded to 5 s so call acknowledgements arrive inside the client's 10 s ack window.
+
+```mermaid
+sequenceDiagram
+    participant D1 as Callee phone 1
+    participant D2 as Callee phone 2 (ring notification)
+    participant S as Backend callService
+    participant C as Caller
+    D1->>S: call:accept
+    S-->>C: call:accepted (room)
+    S-->>D1: ack {iceServers} (TURN fetch ≤ 5 s, else STUN)
+    D2->>S: call:decline (late)
+    S-->>D2: ack {ok:true}, no-op
+    Note over S: call stays connected
+    C->>S: call:end
+    S-->>D1: call:ended completed + one call card
+```
+
+Device dictation runs segment → 300 ms gap → segment. `SpeechTranscriber` tracks whether a segment is live: Stop during a segment asks the recognizer to flush (3 s grace); Stop in the gap delivers the words immediately.

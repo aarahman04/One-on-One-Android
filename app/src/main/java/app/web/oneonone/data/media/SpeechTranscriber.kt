@@ -38,6 +38,7 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
     private var failures = 0
     private var segmentId = 0L
     private var deviceSession = false
+    private var listening = false // a recognizer segment is running (not the short gap between segments)
 
     fun start() {
         if (state.value.active) return
@@ -69,6 +70,8 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
     fun stop() {
         if (state.value.phase == DictationPhase.DeviceListening) {
             val token = generation
+            // Between segments there is no recognizer to flush: keep the words at once.
+            if (!listening) { finish(token, null); return }
             mutableState.value = state.value.copy(phase = DictationPhase.Transcribing)
             device.stop()
             // The last segment's result normally arrives at once; never leave the session hanging if it doesn't.
@@ -136,6 +139,7 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
     private fun segment(token: Long) {
         val segment = ++segmentId
         pending = ""
+        listening = true
         try {
             device.start({ words -> if (segment == segmentId) segmentEnded(token, words) }, { words ->
                 if (token == generation && segment == segmentId && words.isNotBlank()) {
@@ -147,6 +151,7 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
 
     private fun segmentEnded(token: Long, words: String) {
         if (token != generation) return
+        listening = false
         // A blank final after partials keeps the partial: words already shown are never dropped.
         val final = words.trim().ifEmpty { pending }
         pending = ""
@@ -157,6 +162,7 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
 
     private fun segmentFailed(token: Long, message: String, fatal: Boolean) {
         if (token != generation) return
+        listening = false
         heard = appendDictationText(heard, pending); pending = ""
         segmentId++
         live(heard)
@@ -194,7 +200,7 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
     }
     fun cancel() {
         generation++; segmentId++; timer?.cancel(); device.cancel()
-        heard = ""; pending = ""; failures = 0; deviceSession = false
+        heard = ""; pending = ""; failures = 0; deviceSession = false; listening = false
         val old = session; session = null; old?.cancel()
         val file = clip; clip = null
         mutableState.value = DictationState()

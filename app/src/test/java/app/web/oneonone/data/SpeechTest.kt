@@ -360,6 +360,18 @@ class SpeechTest {
         assertEquals(starts, device.starts); assertFalse(transcriber.state.value.active)
     }
 
+    @Test fun stopBetweenSegmentsKeepsWordsAtOnceWithoutRestarting() = runTest {
+        val device = FakeDevice(true); val delivered = mutableListOf<String>()
+        val transcriber = SpeechTranscriber(FakeSpeech(), FakeRecorder(), device, backgroundScope, delivered::add, {}, StandardTestDispatcher(testScheduler))
+        transcriber.start(); runCurrent()
+        device.result("Said this."); runCurrent() // the recognizer ended; the restart waits 300 ms
+        transcriber.stop(); runCurrent()
+        assertEquals(listOf("Said this."), delivered)
+        assertFalse(transcriber.state.value.active)
+        val starts = device.starts; advanceTimeBy(5_000); runCurrent()
+        assertEquals(starts, device.starts); assertEquals(listOf("Said this."), delivered)
+    }
+
     @Test fun backgroundKeepsLatestPartialAndRejectsLateSegmentCallbacks() = runTest {
         val device = FakeDevice(true); val delivered = mutableListOf<String>(); val live = mutableListOf<String>()
         val transcriber = SpeechTranscriber(FakeSpeech(), FakeRecorder(), device, backgroundScope, delivered::add, {},
