@@ -3,6 +3,10 @@
 Current Ping Pong delivery state and Claude Code follow-up:
 [PING-PONG-HANDOFF.md](games/PING-PONG-HANDOFF.md) (2026-10-21).
 
+## Release 2.0.9 (2026-10-21, versionCode 16)
+- Release workflow defaults bumped to 16 / 2.0.9. Contents since 2.0.8: games round 3 and Ping Pong (#43/#44), owner fix batch (#45), logos/viewer/BiRefNet stickers (#46), cross-check (#47); backend #122, #123, #124. No new migration (latest remains 040).
+- Signed build run from main by Claude Code at the owner's request; Play upload is the owner's step.
+
 ## Release 2.0.8 (2026-10-20, versionCode 15)
 - Signed build from main (run 39444598003) uploaded to Play by the owner. Contents: Android #37 (below), backend #115 (invite push, `game` rows, migration 040 applied in Supabase).
 - Speech fixed on Railway (no app change): the `speech` service now runs in the backend's project (`One on One`, renamed from `fabulous-connection` on 2026-10-20), so `speech.railway.internal` resolves, and the backend's `SPEECH_SERVICE_TOKEN` references `${{speech.SPEECH_SERVICE_TOKEN}}` (verified equal, values not read). The old separate `speech` project is deleted.
