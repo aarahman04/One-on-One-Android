@@ -75,13 +75,13 @@ internal class DemoPong {
         val stroke = strokes[seat - 1]
         val px = paddles[seat - 1]; val py = paddleY[seat - 1]
         val target = doubleArrayOf(.5 + stroke[2] * .36 * (.85 + .15 * stroke[1]),
-            (if (seat == 1) .49 else courtH - .49) + (if (seat == 1) -1 else 1) * stroke[1] * (7 / 12.16), -ArcH)
+            (if (seat == 1) .49 else courtH - .49) + (if (seat == 1) -1 else 1) * (stroke[1] * .5 + max(0.0, stroke[1] - .85) * 2.4), -ArcH)
         val dx = target[0] - px; val dy = target[1] - py; val length = hypot(dx, dy)
         x = px + dx / length * .205; y = py + dy / length * .205
-        curve(target, 1 - .12 * stroke[1])
+        curve(target, 1 - .22 * stroke[1])
         val brush = if (abs(stroke[2]) > .45) stroke[0] else 0.0
         lastHit = seat; landed = false
-        spin = if (abs(brush) <= .08) 0.0 else sign(brush) * (.1 + .1 * min(1.0, (abs(brush) - .08) / .6))
+        spin = if (abs(brush) <= .08) 0.0 else sign(brush) * (.2 + .2 * min(1.0, (abs(brush) - .08) / .6))
         hits++
     }
     private fun advance(dt: Double) {
@@ -103,9 +103,10 @@ internal class DemoPong {
             if (bx in 0.0..1.0 && by in 0.0..courtH) {
                 if (landed) { point(lastHit); return }
                 x = bx; y = by; z = .033; landed = true; bounces++
-                val kickX = vx + spin * .8
-                val length = sqrt(kickX * kickX + vy * vy + vz * vz).takeIf { it != 0.0 } ?: 1.0
-                curve(doubleArrayOf(x + kickX / length * (30 / 12.16), y + vy / length * (30 / 12.16), -ArcH), current.duration)
+                // Mirrors the backend: sidespin checks the ball and breaks it sideways.
+                val kickX = vx + spin * 2; val kickY = vy * (1 - 1.1 * abs(spin))
+                val length = sqrt(kickX * kickX + kickY * kickY + vz * vz).takeIf { it != 0.0 } ?: 1.0
+                curve(doubleArrayOf(x + kickX / length * (30 / 12.16), y + kickY / length * (30 / 12.16), -ArcH), current.duration)
             }
         }
         if (landed && lastHit != 0 && touches(3 - lastHit)) strike(3 - lastHit)

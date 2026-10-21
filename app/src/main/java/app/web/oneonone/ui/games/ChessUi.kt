@@ -55,12 +55,12 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 import kotlin.math.roundToInt
 
-/** Familiar green board colours and highlights; the same in light and dark mode, like a real board. */
+/** Classic black-and-white board (a mid grey keeps black pieces readable); the same in light and dark mode. */
 internal object ChessColors {
-    val light = Color(0xFFEBECD0)
-    val dark = Color(0xFF739552)
-    val lastLight = Color(0xFFF5F682)
-    val lastDark = Color(0xFFB9CA43)
+    val light = Color(0xFFF2F2F2)
+    val dark = Color(0xFF7A7A7A)
+    val lastLight = Color(0xFFF3E9A6)
+    val lastDark = Color(0xFFB8AC5E)
     val hint = Color(0x24000000)
     val hover = Color(0xA6FFFFFF)
     val check = Color(0xFFE5484D)
@@ -357,7 +357,8 @@ internal fun ChessMoveList(history: List<String>) {
 @Composable
 internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifier: Modifier, sounds: GameSounds?, footer: @Composable () -> Unit) {
     val match = state.match ?: return
-    val view = ChessView.from(match.board)
+    // Parsing runs chesslib move generation: once per server board, not on every frame of an animation.
+    val view = remember(match.board) { ChessView.from(match.board) }
     val white = state.seat == 1
     val playing = match.status == MatchStatus.Playing
     val partnerAway = state.partner in match.away
@@ -401,7 +402,7 @@ internal fun ChessDrawControls(vm: GameViewModel, state: GameUi) {
     val c = OneTheme.colors
     val s = OneTheme.spacing
     val match = state.match ?: return
-    val view = ChessView.from(match.board) ?: return
+    val view = remember(match.board) { ChessView.from(match.board) } ?: return
     if (match.drawOffer == state.partner) Surface(color = c.bgRaised, border = BorderStroke(1.dp, c.accentOther.copy(alpha = .4f)),
         shape = RoundedCornerShape(OneTheme.radii.lg16), modifier = Modifier.padding(horizontal = s.md12, vertical = s.xs4)) {
         Row(Modifier.fillMaxWidth().padding(s.md12), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(s.sm8)) {

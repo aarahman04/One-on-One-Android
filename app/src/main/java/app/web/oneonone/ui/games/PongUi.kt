@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -38,8 +39,10 @@ import kotlin.math.ceil
 private const val MarginX = .28f
 private const val MarginTop = .42f
 private const val MarginBottom = .7f
-private val OwnRubber = Color(0xFFEE7468)
-private val OtherRubber = Color(0xFF55B9E8)
+// A deep navy table in both themes (a real table is not light grey); bats, glow and HUD take the app's accents.
+private val TableTop = Color(0xFF17294A)
+private val TableBottom = Color(0xFF0E1A31)
+private val TableEdge = Color(0xFF0A1222)
 
 private class PongHud {
     var mine by mutableIntStateOf(0)
@@ -111,12 +114,12 @@ private fun PongScoreboard(mine: Int, theirs: Int, nickname: String) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics(mergeDescendants = true) {
             contentDescription = "You $mine, $nickname $theirs, first to 7"
         }, verticalAlignment = Alignment.CenterVertically) {
-            Text("You", color = OwnRubber, style = MaterialTheme.typography.labelLarge)
+            Text("You", color = c.accentYou, style = MaterialTheme.typography.labelLarge)
             AnimatedContent(mine, Modifier.padding(start = 12.dp), label = "your score") { Text("$it", color = c.text, fontSize = 26.sp, fontWeight = FontWeight.Bold) }
             Text("first to 7", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 style = MaterialTheme.typography.labelSmall, color = c.muted)
             AnimatedContent(theirs, Modifier.padding(end = 12.dp), label = "their score") { Text("$it", color = c.text, fontSize = 26.sp, fontWeight = FontWeight.Bold) }
-            Text(nickname, color = OtherRubber, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.widthIn(max = 92.dp))
+            Text(nickname, color = c.accentOther, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.widthIn(max = 92.dp))
         }
     }
 }
@@ -124,6 +127,8 @@ private fun PongScoreboard(mine: Int, theirs: Int, nickname: String) {
 @Composable
 private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onPaddle: (Float, Float, Boolean) -> Unit) {
     val currentEnabled by rememberUpdatedState(enabled)
+    val mine = OneTheme.colors.accentYou
+    val theirs = OneTheme.colors.accentOther
     Canvas(Modifier.fillMaxSize().pointerInput(game) {
         awaitEachGesture {
             val down = awaitFirstDown(); down.consume()
@@ -156,20 +161,28 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
         val u = size.width / (1 + 2 * MarginX)
         fun at(x: Float, y: Float) = Offset((x + MarginX) * u, (y + MarginTop) * u)
         val table = Rect(at(0f, 0f), at(1f, PongClient.CourtH))
-        drawRoundRect(Color.Black.copy(alpha = .18f), table.topLeft + Offset(.025f * u, .035f * u), table.size, CornerRadius(.012f * u))
-        drawRect(Color(0xFF548E43), table.topLeft, table.size)
-        drawRect(Color(0xFF284930), table.topLeft, table.size, style = Stroke(.025f * u))
-        val inset = .025f * u
-        drawRect(Color.White.copy(alpha = .85f), table.topLeft + Offset(inset, inset), Size(table.width - 2 * inset, table.height - 2 * inset), style = Stroke(.009f * u))
-        drawLine(Color.White.copy(alpha = .75f), at(.5f, .025f), at(.5f, PongClient.CourtH - .025f), .009f * u)
-        drawLine(Color(0xFF20372B), at(-.035f, PongClient.CourtH / 2), at(1.035f, PongClient.CourtH / 2), .035f * u)
-        drawLine(Color.White.copy(alpha = .9f), at(-.035f, PongClient.CourtH / 2), at(1.035f, PongClient.CourtH / 2), .009f * u)
+        val corner = CornerRadius(.02f * u)
+        // Soft accent glow under the table, then the playing surface with a subtle sheen.
+        for (i in 3 downTo 1) drawRoundRect(theirs.copy(alpha = .05f * i), table.topLeft - Offset(.018f * u * i, .018f * u * i),
+            Size(table.width + .036f * u * i, table.height + .036f * u * i), CornerRadius(.02f * u + .018f * u * i))
+        drawRoundRect(Brush.verticalGradient(listOf(TableTop, TableBottom, TableTop), table.top, table.bottom), table.topLeft, table.size, corner)
+        drawRoundRect(Brush.linearGradient(listOf(Color.White.copy(alpha = .07f), Color.Transparent), table.topLeft, table.center),
+            table.topLeft, table.size, corner)
+        drawRoundRect(TableEdge, table.topLeft, table.size, corner, style = Stroke(.022f * u))
+        val inset = .028f * u
+        drawRect(Color.White.copy(alpha = .9f), table.topLeft + Offset(inset, inset), Size(table.width - 2 * inset, table.height - 2 * inset), style = Stroke(.01f * u))
+        drawLine(Color.White.copy(alpha = .55f), at(.5f, .028f), at(.5f, PongClient.CourtH - .028f), .007f * u)
+        // Net: a glowing band across the middle, posts just outside the table.
+        drawLine(theirs.copy(alpha = .22f), at(-.04f, PongClient.CourtH / 2), at(1.04f, PongClient.CourtH / 2), .06f * u, cap = StrokeCap.Round)
+        drawLine(TableEdge, at(-.04f, PongClient.CourtH / 2), at(1.04f, PongClient.CourtH / 2), .03f * u)
+        drawLine(Color.White, at(-.04f, PongClient.CourtH / 2), at(1.04f, PongClient.CourtH / 2), .008f * u)
+        for (post in listOf(-.04f, 1.04f)) drawCircle(Color.White, .014f * u, at(post, PongClient.CourtH / 2))
 
         for (index in 1 until game.trail.size) {
             val previous = game.trail[index - 1]; val point = game.trail[index]
             val k = index.toFloat() / game.trail.size
-            drawLine(Color.White.copy(alpha = .25f * k), at(previous.x, previous.y), at(point.x, point.y),
-                PongClient.BallR * u * k, cap = StrokeCap.Round)
+            drawLine((if (game.spin != 0f) lerp(Color.White, mine, .6f) else Color.White).copy(alpha = .35f * k), at(previous.x, previous.y), at(point.x, point.y),
+                PongClient.BallR * u * k * 1.2f, cap = StrokeCap.Round)
         }
         if (game.live) {
             val h = (game.height / PongClient.ArcH).coerceIn(0f, 1f)
@@ -178,19 +191,20 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
             val since = (now - game.bounceAt) / 1e6f
             if (game.bounceAt > 0 && since in 0f..300f) {
                 val k = since / 300
-                drawCircle(Color.White.copy(alpha = .25f * (1 - k)), PongClient.BallR * u, at(game.bounceX, game.bounceY))
-                drawCircle(Color.White.copy(alpha = .65f * (1 - k)), PongClient.BallR * u * (1 + 1.2f * k), at(game.bounceX, game.bounceY), style = Stroke(.009f * u))
+                drawCircle(theirs.copy(alpha = .3f * (1 - k)), PongClient.BallR * u * 1.2f, at(game.bounceX, game.bounceY))
+                drawCircle(Color.White.copy(alpha = .8f * (1 - k)), PongClient.BallR * u * (1 + 1.8f * k), at(game.bounceX, game.bounceY), style = Stroke(.01f * u))
             }
         }
-        rotate(game.theirAngle, at(game.theirX, game.theirY)) { drawRacket(at(game.theirX, game.theirY), OtherRubber, u, up = true) }
-        rotate(game.myAngle, at(game.myX, game.myY)) { drawRacket(at(game.myX, game.myY), OwnRubber, u, up = false) }
+        rotate(game.theirAngle, at(game.theirX, game.theirY)) { drawRacket(at(game.theirX, game.theirY), theirs, u, up = true) }
+        rotate(game.myAngle, at(game.myX, game.myY)) { drawRacket(at(game.myX, game.myY), mine, u, up = false) }
         if (game.live && (game.height >= 0 || game.ballX !in 0f..1f || game.ballY !in 0f..PongClient.CourtH)) {
             val h = (game.height / PongClient.ArcH).coerceIn(-1f, 1f)
             val ball = at(game.ballX, game.ballY)
             val r = PongClient.BallR * u * (1 + .35f * h)
-            drawCircle(Color(0xFF253A2C), r * 1.22f, ball)
-            drawCircle(Color.White, r, ball)
-            if (game.spin != 0f) drawArc(Color(0xFF738277), game.spinAngle, 120f, false, ball - Offset(r * .65f, r * .65f),
+            drawCircle(Color.White.copy(alpha = .18f), r * 2.1f, ball)
+            drawCircle(TableEdge, r * 1.18f, ball)
+            drawCircle(Brush.radialGradient(listOf(Color.White, Color(0xFFDCE3EE)), ball - Offset(r * .35f, r * .35f), r * 1.4f), r, ball)
+            if (game.spin != 0f) drawArc(mine, game.spinAngle, 120f, false, ball - Offset(r * .65f, r * .65f),
                 Size(r * 1.3f, r * 1.3f), style = Stroke(.005f * u))
         }
     }
@@ -198,14 +212,15 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
 
 private fun DrawScope.drawRacket(center: Offset, color: Color, u: Float, up: Boolean) {
     val r = PongClient.HeadR * u
-    val edge = Color(0xFF263B31)
+    val edge = TableEdge
     val handleWidth = .065f * u
     val handleY = if (up) center.y - r - .12f * u else center.y + r * .55f
     val handle = Rect(Offset(center.x - handleWidth / 2, handleY), Size(handleWidth, r * .45f + .12f * u))
     drawCircle(Color.Black.copy(alpha = .18f), r, center + Offset(.025f * u, .025f * u))
-    drawRoundRect(lerp(color, Color.White, .2f), handle.topLeft, handle.size, CornerRadius(.015f * u))
+    drawRoundRect(Color(0xFFC9A27A), handle.topLeft, handle.size, CornerRadius(.015f * u))
     drawRoundRect(edge, handle.topLeft, handle.size, CornerRadius(.015f * u), style = Stroke(.014f * u))
-    drawCircle(color, r, center)
+    drawCircle(color.copy(alpha = .25f), r * 1.25f, center)
+    drawCircle(Brush.radialGradient(listOf(lerp(color, Color.White, .25f), color), center - Offset(r * .3f, r * .3f), r * 1.3f), r, center)
     drawCircle(edge, r, center, style = Stroke(.015f * u))
     val bandY = center.y + (if (up) -.65f else .65f) * r
     drawLine(edge, Offset(center.x - .72f * r, bandY), Offset(center.x + .72f * r, bandY), .012f * u)

@@ -105,6 +105,10 @@ class MatchTest {
         assertEquals(server.position, predicted.position)
         assertEquals(squareIndex("e2") to squareIndex("e4"), predicted.lastFrom to predicted.lastTo)
         assertNull(start.played("e2e5")) // illegal: no prediction
+        // Mid-game: the prediction builds on the current position, not the starting one.
+        val midGame = ChessView.from(chessBoard("rnbqkbnr/pp1ppppp/2p5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", "c7", "c6"))!!
+        val afterD4 = ChessView.from(chessBoard("rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq d3 0 2", "d2", "d4"))!!
+        assertEquals(afterD4.position, midGame.played("d2d4")!!.position)
         val withHistory = ChessView.from(buildJsonObject {
             put("fen", server.fen); putJsonObject("last") { put("from", "e2"); put("to", "e4") }; put("check", false); put("claim", JsonNull)
             putJsonArray("history") { add("e4") }

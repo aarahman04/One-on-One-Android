@@ -21,13 +21,13 @@ class DemoPongTest {
         p.paddle(2, .2, .21); p.step(16.0)
         p.paddle(2, .5, .24); p.step(8.0); p.step(64.0)
         // Same input sequence in backend PongSim, rounded by its wire encoder.
-        assertEquals(.5690, p.x, .0001); assertEquals(.5126, p.y, .0001)
-        assertEquals(.2455, p.z, .0001); assertEquals(1, p.hits)
+        assertEquals(.5709, p.x, .0001); assertEquals(.5139, p.y, .0001)
+        assertEquals(.2483, p.z, .0001); assertEquals(1, p.hits)
         val client = PongClient(1)
         assertTrue(client.receive(p.frame("m"), "m", 1_000_000))
-        assertTrue(client.spin > .18f && client.spin < .2f)
+        assertTrue(client.spin > .36f && client.spin < .4f)
         p.paddle(2, .5, .24, true)
-        assertTrue(p.frame("m")["spin"]!!.jsonPrimitive.float > .18f)
+        assertTrue(p.frame("m")["spin"]!!.jsonPrimitive.float > .36f)
     }
 
     @Test fun demoWaitsForServeAndScoresAnOpenSideMiss() {

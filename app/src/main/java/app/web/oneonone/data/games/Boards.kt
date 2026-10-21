@@ -47,7 +47,7 @@ class ChessView(
      * once; the server's answer replaces it (and a rejected move simply falls back to this view).
      */
     fun played(uci: String): ChessView? = runCatching {
-        val b = Board().apply { loadFromFen(fen) }
+        val b = Board().apply { loadFromFen(this@ChessView.fen) } // inside apply, a bare `fen` is the new Board's start position
         b.doMove(b.legalMoves().first { it.toString() == uci })
         build(b, squareIndex(uci.substring(0, 2)), squareIndex(uci.substring(2, 4)), null, history)
     }.getOrNull()
@@ -107,6 +107,9 @@ fun advanceSprites(previous: List<Sprite>?, next: ChessView, newId: () -> Int): 
 
 /** Tic-tac-toe (9 cells) and Connect 4 (42 cells, row 0 at the top). */
 class GridView(val cells: IntArray, val line: IntArray, val last: Int) {
+    /** This board with [seat]'s mark at [cell] (shown before the server confirms it); unchanged if not empty. */
+    fun played(cell: Int, seat: Int): GridView =
+        if (cell in cells.indices && cells[cell] == 0) GridView(cells.copyOf().also { it[cell] = seat }, line, cell) else this
     fun landing(col: Int): Int = if (cells.size == 42 && col in 0..6) (5 downTo 0).firstOrNull { cells[it * 7 + col] == 0 }?.let { it * 7 + col } ?: -1 else -1
     companion object {
         fun from(board: JsonObject?, size: Int): GridView? = runCatching {
