@@ -286,7 +286,8 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     val position = if (message.type == "voice") vm.playbackPosition.collectAsState().value else 0
     val duration = if (message.type == "voice") vm.playbackDuration.collectAsState().value else 0
     val paused = if (message.type == "voice") vm.playbackPaused.collectAsState().value else false
-    var url by remember(path) { mutableStateOf<String?>(null) }
+    // Seeded from the in-memory signed-URL cache so a row scrolled back into view draws its photo at once.
+    var url by remember(path) { mutableStateOf(if (message.type == "image" && path.isNotBlank()) vm.media.cachedSignedUrl(connection.id, path) else null) }
     var urlError by remember(path) { mutableStateOf<String?>(null) }
     var retryUrl by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
@@ -428,22 +429,37 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                         }
                     } else Text("Location unavailable")
                 }
-                "image" -> if (isSticker(message)) {
-                    // Bare sticker: transparent, fitted, no photo viewer; the bubble draws only a small time pill.
-                    Box(Modifier.size(StickerSize), contentAlignment = Alignment.Center) {
-                        url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "Sticker", Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit, onError = { onImageError() }) }
-                        if (url == null && urlError == null) androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                        urlError?.let { CardAction("Retry", onClick = { onRetryPhoto() }) }
+                "image" -> {
+                    // Signed URLs change hourly; the attachment path names the bytes, so it keys Coil's caches.
+                    val context = LocalContext.current
+                    val inspection = LocalInspectionMode.current
+                    val request = remember(url, path) {
+                        url?.takeIf { !inspection }?.let { coil3.request.ImageRequest.Builder(context).data(it).memoryCacheKey(path).diskCacheKey(path).build() }
                     }
-                } else {
-                    if (url == null && urlError == null) Text("Loading photo…")
-                    url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "View shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp).clip(RoundedCornerShape(OneTheme.radii.sm6))
-                        .bubbleClickable { reveal = true }, contentScale = ContentScale.Crop,
-                placeholder = ColorPainter(OneTheme.colors.bgRaised), error = if (LocalInspectionMode.current) ColorPainter(OneTheme.colors.bgRaised) else null,
-                        onError = { onImageError() }) }
-                    urlError?.let { Text(it); CardAction("Retry photo", onClick = { onRetryPhoto() }) }
-                    if (reveal) PhotoViewer(url, busy, onSaveCopy, close = { reveal = false })
+                    var shown by remember(path) { mutableStateOf(false) }
+                    if (isSticker(message)) {
+                        // Bare sticker: transparent, fitted, no photo viewer; the bubble draws only a small time pill.
+                        Box(Modifier.size(StickerSize), contentAlignment = Alignment.Center) {
+                            if (!shown && urlError == null) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                            request?.let { AsyncImage(it, "Sticker", Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit, onSuccess = { shown = true }, onError = { onImageError() }) }
+                            urlError?.let { CardAction("Retry", onClick = { onRetryPhoto() }) }
+                        }
+                    } else BoxWithConstraints {
+                        // The photo's own shape from the payload size: placeholder and image are one box, so nothing jumps.
+                        val box = mediaSize(payload.number("width"), payload.number("height"), payload.text("mime") == "image/gif", maxWidth)
+                        Box(Modifier.size(box).clip(RoundedCornerShape(OneTheme.radii.sm6)).background(OneTheme.colors.bgRaised)
+                            .bubbleClickable(enabled = url != null) { reveal = true }, contentAlignment = Alignment.Center) {
+                            if (!shown && urlError == null) CircularProgressIndicator(Modifier.size(24.dp), color = OneTheme.colors.textDim, strokeWidth = 2.dp)
+                            request?.let { AsyncImage(it, "View shared photo", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                                onSuccess = { shown = true }, onError = { onImageError() }) }
+                            urlError?.let { Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(it, color = OneTheme.colors.textDim, style = OneTextStyles.cardHint, textAlign = TextAlign.Center)
+                                CardAction("Retry photo", onClick = { onRetryPhoto() })
+                            } }
+                        }
+                        if (reveal) PhotoViewer(url, busy, onSaveCopy, close = { reveal = false }, cacheKey = path)
+                    }
                 }
                 "voice" -> {
                     val active = playing == path && path.isNotBlank()
@@ -727,13 +743,19 @@ internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () 
 }
 
 @Composable
-internal fun PhotoViewer(url: String?, busy: Boolean, save: () -> Unit, close: () -> Unit) {
+internal fun PhotoViewer(url: Any?, busy: Boolean, save: (() -> Unit)?, close: () -> Unit, cacheKey: String? = null, title: String = "Photo") {
+    val context = LocalContext.current
+    // Same cache keys as the thumbnail: the small copy shows at once while the full one loads.
+    val model = remember(url, cacheKey) {
+        if (url == null || cacheKey == null) url
+        else coil3.request.ImageRequest.Builder(context).data(url).memoryCacheKey(cacheKey).diskCacheKey(cacheKey).placeholderMemoryCacheKey(cacheKey).build()
+    }
     var scale by remember(url) { mutableFloatStateOf(1f) }
     var pan by remember(url) { mutableStateOf(Offset.Zero) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var imageSize by remember(url) { mutableStateOf(Size.Zero) }
     var photoError by remember(url) { mutableStateOf(false) }
-    AttachmentViewerFrame("Photo", busy, save, close) {
+    AttachmentViewerFrame(title, busy, save, close) {
         Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged {
                 viewport = it
                 pan = photoPan(pan, scale, Size(it.width.toFloat(), it.height.toFloat()), imageSize)
@@ -755,7 +777,7 @@ internal fun PhotoViewer(url: String?, busy: Boolean, save: () -> Unit, close: (
                 pan = photoPan(pan * (scale / oldScale) + delta + focus * (1 - scale / oldScale), scale,
                     Size(viewport.width.toFloat(), viewport.height.toFloat()), imageSize)
             } }, contentAlignment = Alignment.Center) {
-            AsyncImage(url, "Shared photo. Pinch or double tap to zoom.", Modifier.fillMaxSize().graphicsLayer {
+            AsyncImage(model, "Photo. Pinch or double tap to zoom.", Modifier.fillMaxSize().graphicsLayer {
                 scaleX = scale; scaleY = scale; translationX = pan.x; translationY = pan.y
             }, contentScale = ContentScale.Fit, onSuccess = { imageSize = it.painter.intrinsicSize; photoError = false }, onError = { photoError = true })
             if (photoError || url == null) Text(if (photoError) "Photo unavailable. Close and retry." else "Loading photo…",

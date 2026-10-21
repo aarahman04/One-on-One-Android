@@ -8,6 +8,8 @@ import java.time.ZoneId
 import java.util.Locale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 
 class AttachmentPresentationTest {
     @Test fun dateLabelsUseLocalCalendarAndSevenDayBoundary() {
@@ -83,5 +85,38 @@ class AttachmentPresentationTest {
         assertEquals(Offset.Zero, photoPan(Offset(1_000f, 1_000f), 1f, Size(400f, 800f), Size(800f, 400f)))
         assertEquals(Offset(200f, 0f), photoPan(Offset(1_000f, 1_000f), 2f, Size(400f, 800f), Size(800f, 400f)))
         assertEquals(Offset.Zero, photoPan(Offset(1f, 1f), 2f, Size.Zero, Size.Zero))
+    }
+
+    private fun assertSize(expected: DpSize, actual: DpSize) {
+        assertEquals(expected.width.value, actual.width.value, .01f); assertEquals(expected.height.value, actual.height.value, .01f)
+    }
+
+    @Test fun mediaBoxesKeepAspectWithinBounds() {
+        // Landscape 4:3 photo fills the 260dp cap; portrait 3:4 hits the 340dp height cap.
+        assertSize(DpSize(260.dp, 195.dp), mediaSize(4_000.0, 3_000.0, gif = false, maxWidth = 400.dp))
+        assertSize(DpSize(255.dp, 340.dp), mediaSize(1_500.0, 2_000.0, gif = false, maxWidth = 400.dp))
+        // Narrow bubbles shrink it; extreme ratios are clamped to 1:2 / 2:1 (cropped); unknown sizes are square.
+        assertSize(DpSize(200.dp, 150.dp), mediaSize(4_000.0, 3_000.0, gif = false, maxWidth = 200.dp))
+        assertSize(DpSize(260.dp, 130.dp), mediaSize(8_000.0, 1_000.0, gif = false, maxWidth = 400.dp))
+        assertSize(DpSize(170.dp, 340.dp), mediaSize(100.0, 1_000.0, gif = false, maxWidth = 400.dp))
+        assertSize(DpSize(260.dp, 260.dp), mediaSize(null, 0.0, gif = false, maxWidth = 400.dp))
+        // GIFs: 200dp on the long side.
+        assertSize(DpSize(200.dp, 100.dp), mediaSize(480.0, 240.0, gif = true, maxWidth = 400.dp))
+        assertSize(DpSize(150.dp, 200.dp), mediaSize(300.0, 400.0, gif = true, maxWidth = 400.dp))
+        assertSize(DpSize(120.dp, 120.dp), mediaSize(500.0, 500.0, gif = true, maxWidth = 120.dp))
+    }
+
+    @Test fun photosAreScaledToTheLongSideCapNeverUp() {
+        assertEquals(2_048 to 1_536, app.web.oneonone.data.media.fittedSize(4_000, 3_000))
+        assertEquals(1_536 to 2_048, app.web.oneonone.data.media.fittedSize(3_000, 4_000))
+        assertEquals(1_000 to 800, app.web.oneonone.data.media.fittedSize(1_000, 800))
+        assertEquals(2_048 to 1, app.web.oneonone.data.media.fittedSize(20_000, 2))
+    }
+
+    @Test fun onlyOneToThreeEmojiCountAsEmojiOnly() {
+        mapOf("😀" to 1, "❤️" to 1, "❤" to 1, "👍🏽" to 1, "👨‍👩‍👧‍👦" to 1, "🏃🏽‍♀️" to 1, "🏳️‍🌈" to 1, "🇮🇳" to 1,
+            "1️⃣" to 1, "#⃣" to 1, "🏴󠁧󠁢󠁳󠁣󠁴󠁿" to 1, "©️" to 1, " 😀 " to 1, "😀😀" to 2, "👍🏽 🇮🇳 👨‍👩‍👧‍👦" to 3,
+            "😀😀😀😀" to 0, "hi 😀" to 0, "😀!" to 0, "1" to 0, "©" to 0, "" to 0, "   " to 0, "→" to 0, "😀‍" to 0)
+            .forEach { (text, count) -> assertEquals(text, count, emojiOnlyCount(text)) }
     }
 }

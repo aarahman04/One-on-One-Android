@@ -96,8 +96,13 @@ internal fun ChatHeader(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // A photo opens full screen (WhatsApp); the initial alone has nothing to enlarge.
+            var viewing by remember { mutableStateOf(false) }
+            if (viewing && photo != null) PhotoViewer(photo.first, busy = false, save = null, close = { viewing = false }, cacheKey = photo.second, title = title)
             Box(
-                Modifier.size(OneTheme.sizes.touch40).clip(CircleShape).background(c.accentYou.copy(alpha = .18f).compositeOver(c.bg)),
+                Modifier.size(OneTheme.sizes.touch40).clip(CircleShape).background(c.accentYou.copy(alpha = .18f).compositeOver(c.bg))
+                    .then(if (photo != null) Modifier.clickable(role = Role.Button, onClickLabel = "View profile photo") { viewing = true }
+                        .semantics { contentDescription = "View profile photo" } else Modifier),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(title.trim().firstOrNull()?.uppercase() ?: "?", color = c.accentYou, fontSize = 20.sp)

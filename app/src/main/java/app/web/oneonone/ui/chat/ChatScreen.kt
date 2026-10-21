@@ -50,6 +50,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
@@ -488,6 +490,23 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             LaunchedEffect(notice) { shown = notice; if (notice != null) { delay(4_000); shown = null } }
             ChatNotice(if (offline) "No connection · Reconnecting…" else null, Modifier.align(Alignment.TopCenter))
             ChatNotice(shown.takeIf { !offline }, Modifier.align(Alignment.BottomCenter), warning = true)
+            // Scrolled a few messages up: a round ↓ jumps back to the newest and re-pins (hidden under the attach sheet / slash menu).
+            val farFromEnd by remember { derivedStateOf {
+                list.layoutInfo.visibleItemsInfo.lastOrNull()?.let { it.index < list.layoutInfo.totalItemsCount - 6 } ?: false
+            } }
+            androidx.compose.animation.AnimatedVisibility(farFromEnd && !attachmentOpen && slash.isEmpty(),
+                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 12.dp),
+                enter = fadeIn(tween(160)) + androidx.compose.animation.scaleIn(tween(160), initialScale = .6f),
+                exit = fadeOut(tween(120)) + androidx.compose.animation.scaleOut(tween(120), targetScale = .6f)) {
+                app.web.oneonone.ui.components.OneIconButton(R.drawable.ic_chevron_down, "Scroll to latest messages",
+                    onClick = { scope.launch {
+                        list.animateScrollToItem((list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+                        pinned = true; scrollToEnd()
+                    } },
+                    modifier = Modifier.shadow(4.dp, CircleShape).background(OneTheme.colors.bgRaised, CircleShape)
+                        .border(1.dp, OneTheme.colors.border, CircleShape),
+                    tint = OneTheme.colors.text)
+            }
             if (attachmentOpen) Box(Modifier.matchParentSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { attachmentOpen = false })
             AttachSheet(attachmentOpen, Modifier.align(Alignment.BottomCenter).widthIn(max = OneTheme.sizes.chatMax720).padding(bottom = 6.dp),
                 onPhoto = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },

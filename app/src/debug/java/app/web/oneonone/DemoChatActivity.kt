@@ -165,6 +165,7 @@ private class DemoMedia(private val context: Context, real: MediaGateway) : Medi
     }
 
     override suspend fun signedUrl(connection: String, path: String): String = File(dir, path.substringAfterLast('/')).absolutePath
+    override fun cachedSignedUrl(connection: String, path: String): String = File(dir, path.substringAfterLast('/')).absolutePath
 }
 
 private class DemoTransport(context: Context, private val json: Json, private val scope: CoroutineScope, storeScene: String?) : Transport {
