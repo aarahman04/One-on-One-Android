@@ -123,11 +123,11 @@ class AttachmentPresentationTest {
         assertEquals(2_048 to 1, app.web.oneonone.data.media.fittedSize(20_000, 2))
     }
 
-    @Test fun onlyOneToThreeEmojiCountAsEmojiOnly() {
+    @Test fun onlyOneEmojiGraphemeGetsTheBarePresentation() {
         mapOf("😀" to 1, "❤️" to 1, "❤" to 1, "👍🏽" to 1, "👨‍👩‍👧‍👦" to 1, "🏃🏽‍♀️" to 1, "🏳️‍🌈" to 1, "🇮🇳" to 1,
-            "1️⃣" to 1, "#⃣" to 1, "🏴󠁧󠁢󠁳󠁣󠁴󠁿" to 1, "©️" to 1, " 😀 " to 1, "😀😀" to 2, "👍🏽 🇮🇳 👨‍👩‍👧‍👦" to 3,
+            "1️⃣" to 1, "#⃣" to 1, "🏴󠁧󠁢󠁳󠁣󠁴󠁿" to 1, "©️" to 1, " 😀 " to 1, "😀😀" to 0, "👍🏽 🇮🇳 👨‍👩‍👧‍👦" to 0,
             "😀😀😀😀" to 0, "hi 😀" to 0, "😀!" to 0, "1" to 0, "©" to 0, "" to 0, "   " to 0, "→" to 0, "😀‍" to 0,
-            "✓" to 0, "☇" to 0, "→️" to 0, "🇮" to 0, "🏽" to 0, "❤︎" to 0, "🇮🇳🇮🇳" to 2, "👩🏽‍💻👩🏽‍💻👩🏽‍💻" to 3)
+            "✓" to 0, "☇" to 0, "→️" to 0, "🇮" to 0, "🏽" to 0, "❤︎" to 0, "🇮🇳🇮🇳" to 0, "👩🏽‍💻👩🏽‍💻👩🏽‍💻" to 0)
             .forEach { (text, count) -> assertEquals(text, count, emojiOnlyCount(text)) }
     }
 }

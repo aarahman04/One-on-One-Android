@@ -1,7 +1,7 @@
 package app.web.oneonone.ui.chat
 
 /**
- * How many emoji (1..3) [text] holds when it is nothing but emoji and spaces, else 0. Such messages draw large
+ * Returns 1 when [text] holds exactly one emoji grapheme and optional spaces, else 0. A single emoji draws large
  * and without a bubble, like WhatsApp. Counts whole graphemes: ZWJ families, skin tones, flags, keycaps, tag flags.
  * Written by hand because android.icu is unavailable in JVM unit tests and java.text.BreakIterator splits ZWJ
  * sequences on older runtimes.
@@ -13,7 +13,7 @@ internal fun emojiOnlyCount(text: String): Int {
         val c = text.codePointAt(i)
         if (Character.isWhitespace(c)) { i += Character.charCount(c); continue }
         val end = emojiCluster(text, i)
-        if (end == i || ++count > 3) return 0
+        if (end == i || ++count > 1) return 0
         i = end
     }
     return count

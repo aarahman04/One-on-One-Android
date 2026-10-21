@@ -299,7 +299,7 @@ internal fun MessageBubble(
         !(message.type == "ask" && !mine && message.payload?.get("answerB") == null)
     // Stickers draw bare (a reply quote still needs the bubble); photos sit in a thin frame with the time printed on them.
     val sticker = !deleted && quote == null && isSticker(message)
-    // 1–3 emoji and nothing else: drawn large and bare like a sticker (a reply quote keeps the bubble).
+    // One emoji and nothing else: drawn large and bare like a sticker (a reply quote keeps the bubble).
     val bigEmoji = remember(message.content, message.type, deleted, quote == null) {
         if (!deleted && quote == null && message.type == "text") emojiOnlyCount(message.content) else 0
     }
@@ -470,7 +470,7 @@ internal fun MessageBubble(
                             ) { MetaRow(time, Receipt.None, colors, palette, receipt = null) }
                             bigEmoji > 0 -> Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
                                 Text(message.content.trim(), color = colors.text,
-                                    style = OneTextStyles.bubbleText.copy(fontSize = BigEmojiSizes[bigEmoji - 1], lineHeight = BigEmojiSizes[bigEmoji - 1] * 1.2f))
+                                    style = OneTextStyles.bubbleText.copy(fontSize = BigEmojiSize, lineHeight = BigEmojiSize * 1.2f))
                                 TimePill(time, status, colors, palette, receipt)
                             }
                             message.type == "text" -> {
@@ -676,7 +676,7 @@ private fun QuoteBlock(quote: BubbleQuote, colors: BubbleColors, modifier: Modif
 }
 
 /** One emoji 42sp, two 36sp, three 32sp. */
-private val BigEmojiSizes = listOf(42.sp, 36.sp, 32.sp)
+private val BigEmojiSize = 42.sp
 
 /** Bare sticker / big emoji: time and ticks in a bubble-coloured pill hanging just under the content's corner. */
 @Composable
