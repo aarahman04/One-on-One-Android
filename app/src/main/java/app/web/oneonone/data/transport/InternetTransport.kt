@@ -36,6 +36,7 @@ class InternetTransport @Inject constructor(
     private fun objectOf(value: Any): JsonObject? = runCatching { Json.parseToJsonElement(value.toString()).jsonObject }.getOrNull()
     override val matchStates = realtime.events("match:state").mapNotNull(::objectOf)
     override val pongFrames = realtime.events("match:pong").mapNotNull(::objectOf)
+    override val matchReactions = realtime.events("match:reaction").mapNotNull(::objectOf)
     override suspend fun match(event: String, payload: JsonObject): JsonObject {
         require(event in MatchCodec.events)
         return objectOf(realtime.emitWithAck(event, JSONObject(payload.toString()))) ?: buildJsonObject { put("ok", false) }

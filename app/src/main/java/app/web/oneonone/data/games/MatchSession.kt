@@ -8,6 +8,7 @@ import kotlinx.serialization.json.*
 interface MatchChannel {
     val states: Flow<JsonObject>
     val frames: Flow<JsonObject>
+    val reactions: Flow<JsonObject> get() = emptyFlow()
     /** Emits a `match:*` event and returns its ack. */
     suspend fun call(event: String, payload: JsonObject): JsonObject
     fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false)
@@ -37,6 +38,9 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     val busy = mutableBusy.asStateFlow()
     private val mutableErrors = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val errors = mutableErrors.asSharedFlow()
+    private val mutableReactions = MutableSharedFlow<GameReaction>(extraBufferCapacity = 8)
+    /** Reactions for the match on screen, from either player (the server echoes our own). */
+    val reactions = mutableReactions.asSharedFlow()
     var me = ""; private set
     var pong: PongClient? = null; private set
     private var pendingPaddle: Triple<Float, Float, Boolean>? = null
@@ -45,6 +49,7 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     init {
         scope.launch { channel.states.collect { offer(MatchCodec.decode(it)) } }
         scope.launch { channel.frames.collect { frame -> match.value?.let { pong?.receive(frame, it.id, clock()) } } }
+        scope.launch { channel.reactions.collect { r -> match.value?.let { MatchCodec.reaction(r, it.id, it.players) }?.let(mutableReactions::tryEmit) } }
     }
 
     fun reset(user: String) {
@@ -108,6 +113,21 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     fun away(away: Boolean) {
         val m = match.value ?: return
         if (m.status == MatchStatus.Playing) send("match:away") { put("matchId", m.id); put("away", away) }
+    }
+
+    /** An emoji or short comment for the match on screen; the server rate-limits and echoes it to both players. */
+    fun react(text: String) {
+        val m = match.value ?: return
+        val clean = text.replace(Regex("\\s+"), " ").trim()
+        if (clean.isEmpty() || clean.codePointCount(0, clean.length) > REACTION_MAX_CHARS) return
+        if (m.status != MatchStatus.Playing && m.status != MatchStatus.Over) return
+        scope.launch {
+            val ack = ack("match:react", buildJsonObject { put("matchId", m.id); put("text", clean) })
+            // A quick double tap is throttled by the server; that is not worth an error.
+            val error = (ack?.get("error") as? JsonPrimitive)?.contentOrNull
+            if (ack == null) mutableErrors.tryEmit("network")
+            else if (error != null && error != "rate_limited") mutableErrors.tryEmit(error)
+        }
     }
 
     /** One move at a time; the board stays locked until the server answers. */

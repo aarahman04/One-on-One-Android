@@ -1210,3 +1210,22 @@ sequenceDiagram
 ```
 
 Device dictation runs segment → 300 ms gap → segment. `SpeechTranscriber` tracks whether a segment is live: Stop during a segment asks the recognizer to flush (3 s grace); Stop in the gap delivers the words immediately.
+
+## In-game reactions and draws (2026-10-21)
+
+`match:react {matchId, text}` (1–60 code points, one line) is acked and relayed by the backend as `match:reaction {id, matchId, from, text}` to the connection room; nothing is stored. `MatchSession` keeps only reactions for the match on screen from one of its players; `GameViewModel` holds them for 3.5 s. Reactions render in existing slots (partner: header subtitle; self: action-bar info line) so the board is never covered. `match:draw` offer/accept/decline now applies to every game; `claim` stays chess-only.
+
+```mermaid
+sequenceDiagram
+    participant A as Phone A (GameHost)
+    participant S as Backend matchSocket
+    participant B as Phone B (GameHost)
+    A->>S: match:react {matchId, text}
+    S-->>A: ack {ok:true}
+    S-->>A: match:reaction (shown above A's buttons)
+    S-->>B: match:reaction (shown under A's name)
+    A->>S: match:draw offer
+    S-->>B: match:state drawOffer=A (bar: Decline / Accept)
+    B->>S: match:draw decline
+    S-->>A: match:state drawOffer=null ("declined your draw offer")
+```

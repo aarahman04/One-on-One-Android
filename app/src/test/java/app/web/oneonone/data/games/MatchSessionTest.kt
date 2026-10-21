@@ -11,6 +11,7 @@ import java.io.IOException
 private class FakeChannel : MatchChannel {
     override val states = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
     override val frames = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
+    override val reactions = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
     val calls = mutableListOf<Pair<String, JsonObject>>()
     val paddles = mutableListOf<Float>()
     val releases = mutableListOf<Boolean>()
@@ -25,6 +26,47 @@ class MatchSessionTest {
     private fun TestScope.session(): Pair<MatchSession, FakeChannel> {
         val channel = FakeChannel()
         return MatchSession(channel, backgroundScope) { testScheduler.currentTime * 1_000_000 }.also { it.reset("me"); runCurrent() } to channel
+    }
+
+    @Test fun reactionsAreSentCleanedAndOnlyShownForTheMatchOnScreen() = runTest {
+        val (s, ch) = session()
+        val seen = mutableListOf<GameReaction>()
+        backgroundScope.launch { s.reactions.collect { seen += it } }
+        s.react("hi"); runCurrent()
+        assertTrue("no match, nothing sent", ch.calls.isEmpty())
+        ch.states.emit(matchJson()); runCurrent()
+        s.react("  Nice\n  move!  "); runCurrent()
+        assertEquals("match:react", ch.calls.single().first)
+        assertEquals("Nice move!", ch.calls.single().second["text"]!!.jsonPrimitive.content)
+        s.react("   "); s.react("x".repeat(61)); runCurrent()
+        assertEquals(1, ch.calls.size)
+        fun reaction(id: String, matchId: String = "m1", from: String = "other", text: String = "🔥") =
+            buildJsonObject { put("id", id); put("matchId", matchId); put("from", from); put("text", text) }
+        ch.reactions.emit(reaction("r1")); ch.reactions.emit(reaction("r2", matchId = "old"))
+        ch.reactions.emit(reaction("r3", from = "stranger")); ch.reactions.emit(reaction("r4", text = "y".repeat(61)))
+        ch.reactions.emit(reaction("r5", from = "me", text = "GG")); runCurrent()
+        assertEquals(listOf("r1", "r5"), seen.map { it.id })
+        assertEquals(GameReaction("r1", "other", "🔥"), seen.first())
+    }
+
+    @Test fun commentFieldKeepsOneLineAndCountsEmojiOnce() {
+        assertEquals("a b", app.web.oneonone.ui.games.limitReaction("a\nb"))
+        assertEquals(REACTION_MAX_CHARS, app.web.oneonone.ui.games.limitReaction("x".repeat(80)).length)
+        val emoji = app.web.oneonone.ui.games.limitReaction("👍".repeat(70))
+        assertEquals(REACTION_MAX_CHARS, emoji.codePointCount(0, emoji.length))
+    }
+
+    @Test fun throttledReactionIsQuietButOtherFailuresShow() = runTest {
+        val (s, ch) = session()
+        val errors = mutableListOf<String>()
+        backgroundScope.launch { s.errors.collect { errors += it } }
+        ch.states.emit(matchJson()); runCurrent()
+        ch.reply = { _, _ -> buildJsonObject { put("ok", false); put("error", "rate_limited") } }
+        s.react("🔥"); runCurrent()
+        assertTrue(errors.isEmpty())
+        ch.reply = { _, _ -> throw IOException("down") }
+        s.react("🔥"); runCurrent()
+        assertEquals(listOf("network"), errors)
     }
 
     @Test fun keepsNewestSnapshotAndIgnoresStrangers() = runTest {

@@ -34,6 +34,9 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
     private val mutableError = MutableStateFlow<String?>(null)
     val error = mutableError.asStateFlow()
     val pong get() = session.pong
+    private val mutableReactions = MutableStateFlow<List<GameReaction>>(emptyList())
+    /** Reactions currently popping up over the game, oldest first; each shows for [ReactionShowMs]. */
+    val reactions = mutableReactions.asStateFlow()
     private var connectionId = ""
     var nickname = "Your One on One"; private set
     private var noticeTimer: Job? = null
@@ -43,6 +46,12 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
 
     init {
         viewModelScope.launch { session.errors.collect { notice(message(it)) } }
+        viewModelScope.launch {
+            session.reactions.collect { reaction ->
+                mutableReactions.update { (it + reaction).takeLast(MaxReactions) }
+                launch { delay(ReactionShowMs); mutableReactions.update { list -> list.filterNot { it.id == reaction.id } } }
+            }
+        }
         // Every (re)connect recovers the match from the server: board, colours, score.
         viewModelScope.launch { service.connection.collect { if (it == ConnectionState.Connected && scoped) session.sync() } }
         viewModelScope.launch { service.ended.collect { session.reset(session.me); hub.value = false } }
@@ -59,6 +68,9 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
                         ending == "expired" -> notice("The invitation expired.")
                     }
                 }
+                // Our draw offer was turned down (or a move answered it): say so, as the button frees up again.
+                if (match != null && previous?.id == match.id && previous?.drawOffer == session.me && match.drawOffer == null &&
+                    match.status == MatchStatus.Playing) notice("$nickname declined your draw offer.")
                 if (match?.status == MatchStatus.Playing) hub.value = false
                 // A reconnect marks us present again; results we already closed stay closed for the partner.
                 if (match?.status == MatchStatus.Over && match.id == dismissed.value && session.me !in match.away) session.leave()
@@ -114,6 +126,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         dismissed.value = match.id; hub.value = false
     }
     fun move(data: JsonObject) = session.move(data)
+    fun react(text: String) { if (!online || !scoped) offlineNotice() else session.react(text) }
     fun paddle(viewX: Float, viewY: Float, released: Boolean = false) = session.paddle(viewX, viewY, released)
 
     private fun message(code: String) = when (code) {
@@ -137,4 +150,9 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         if (scoped && service.connection.value == ConnectionState.Connected && text.startsWith("The game moved on")) session.sync()
     }
     private fun offlineNotice() { notice("Games need $nickname to be online.") }
+
+    companion object {
+        const val ReactionShowMs = 3_500L
+        const val MaxReactions = 4
+    }
 }

@@ -116,6 +116,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.web.oneonone.R
@@ -471,7 +472,8 @@ internal fun MessageBubble(
                             bigEmoji > 0 -> Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
                                 Text(message.content.trim(), color = colors.text,
                                     style = OneTextStyles.bubbleText.copy(fontSize = BigEmojiSize, lineHeight = BigEmojiSize * 1.2f))
-                                TimePill(time, status, colors, palette, receipt)
+                                // A glyph fills its line box, unlike a sticker's padded square: hang the pill just below it.
+                                TimePill(time, status, colors, palette, receipt, lift = 0.dp)
                             }
                             message.type == "text" -> {
                                 preview?.invoke()
@@ -543,14 +545,14 @@ internal fun MessageBubble(
                 Box(Modifier.padding(horizontal = 10.dp)) {
                     Row(Modifier.shadow(2.dp, CircleShape).background(c.bgRaised, CircleShape).border(2.dp, c.bg, CircleShape)
                         .clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Show who reacted") { showReactors = true }
-                        .padding(horizontal = 6.dp, vertical = 2.dp).semantics(mergeDescendants = true) { contentDescription = reactionLabel },
+                        .padding(horizontal = 5.dp, vertical = 1.dp).semantics(mergeDescendants = true) { contentDescription = reactionLabel },
                         horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                         lastReactions.forEach { reaction ->
                             key(reaction.emoji) {
                                 val pop = remember { Animatable(.4f) }
                                 LaunchedEffect(Unit) { pop.animateTo(1f, spring(dampingRatio = .5f, stiffness = Spring.StiffnessMedium)) }
                                 Text(reaction.emoji, Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value; alpha = pop.value.coerceIn(0f, 1f) },
-                                    color = c.text, style = OneTextStyles.bubbleText.copy(fontSize = 15.sp))
+                                    color = c.text, style = OneTextStyles.bubbleText.copy(fontSize = 12.5.sp, lineHeight = 16.sp))
                             }
                         }
                         if (total > 1) Text(total.toString(), color = c.textDim, style = OneTextStyles.bubbleMeta)
@@ -609,18 +611,18 @@ private fun ReactionBar(colors: BubbleColors, mine: Boolean, current: String?, o
                     val pop = remember { Animatable(.4f) }
                     LaunchedEffect(Unit) { delay(index * 28L); pop.animateTo(1f, spring(dampingRatio = .5f, stiffness = Spring.StiffnessMedium)) }
                     Box(
-                        Modifier.size(42.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }.clip(CircleShape)
+                        Modifier.size(40.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }.clip(CircleShape)
                             .background(if (emoji == current) colors.text.copy(alpha = .18f) else Color.Transparent)
                             .clickable(role = Role.Button) { close { onPick(emoji) } }
                             .semantics { contentDescription = if (emoji == current) "Remove reaction $emoji" else "React $emoji" },
                         contentAlignment = Alignment.Center,
-                    ) { Text(emoji, fontSize = 22.sp) }
+                    ) { Text(emoji, fontSize = 19.sp) }
                 }
                 Box(
                     Modifier.size(36.dp).clip(CircleShape).background(colors.text.copy(alpha = .12f))
                         .clickable(role = Role.Button) { close(onMore) }.semantics { contentDescription = "More reactions" },
                     contentAlignment = Alignment.Center,
-                ) { Icon(painterResource(R.drawable.ic_plus), null, tint = colors.text, modifier = Modifier.size(20.dp)) }
+                ) { Icon(painterResource(R.drawable.ic_plus), null, tint = colors.text, modifier = Modifier.size(18.dp)) }
             }
         }
     }
@@ -680,8 +682,8 @@ private val BigEmojiSize = 42.sp
 
 /** Bare sticker / big emoji: time and ticks in a bubble-coloured pill hanging just under the content's corner. */
 @Composable
-private fun TimePill(time: String, status: Receipt, colors: BubbleColors, palette: BubblePalette, receipt: String) {
-    Box(Modifier.offset(y = (-6).dp).clip(RoundedCornerShape(OneTheme.radii.pill22))
+private fun TimePill(time: String, status: Receipt, colors: BubbleColors, palette: BubblePalette, receipt: String, lift: Dp = 6.dp) {
+    Box(Modifier.offset(y = -lift).clip(RoundedCornerShape(OneTheme.radii.pill22))
         .background(colors.backgroundStart).padding(horizontal = 6.dp, vertical = 2.dp)) {
         MetaRow(time, status, colors, palette, receipt = receipt)
     }

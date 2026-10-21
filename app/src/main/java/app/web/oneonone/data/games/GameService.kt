@@ -9,6 +9,7 @@ import javax.inject.Inject
 class GameService @Inject constructor(private val transport: Transport, messages: MessageService) : MatchChannel {
     override val states = transport.matchStates
     override val frames = transport.pongFrames
+    override val reactions = transport.matchReactions
     val connection = transport.state
     val presence = messages.presence
     val active = messages.active

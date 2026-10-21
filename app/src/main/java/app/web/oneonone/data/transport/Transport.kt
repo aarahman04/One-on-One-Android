@@ -16,6 +16,7 @@ interface Transport {
     // Authoritative matches (contract §12): `match:state` snapshots, `match:pong` frames, acked actions.
     val matchStates: Flow<JsonObject> get() = emptyFlow()
     val pongFrames: Flow<JsonObject> get() = emptyFlow()
+    val matchReactions: Flow<JsonObject> get() = emptyFlow()
     suspend fun match(event: String, payload: JsonObject): JsonObject = error("Not supported.")
     fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false) {}
     suspend fun start()
