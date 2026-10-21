@@ -1,6 +1,8 @@
 package app.web.oneonone.data.media
 
+import android.content.ComponentCallbacks2
 import android.content.Context
+import android.content.res.Configuration
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -15,11 +17,27 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/**
+ * App-wide (singleton) so the device TextToSpeech engine is created once, warmed when a letter opens and reused by every
+ * play: binding an engine takes a second or more. It is shut down when the app leaves the screen (narration stops then
+ * anyway), so a bound engine is never held in the background. Every engine call is on the main thread.
+ */
+@Singleton
 class AndroidNarrationAudio @Inject constructor(@ApplicationContext private val context: Context) : NarrationAudio {
     private val main = Handler(Looper.getMainLooper())
+    private var engine: TextToSpeech? = null
+    private var engineReady: CompletableDeferred<Int>? = null
+    init {
+        context.registerComponentCallbacks(object : ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) { if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) shutdownEngine() }
+            override fun onConfigurationChanged(newConfig: Configuration) {}
+            @Deprecated("Deprecated in Java") override fun onLowMemory() { shutdownEngine() }
+        })
+    }
     private val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
     private var request: AudioFocusRequest? = null
     override fun focus(onLost: () -> Unit): Boolean {
@@ -64,15 +82,31 @@ class AndroidNarrationAudio @Inject constructor(@ApplicationContext private val 
             if (input != null) withContext(NonCancellable + Dispatchers.IO) { input.close() }
         }
     }
+    override fun prewarm() { warmEngine() }
+    private fun warmEngine(): Pair<TextToSpeech, CompletableDeferred<Int>> {
+        val existing = engine; val ready = engineReady
+        if (existing != null && ready != null) return existing to ready
+        val started = CompletableDeferred<Int>()
+        // The constructor only binds the engine service; initialisation completes on this callback.
+        val tts = TextToSpeech(context) { started.complete(it) }
+        engine = tts; engineReady = started
+        return tts to started
+    }
+    private fun shutdownEngine() {
+        val old = engine; engine = null
+        engineReady?.complete(TextToSpeech.ERROR); engineReady = null
+        old?.shutdown()
+    }
     override suspend fun deviceVoice(text: String, completed: () -> Unit, failed: () -> Unit): NarrationPlayer {
-        val ready = CompletableDeferred<Int>()
-        val tts = TextToSpeech(context) { ready.complete(it) }
-        try {
-            if (withTimeoutOrNull(10_000) { ready.await() } != TextToSpeech.SUCCESS) throw IOException("Device voice unavailable.")
-            tts.setAudioAttributes(attributes)
-            return DeviceVoicePlayer(tts, text, main, completed, failed)
-        } catch (error: Exception) { tts.shutdown(); throw error }
-        finally { ready.cancel() }
+        val (tts, ready) = warmEngine()
+        if (withTimeoutOrNull(10_000) { ready.await() } != TextToSpeech.SUCCESS) {
+            // A failed or stuck engine is dropped so the next attempt binds a fresh one.
+            if (engine === tts) shutdownEngine()
+            throw IOException("Device voice unavailable.")
+        }
+        if (engine !== tts) throw IOException("Device voice unavailable.") // shut down while starting
+        tts.setAudioAttributes(attributes)
+        return DeviceVoicePlayer(tts, text, main, completed, failed)
     }
 }
 
@@ -129,5 +163,6 @@ private class DeviceVoicePlayer(private val tts: TextToSpeech, private val text:
     }
     override fun pause() { if (!released && playing) { playing = false; run++; tts.stop() } }
     override fun link(next: NarrationPlayer?) {}
-    override fun release() { if (!released) { released = true; run++; tts.shutdown() } }
+    // The engine is shared (AndroidNarrationAudio), so a released player only silences it.
+    override fun release() { if (!released) { released = true; if (playing) tts.stop(); playing = false; run++ } }
 }

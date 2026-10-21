@@ -36,6 +36,8 @@ import retrofit2.http.Path
     val pinnedMessageId: String? = null,
     val pinnedBy: String? = null,
     val pinnedAt: String? = null,
+    // What the partner calls me (contract §current connection); the default letter signature.
+    val myNickname: String? = null,
     // Opaque photo ids (contract §9); a new id means refetch the signed URL.
     val myAvatarId: String? = null,
     val otherAvatarId: String? = null,
