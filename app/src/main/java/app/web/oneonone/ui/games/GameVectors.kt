@@ -60,7 +60,7 @@ internal fun gameVector(name: String, paint: Color): ImageVector {
                 "pong" -> {
                     moveTo(9f, 5f); curveTo(17f, 0f, 27f, 9f, 22f, 18f)
                     curveTo(19f, 24f, 12f, 25f, 7f, 20f); curveTo(2f, 15f, 3f, 9f, 9f, 5f); close()
-                    moveTo(8f, 21f); lineTo(12f, 24f); lineTo(7f, 30f); lineTo(3f, 27f); close()
+                    moveTo(11.5f, 21f); lineTo(16.5f, 21f); lineTo(16.5f, 31f); lineTo(11.5f, 31f); close()
                     moveTo(28f, 3f); curveTo(33f, 3f, 33f, 10f, 28f, 10f)
                     curveTo(23f, 10f, 23f, 3f, 28f, 3f); close()
                 }
@@ -69,10 +69,10 @@ internal fun gameVector(name: String, paint: Color): ImageVector {
                     lineTo(12f, 14f); lineTo(4f, 6f); close()
                     moveTo(12f, 4f); lineTo(14f, 4f); lineTo(14f, 6f); lineTo(6f, 14f)
                     lineTo(4f, 14f); lineTo(4f, 12f); close()
-                    moveTo(22f, 17f); curveTo(32f, 17f, 32f, 30f, 22f, 30f)
-                    curveTo(12f, 30f, 12f, 17f, 22f, 17f)
-                    moveTo(22f, 20f); curveTo(16f, 20f, 16f, 27f, 22f, 27f)
-                    curveTo(28f, 27f, 28f, 20f, 22f, 20f)
+                    moveTo(22f, 17f); arcTo(6.5f, 6.5f, 0f, false, true, 22f, 30f)
+                    arcTo(6.5f, 6.5f, 0f, false, true, 22f, 17f); close()
+                    moveTo(22f, 20f); arcTo(3.5f, 3.5f, 0f, false, false, 22f, 27f)
+                    arcTo(3.5f, 3.5f, 0f, false, false, 22f, 20f); close()
                 }
                 "reversi" -> {
                     // A full disc and a ring: one black, one white.

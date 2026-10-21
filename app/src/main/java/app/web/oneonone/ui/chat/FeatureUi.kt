@@ -787,7 +787,7 @@ internal fun PhotoViewer(url: Any?, busy: Boolean, save: (() -> Unit)?, close: (
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var imageSize by remember(url) { mutableStateOf(Size.Zero) }
     var photoError by remember(url) { mutableStateOf(false) }
-    AttachmentViewerFrame(title, busy, save, close) {
+    AttachmentViewerFrame(title, busy, save, close, photoOverlay = true) {
         Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged {
                 viewport = it
                 pan = photoPan(pan, scale, Size(it.width.toFloat(), it.height.toFloat()), imageSize)

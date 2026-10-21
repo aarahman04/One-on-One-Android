@@ -73,17 +73,19 @@ internal fun pdfBitmapHeight(width: Int, pageWidth: Int, pageHeight: Int): Int {
 
 @Composable
 internal fun AttachmentViewerFrame(name: String, busy: Boolean, save: (() -> Unit)?, close: () -> Unit,
-                                   openWith: (() -> Unit)? = null, content: @Composable () -> Unit) {
+                                   openWith: (() -> Unit)? = null, photoOverlay: Boolean = false, content: @Composable () -> Unit) {
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val view = LocalView.current
         SideEffect {
             (view.parent as? DialogWindowProvider)?.window?.let { window ->
+                if (photoOverlay) window.setDimAmount(0f)
                 WindowInsetsControllerCompat(window, view).apply {
                     isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false
                 }
             }
         }
-        Column(Modifier.fillMaxSize().background(Color.Black).safeDrawingPadding()) {
+        // Photos use a dark translucent scrim so the underlying chat remains faintly visible.
+        Column(Modifier.fillMaxSize().background(if (photoOverlay) Color(0xFF161717).copy(alpha = .94f) else Color.Black).safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 OneIconButton(R.drawable.ic_x, "Close viewer", close, tint = Color.White)
                 Text(name, Modifier.weight(1f).padding(horizontal = 8.dp), color = Color.White,
