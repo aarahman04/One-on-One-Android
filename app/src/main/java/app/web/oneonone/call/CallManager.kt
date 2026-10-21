@@ -139,8 +139,15 @@ class CallManager @Inject constructor(
 
     fun hangup() = scope.launch {
         val id = currentCallId()
-        finish(null) // an invite still in flight sees the state change and ends its call itself
-        if (id != null) runCatching { signaling.end(id) }
+        // An invite still in flight sees the state change and ends its call itself. The server only writes the
+        // call card on `call:end`, so wait for the socket instead of dropping it, and send it even if teardown throws.
+        endCallAfterCleanup({ finish(null) }) { if (id != null) endOnServer(id) }
+    }
+
+    private suspend fun endOnServer(callId: String) {
+        try { connected(); signaling.end(callId) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { /* The server's disconnect grace resolves an unreachable call. */ }
     }
 
     fun toggleMute() = scope.launch {
@@ -172,7 +179,7 @@ class CallManager @Inject constructor(
             val (callId, ice) = signaling.invite(kind)
             outgoingIce = ice
             if (mutableState.value is CallUi.Outgoing) mutableState.value = CallUi.Outgoing(callId, kind, peer)
-            else runCatching { signaling.end(callId) } // hung up while inviting
+            else endOnServer(callId) // hung up while inviting
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { finish(callError(error)) }
     }
@@ -180,7 +187,11 @@ class CallManager @Inject constructor(
 
     private suspend fun onAccepted(callId: String) {
         when (val now = mutableState.value) {
-            is CallUi.Outgoing -> if (now.callId == callId) beginMedia(callId, now.kind, now.peer, outgoingIce, caller = true)
+            is CallUi.Outgoing -> if (now.callId == callId) {
+                try { beginMedia(callId, now.kind, now.peer, outgoingIce, caller = true) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { endCallAfterCleanup({ finish(callError(error)) }) { endOnServer(callId) } }
+            }
             // call:accepted goes to the whole room: if another of our devices answered, drop this prompt.
             is CallUi.Incoming -> if (now.callId == callId) { CallNotifications.cancelIncoming(context); mutableState.value = CallUi.Idle }
             else -> Unit
@@ -214,7 +225,7 @@ class CallManager @Inject constructor(
             val ice = signaling.accept(incoming.callId)
             beginMedia(incoming.callId, incoming.kind, incoming.peer, ice, caller = false)
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { finish(callError(error)) }
+        catch (error: Exception) { endCallAfterCleanup({ finish(callError(error)) }) { endOnServer(incoming.callId) } }
     }
 
     private suspend fun beginMedia(callId: String, kind: CallKind, peer: String, ice: List<IceServerSpec>, caller: Boolean) {
@@ -230,7 +241,11 @@ class CallManager @Inject constructor(
             session.state.collect { media ->
                 val active = mutableState.value as? CallUi.Active ?: return@collect
                 if (active.callId != callId) return@collect
-                if (media == MediaState.Failed) { finish("Call dropped"); runCatching { signaling.end(callId) }; return@collect }
+                if (media == MediaState.Failed) {
+                    // finish cancels this collector; resolve the call from a sibling job.
+                    scope.launch { endCallAfterCleanup({ finish("Call dropped") }) { endOnServer(callId) } }
+                    return@collect
+                }
                 mutableState.value = active.copy(media = media,
                     connectedAt = active.connectedAt ?: System.currentTimeMillis().takeIf { media == MediaState.Connected })
             }
@@ -256,10 +271,10 @@ class CallManager @Inject constructor(
 
     private fun finish(message: String?) {
         mediaJob?.cancel(); mediaJob = null
-        mutableSession.value?.close()
+        runCatching { mutableSession.value?.close() } // native teardown must never skip the rest (video has more to free)
         mutableSession.value = null
         pendingSignals = mutableListOf()
-        audio.stop()
+        runCatching { audio.stop() }
         CallService.stop(context)
         CallNotifications.cancelIncoming(context)
         if (message == null) { mutableState.value = CallUi.Idle; return }
@@ -298,3 +313,9 @@ class CallManager @Inject constructor(
 /** Signaling errors carry the server's sentence; network internals never reach the call screen. */
 private fun callError(error: Exception): String =
     if (error is java.io.IOException) "Call failed. Check your connection." else error.message?.replaceFirstChar { it.uppercase() } ?: "Call failed"
+
+/** Local device teardown must never prevent the server from recording the call. */
+internal suspend fun endCallAfterCleanup(cleanup: () -> Unit, end: suspend () -> Unit) {
+    runCatching { cleanup() }
+    end()
+}

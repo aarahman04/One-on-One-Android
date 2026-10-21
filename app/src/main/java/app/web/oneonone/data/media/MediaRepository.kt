@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.location.Location
 import android.location.LocationListener
@@ -52,7 +51,6 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
-import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -166,13 +164,8 @@ class MediaRepository @Inject constructor(
                 var sample = 1
                 // ponytail: cap decoded photos at 4 MP for bounded memory; tiled full-resolution re-encoding if needed.
                 while (bounds.outWidth.toLong() * bounds.outHeight / sample / sample > 4_000_000) sample *= 2
-                val bitmap = if (Build.VERSION.SDK_INT >= 28) ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, _, _ ->
-                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                    decoder.setTargetSampleSize(sample)
-                } else {
-                    val decoded = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }))
-                    orientLegacy(decoded, bytes)
-                }
+                // BitmapFactory never auto-orients, so one explicit EXIF pass gives the same result on every API level.
+                val bitmap = orientLegacy(checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })), bytes)
                 try {
                     width = bitmap.width; height = bitmap.height
                     val encoded = ByteArrayOutputStream()
@@ -419,19 +412,24 @@ class MediaRepository @Inject constructor(
     }
 }
 
-internal fun orientLegacy(bitmap: Bitmap, bytes: ByteArray): Bitmap {
-    val orientation = runCatching { ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
-    val matrix = Matrix().apply {
-        when (orientation) {
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> { setRotate(90f); postScale(-1f, 1f) }
-            ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
-            ExifInterface.ORIENTATION_TRANSVERSE -> { setRotate(270f); postScale(-1f, 1f) }
-            ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(270f)
-        }
-    }
-    if (matrix.isIdentity) return bitmap
+internal fun orientLegacy(bitmap: Bitmap, bytes: ByteArray): Bitmap =
+    orient(bitmap, runCatching { ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }.getOrDefault(ExifInterface.ORIENTATION_NORMAL))
+
+/** EXIF orientation as (clockwise degrees, then mirror horizontally). */
+internal fun exifOps(orientation: Int): Pair<Int, Boolean> = when (orientation) {
+    ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> 0 to true
+    ExifInterface.ORIENTATION_ROTATE_180 -> 180 to false
+    ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180 to true
+    ExifInterface.ORIENTATION_TRANSPOSE -> 90 to true
+    ExifInterface.ORIENTATION_ROTATE_90 -> 90 to false
+    ExifInterface.ORIENTATION_TRANSVERSE -> 270 to true
+    ExifInterface.ORIENTATION_ROTATE_270 -> 270 to false
+    else -> 0 to false
+}
+
+internal fun orient(bitmap: Bitmap, orientation: Int): Bitmap {
+    val (degrees, mirror) = exifOps(orientation)
+    if (degrees == 0 && !mirror) return bitmap
+    val matrix = Matrix().apply { postRotate(degrees.toFloat()); if (mirror) postScale(-1f, 1f) }
     return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also { if (it !== bitmap) bitmap.recycle() }
 }

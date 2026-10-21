@@ -113,7 +113,7 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
     var third by rememberSaveable(type) { mutableStateOf("") }
     var from by rememberSaveable(type) { mutableStateOf(signature.ifBlank { "me" }) }
     var to by rememberSaveable(type) { mutableStateOf(connection.otherNickname?.take(40) ?: "you") }
-    var choice by rememberSaveable(type) { mutableStateOf(if (type == "letter") "dawn" else if (type == "checkin") "good" else "a") }
+    var choice by rememberSaveable(type) { mutableStateOf(if (type == "letter") "dawn" else "a") }
     var target by rememberSaveable(type) { mutableStateOf("") }
     var preview by rememberSaveable(type) { mutableStateOf(false) }
     LaunchedEffect(signature) { if (from == "me" && third.isEmpty() && signature.isNotBlank()) from = signature }
@@ -124,7 +124,6 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
             "ask" -> { put("question", first.trim()); put("answerA", second.trim()) }
             "thisorthat" -> { put("optionA", first.trim()); put("optionB", second.trim()); put("pickSender", choice) }
             "countdown" -> { put("label", first.trim()); put("targetIso", target) }
-            "checkin" -> { put("mood", choice); put("note", first.trim()) }
         }
     }
     val valid = runCatching { validateFeaturePayload(connection.id, type, payload); require(type != "letter" || third.isNotBlank()) }.isSuccess
@@ -157,7 +156,6 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
                         }, initial.year, initial.monthValue - 1, initial.dayOfMonth).apply { datePicker.minDate = System.currentTimeMillis(); show() }
                     })
                 }
-                "checkin" -> { Choices(Moods, choice) { choice = it }; Field("A note about your day", first, 300) { first = it } }
             }
             error?.let { Text(it, style = OneTextStyles.cardHint, color = OneTheme.colors.danger) }
         } },
@@ -235,7 +233,7 @@ internal fun systemEventText(who: String, event: String?, value: String?): Strin
 }
 
 private val CommandTitles = mapOf("letter" to "Write a letter", "ask" to "Ask a sealed question", "thisorthat" to "This or that",
-    "countdown" to "Start a countdown", "checkin" to "Check in")
+    "countdown" to "Start a countdown")
 
 private fun moodEmoji(mood: String) = listOf("😄", "🙂", "😐", "😔", "😞").getOrElse(Moods.indexOf(mood)) { "" }
 
