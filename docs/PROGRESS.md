@@ -1901,3 +1901,23 @@ Reviewed and kept (matches agreed behavior): call attempt ownership/late-ack/ear
 Noted, not changed (judgement or larger scope): every Auto run re-hashes the 192 MB model (integrity over ~0.5 s); emoji text-presentation symbols such as bare `♥`/`✔` render large; photo pending upload holds the feature `busy` flag like GIF/sticker sends; accept still sends no push to dismiss a killed second device's ring (now harmless, but the notification lingers until the 45 s ring timeout or call end).
 
 Verification: Android `gradlew.bat assembleDebug lintDebug testDebugUnitTest` PASS: **244 tests / 39 suites, zero failures/errors/skips**, lint zero errors/warnings (Android Studio JBR). Backend fix: [PR #124](https://github.com/aarahman04/One-on-One/pull/124), open, not deployed. Backend `npm test` **117/117**, `npx tsc --noEmit` pass (local run needed `npm ci` in `backend/` and `client/` for socket tests; no lockfile change). No device testing.
+
+## In-game reactions, game controls, draws and invite pop-up (2026-10-21, `claude/game-reactions`; backend `claude/game-reactions`)
+
+Owner requests, tested on the API 36 emulator demo (`OneOnOne_D3`, debug APK) with a scripted partner:
+
+- **Reactions/comments during a game.** Smile button in the game header opens a tray: eight quick emoji, eight ready lines ("Nice move!", "Good game"…) and a one-line comment with a live `n/60` counter (code points, emoji count once). Any send closes the tray. New socket event `match:react` → server relays `match:reaction` to both players; not stored, not pushed, 700 ms per-user throttle (a throttled tap is silent). Path: UI → GameViewModel → GameService → Transport → InternetTransport.
+- **Nothing is covered.** The partner's reaction replaces the "Chess · 5 min" line under their name for 3.5 s; ours replaces the how-to line above the buttons. A haptic tick and a polite live-region announce the partner's.
+- **One action bar for every game.** Header is back / avatar / name / react only. Bottom bar: how-to line (or notice/reaction/draw offer), then equal **Offer draw · Resign · Leave** buttons with icons. Leave/Resign keep their confirmation.
+- **Draw in every game, Ping Pong included, at any time.** Backend `match:draw` previously chess-only. A partner's offer shows "Alex offers a draw · Decline · Accept" in the bar. A declined offer shows "Alex declined your draw offer."; an accepted one ends the match "A draw · Draw by agreement". Chess keeps claimable draws (repetition / fifty moves) as a highlighted Claim draw button.
+- **Invite pop-up.** The invitee now gets a centred card (game icon, "Alex invites you to play", game, options, Play / Not now) instead of a top bar; X/back/outside = Not now.
+- **Chat polish.** Message-reaction pill emoji 15 → 12.5 sp and quick bar 22 → 19 sp; single-emoji time pill no longer overlaps the glyph. All six game result cards checked in chat (chess, ping pong, tic-tac-toe draw, connect 4, reversi, dots & boxes).
+- Demo only: every game card in history; typing `game` makes Alex invite you; Alex answers reactions and declines then accepts draw offers.
+
+Verification: Android `assembleDebug lintDebug testDebugUnitTest` **247 tests / 39 suites, 0 failures**, lint 0 errors/warnings. Backend `npm test` **119/119**, `tsc` pass. Emulator demo only; no real two-phone run. Release defaults stay **16 / 2.0.9** by owner request.
+
+### Xiaomi / two-phone checklist (game reactions and draws)
+- [ ] During each game send an emoji, a quick line and a typed comment from both phones; each shows under the sender's name on the other phone, above the buttons on the sender's, and covers nothing. Counter stops at 60.
+- [ ] Offer a draw in chess, a grid game and Ping Pong; decline once (offerer sees "declined"), accept once (both see "Draw by agreement", a game card is written).
+- [ ] Invite from phone A: phone B shows the centred pop-up; Play starts, Not now/X declines and A is told.
+- [ ] Reaction pills on chat messages look smaller but still readable.

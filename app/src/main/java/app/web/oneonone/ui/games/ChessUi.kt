@@ -406,23 +406,3 @@ internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifie
 private val BarHeight = 44.dp
 
 /** Draw offer / claim / answer, under the board. */
-@Composable
-internal fun ChessDrawControls(vm: GameViewModel, state: GameUi) {
-    val c = OneTheme.colors
-    val s = OneTheme.spacing
-    val match = state.match ?: return
-    val view = remember(match.board) { ChessView.from(match.board) } ?: return
-    if (match.drawOffer == state.partner) Surface(color = c.bgRaised, border = BorderStroke(1.dp, c.accentOther.copy(alpha = .4f)),
-        shape = RoundedCornerShape(OneTheme.radii.lg16), modifier = Modifier.padding(horizontal = s.md12, vertical = s.xs4)) {
-        Row(Modifier.fillMaxWidth().padding(s.md12), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
-            Text("${vm.nickname} offers a draw", Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
-            PrimaryButton("Accept", { vm.draw("accept") })
-            SecondaryButton("Decline", { vm.draw("decline") })
-        }
-    } else Row(Modifier.fillMaxWidth().padding(horizontal = s.md12, vertical = s.xs4), horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
-        if (view.claim != null && state.myTurn) PrimaryButton(if (view.claim == "fifty_moves") "Claim draw (50 moves)" else "Claim draw (repetition)",
-            { vm.draw("claim") }, Modifier.weight(1f))
-        SecondaryButton(if (match.drawOffer == state.me) "Draw offered" else "Offer draw", { vm.draw("offer") }, Modifier.weight(1f),
-            enabled = match.drawOffer == null)
-    }
-}

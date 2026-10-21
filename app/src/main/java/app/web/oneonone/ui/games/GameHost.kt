@@ -6,6 +6,7 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -110,15 +111,21 @@ fun GameInviteBanner(vm: GameViewModel) {
     if (state.stage != GameStage.Incoming) return
     val c = OneTheme.colors
     val s = OneTheme.spacing
-    Surface(color = c.bgRaised, border = BorderStroke(1.dp, c.accentOther.copy(alpha = .4f)),
-        shape = RoundedCornerShape(OneTheme.radii.lg16), modifier = Modifier.padding(s.md12)) {
-        Column(Modifier.fillMaxWidth().padding(s.lg16), verticalArrangement = Arrangement.spacedBy(s.md12)) {
-            Text("${vm.nickname} wants to play ${listOfNotNull(state.match?.game?.title, state.match?.let(::optionsLabel)).joinToString(" · ")}", color = c.text, style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            Row(horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
-                PrimaryButton("Accept", vm::accept, Modifier.weight(1f))
-                SecondaryButton("Decline", vm::decline, Modifier.weight(1f))
+    val match = state.match ?: return
+    val vector = remember(match.game, c.accentYou) { gameVector(match.game.wire, c.accentYou) }
+    // A centred invitation card; closing it (X, back, outside) is the same as "Not now".
+    OneModal(onDismiss = vm::decline) {
+        Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(s.md12)) {
+            Box(Modifier.size(88.dp).clip(CircleShape).background(c.accentYou.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
+                Icon(vector, null, Modifier.size(52.dp), tint = c.accentYou)
             }
+            Text("${vm.nickname} invites you to play", color = c.textDim, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            Text(match.game.title, color = c.text, style = OneTextStyles.screenTitle, textAlign = TextAlign.Center)
+            optionsLabel(match)?.let { Text(it, color = c.textDim, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center) }
+            Spacer(Modifier.height(s.xs4))
+            PrimaryButton("Play", vm::accept, Modifier.fillMaxWidth())
+            SecondaryButton("Not now", vm::decline, Modifier.fillMaxWidth())
         }
     }
 }
@@ -192,6 +199,8 @@ private fun GameSurface(vm: GameViewModel, state: GameUi, photo: Pair<Any, Strin
         sounds.play(GameSound.End)
     }
     val series = seriesText(match, state.me, state.partner, vm.nickname)
+    val reactions by vm.reactions.collectAsState()
+    var tray by rememberSaveable(match.id) { mutableStateOf(false) }
     Surface(Modifier.fillMaxSize(), color = c.bg, contentColor = c.text) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = s.md12, vertical = s.sm8), verticalAlignment = Alignment.CenterVertically,
@@ -203,13 +212,23 @@ private fun GameSurface(vm: GameViewModel, state: GameUi, photo: Pair<Any, Strin
                 }
                 Column(Modifier.weight(1f)) {
                     Text(vm.nickname, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                    Text(listOfNotNull(match.game.title, optionsLabel(match), series).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = c.textDim, maxLines = 1)
+                    // The partner's reaction appears under their name for a moment (ours too once the controls are gone).
+                    val shown = reactions.lastOrNull { it.from != state.me || state.stage == GameStage.Result }
+                    ReactionSlot(shown, shown?.from == state.me, vm.nickname) {
+                        Text(listOfNotNull(match.game.title, optionsLabel(match), series).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = c.textDim, maxLines = 1)
+                    }
                 }
-                if (state.stage == GameStage.Playing) TextLink("Resign", { onConfirm("resign") })
+                OneIconButton(R.drawable.ic_smile, if (tray) "Close reactions" else "React or comment", { tray = !tray },
+                    Modifier.then(if (tray) Modifier.background(c.accentYou.copy(alpha = .12f), CircleShape) else Modifier),
+                    tint = if (tray) c.accentYou else c.textDim)
             }
             HorizontalDivider(color = c.border)
-            if (state.stage == GameStage.Result) GameResultContent(vm, state, photo?.first, sounds, Modifier.weight(1f))
-            else PlayingContent(vm, state, photo?.first, sounds, Modifier.weight(1f), onConfirm)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                if (state.stage == GameStage.Result) GameResultContent(vm, state, photo?.first, sounds, Modifier.fillMaxSize())
+                else PlayingContent(vm, state, photo?.first, sounds, Modifier.fillMaxSize(), onConfirm)
+                ReactionTray(tray, vm::react, { tray = false }, Modifier.align(Alignment.TopCenter))
+            }
+            if (state.stage == GameStage.Playing) GameActionBar(vm, state, reactions.lastOrNull { it.from == state.me }, onConfirm)
         }
     }
     confirm?.let { action -> FeatureModal(onDismissRequest = { onConfirm(null) }, title = { Text(if (action == "resign") "Resign this game?" else "Leave this game?") },
@@ -223,23 +242,10 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds
     val c = OneTheme.colors
     val s = OneTheme.spacing
     val match = state.match ?: return
-    val footer: @Composable () -> Unit = {
-        Row(Modifier.fillMaxWidth().padding(horizontal = s.xl24, vertical = s.sm8), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            Text(when (match.game) {
-                GameKind.Chess -> "Tap or drag a piece"
-                GameKind.Pong -> "Swipe through the ball"
-                GameKind.Connect4 -> "Tap a column"
-                GameKind.TicTacToe -> "Tap an empty square"
-                GameKind.Dots -> "Close a box to go again"
-                GameKind.Reversi -> "Tap a dotted square to outflank"
-            }, color = c.textDim, style = MaterialTheme.typography.bodySmall)
-            TextLink("Leave game", { onConfirm("leave") })
-        }
-    }
     when (match.game) {
-        GameKind.Chess -> ChessContent(vm, state, photo, modifier, sounds) { ChessDrawControls(vm, state); footer() }
-        GameKind.Pong -> PongContent(vm, state, modifier, sounds, footer)
+        // Draw offers and the game's actions live in GameActionBar.
+        GameKind.Chess -> ChessContent(vm, state, photo, modifier, sounds) {}
+        GameKind.Pong -> PongContent(vm, state, modifier, sounds) {}
         else -> Column(modifier.fillMaxWidth()) {
             val status = when {
                 match.paused || state.partner in match.away -> "Waiting for ${vm.nickname} to come back…"
@@ -273,8 +279,67 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = s.md12), contentAlignment = Alignment.Center) {
                 Box(Modifier.size(minOf(maxWidth, maxHeight))) { GameBoard(vm, state) }
             }
-            footer()
         }
+    }
+}
+
+/** One bar for every game: a short how-to line, then Draw (chess), Resign and Leave as equal buttons. */
+@Composable
+private fun GameActionBar(vm: GameViewModel, state: GameUi, mine: GameReaction?, onConfirm: (String?) -> Unit) {
+    val c = OneTheme.colors
+    val s = OneTheme.spacing
+    val match = state.match ?: return
+    Column(Modifier.fillMaxWidth().background(c.bg).padding(horizontal = s.md12).padding(top = s.xs4, bottom = s.sm8),
+        verticalArrangement = Arrangement.spacedBy(s.sm8)) {
+        HorizontalDivider(color = c.border)
+        val notice by vm.error.collectAsState()
+        // The partner's draw offer takes the info line until it is answered (any game).
+        if (match.drawOffer == state.partner) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(OneTheme.radii.md10))
+            .background(c.accentOther.copy(alpha = .12f)).padding(start = s.md12, end = s.xs4, top = s.xs4, bottom = s.xs4),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
+            Text("${vm.nickname} offers a draw", Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+                color = c.text, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            TextLink("Decline", { vm.draw("decline") })
+            PrimaryButton("Accept", { vm.draw("accept") })
+        }
+        // Otherwise: our own reaction for a moment, then any game notice (e.g. a declined draw), then the how-to line.
+        else ReactionSlot(mine, true, vm.nickname, Modifier.fillMaxWidth(), Alignment.Center) { notice?.let {
+            Text(it, color = c.accentOther, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        } ?: Text(when (match.game) {
+            GameKind.Chess -> "Tap or drag a piece"
+            GameKind.Pong -> "Swipe through the ball"
+            GameKind.Connect4 -> "Tap a column"
+            GameKind.TicTacToe -> "Tap an empty square"
+            GameKind.Dots -> "Close a box to go again"
+            GameKind.Reversi -> "Tap a dotted square to outflank"
+        }, color = c.textDim, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
+            // Every game can end in an agreed draw; only chess has claimable draws (repetition / fifty moves).
+            val claim = remember(match.board) { if (match.game == GameKind.Chess) ChessView.from(match.board)?.claim else null }
+            when {
+                claim != null && state.myTurn -> GameAction(R.drawable.ic_handshake, "Claim draw", Modifier.weight(1f), highlight = true) { vm.draw("claim") }
+                match.drawOffer == state.me -> GameAction(R.drawable.ic_handshake, "Draw offered", Modifier.weight(1f), enabled = false) {}
+                else -> GameAction(R.drawable.ic_handshake, "Offer draw", Modifier.weight(1f), enabled = match.drawOffer == null) { vm.draw("offer") }
+            }
+            GameAction(R.drawable.ic_flag, "Resign", Modifier.weight(1f)) { onConfirm("resign") }
+            GameAction(R.drawable.ic_exit, "Leave", Modifier.weight(1f)) { onConfirm("leave") }
+        }
+    }
+}
+
+@Composable
+private fun GameAction(icon: Int, label: String, modifier: Modifier, enabled: Boolean = true, highlight: Boolean = false, onClick: () -> Unit) {
+    val c = OneTheme.colors
+    val tint = when { !enabled -> c.muted; highlight -> c.accentYou; else -> c.text }
+    Row(modifier.height(OneTheme.sizes.send48).clip(RoundedCornerShape(OneTheme.radii.md10))
+        .background(if (highlight) c.accentYou.copy(alpha = .12f) else c.bgRaised)
+        .border(1.dp, if (highlight) c.accentYou.copy(alpha = .5f) else c.border, RoundedCornerShape(OneTheme.radii.md10))
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(icon), null, Modifier.size(18.dp), tint = tint)
+        Spacer(Modifier.width(OneTheme.spacing.sm8))
+        Text(label, color = tint, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 

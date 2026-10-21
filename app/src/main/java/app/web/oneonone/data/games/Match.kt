@@ -71,10 +71,14 @@ data class Match(
 
 class MatchException(val code: String) : Exception(code)
 
+/** A short emoji or comment a player sent during a game; shown briefly, never stored. */
+data class GameReaction(val id: String, val from: String, val text: String)
+const val REACTION_MAX_CHARS = 60
+
 /** Strict decoding at the trust boundary: anything malformed is dropped, never half-applied. */
 object MatchCodec {
     val events = setOf("match:invite", "match:accept", "match:decline", "match:leave", "match:resign",
-        "match:move", "match:draw", "match:rematch", "match:sync", "match:away")
+        "match:move", "match:draw", "match:rematch", "match:sync", "match:away", "match:react")
     private val endings = setOf("declined", "cancelled", "expired")
     fun quietEnding(reason: String?) = reason in endings
 
@@ -82,6 +86,14 @@ object MatchCodec {
     private fun JsonObject.int(key: String) = (get(key) as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull
     private fun JsonObject.long(key: String) = (get(key) as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
     private fun JsonObject.texts(key: String) = (get(key) as? JsonArray)?.map { (it as JsonPrimitive).also { p -> require(p.isString) }.content }
+
+    /** `match:reaction` (contract §12): kept only for [matchId] and a player in it; text bounded like the server's. */
+    fun reaction(value: JsonElement?, matchId: String, players: List<String>): GameReaction? = runCatching {
+        val o = value as JsonObject
+        val text = o.text("text")!!.trim()
+        require(o.text("matchId") == matchId && text.isNotEmpty() && text.codePointCount(0, text.length) <= REACTION_MAX_CHARS)
+        GameReaction(o.text("id")!!.also { require(it.isNotBlank() && it.length <= 64) }, o.text("from")!!.also { require(it in players) }, text)
+    }.getOrNull()
 
     fun decode(value: JsonElement?): Match? = runCatching {
         val o = value as JsonObject

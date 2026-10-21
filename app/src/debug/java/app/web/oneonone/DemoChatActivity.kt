@@ -190,6 +190,7 @@ private class DemoTransport(context: Context, private val json: Json, private va
     private val matches = DemoMatches(scope, ME, ALEX)
     override val matchStates get() = matches.states
     override val pongFrames get() = matches.frames
+    override val matchReactions get() = matches.reactions
     override suspend fun match(event: String, payload: JsonObject) = matches.call(event, payload)
     override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) = matches.paddle(matchId, x, y, released)
     override val presence = kotlinx.coroutines.flow.flow { while (true) { emit(PresenceUpdate(ALEX, true)); kotlinx.coroutines.delay(2000) } }
@@ -227,6 +228,14 @@ private class DemoTransport(context: Context, private val json: Json, private va
             msg(ALEX, "Played Chess · 12 min", 30).copy(type = "game", payload = buildJsonObject {
                 put("game", "chess"); put("inviter", ALEX); put("winner", ME); put("reason", "checkmate"); put("durationSec", 734)
             }),
+            // One card per game, so every icon and result line can be checked in the chat.
+            *listOf(Triple("pong", ALEX, 412), Triple("tictactoe", null, 48), Triple("connect4", ME, 156),
+                Triple("reversi", ALEX, 905), Triple("dots", ME, 3_725)).mapIndexed { i, (game, winner, seconds) ->
+                msg(if (i % 2 == 0) ME else ALEX, "Played a game", 29L - i).copy(type = "game", payload = buildJsonObject {
+                    put("game", game); put("inviter", if (i % 2 == 0) ME else ALEX); put("winner", winner)
+                    put("reason", if (winner == null) "board_full" else "win"); put("durationSec", seconds)
+                })
+            }.toTypedArray(),
             msg(ME, "", 25).copy(type = "call", payload = buildJsonObject { put("kind", "audio"); put("outcome", "completed"); put("durationSec", 312) }),
             msg(ME, "Typo-ed message you can still edit or delete (sent 5 min ago)", 5),
             msg(ALEX, "👩🏽‍💻", 4),
@@ -289,6 +298,7 @@ private class DemoTransport(context: Context, private val json: Json, private va
 
     private suspend fun alexResponds(to: ChatMessage) {
         delay(700); receipts.emit(ReceiptUpdate(ALEX, lastReadAt = Instant.now().toString(), lastDeliveredAt = Instant.now().toString()))
+        if (to.content.trim().equals("game", ignoreCase = true)) { delay(800); matches.partnerInvite("chess"); return }
         if (to.content.trim().equals("alarm", ignoreCase = true)) {
             delay(800)
             val raise = ChatMessage(id = UUID.randomUUID().toString(), senderId = ALEX, content = "", createdAt = Instant.now().toString(), type = "alarm")

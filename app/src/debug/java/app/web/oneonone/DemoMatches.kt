@@ -20,6 +20,7 @@ private const val PongLogTag = "DemoPong"
 internal class DemoMatches(private val scope: CoroutineScope, private val me: String, private val partner: String) {
     val states = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
     val frames = MutableSharedFlow<JsonObject>(extraBufferCapacity = 64)
+    val reactions = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
 
     private var id = ""
     private var game = ""
@@ -31,6 +32,8 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
     private var version = 0
     private var outcome: Pair<String?, String>? = null
     private var rematch = mutableSetOf<String>()
+    private var drawOffer: String? = null
+    private var drawAsks = 0
     private val series = mutableMapOf(me to 0, partner to 0)
     private var rules: Rules? = null
     private var pong: DemoPong? = null
@@ -53,7 +56,7 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
         put("seq", seq); put("version", version)
         put("board", rules?.view() ?: pong?.let { p -> buildJsonObject { putJsonArray("score") { add(p.score[0]); add(p.score[1]) }; put("target", points) } } ?: JsonNull)
         put("outcome", outcome?.let { (w, r) -> buildJsonObject { put("winner", w); put("reason", r) } } ?: JsonNull)
-        put("drawOffer", null as String?)
+        put("drawOffer", drawOffer)
         putJsonArray("rematch") { rematch.forEach { add(it) } }
         putJsonObject("series") { series.forEach { (k, v) -> put(k, v) } }
         putJsonArray("away") {}
@@ -119,6 +122,28 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
         val p = payload
         return when (event) {
             "match:sync" -> ack()
+            // Alex turns the first draw offer down and takes the next, so both answers can be seen.
+            "match:draw" -> {
+                if (status != "playing" || p["action"]?.jsonPrimitive?.content != "offer") return ack(false, "no_offer")
+                drawOffer = me; publish()
+                val accept = drawAsks++ % 2 == 1
+                scope.launch {
+                    delay(1_500)
+                    if (drawOffer != me || status != "playing") return@launch
+                    drawOffer = null
+                    if (accept) finish(0, "agreement")
+                    publish()
+                }
+                ack()
+            }
+            "match:accept" -> {
+                if (status != "invited" || inviter != partner) return ack(false, "bad_state")
+                start(game, players); ack()
+            }
+            "match:decline" -> {
+                if (status == "invited") { status = "over"; outcome = null to if (inviter == partner) "declined" else "cancelled"; publish() }
+                ack()
+            }
             "match:invite" -> {
                 val kind = p["game"]!!.jsonPrimitive.content
                 if (kind != game) series.keys.forEach { series[it] = 0 } // the server keeps a series per game
@@ -146,8 +171,28 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
                 scope.launch { delay(600); start(game, players.reversed()) }
                 ack()
             }
+            "match:react" -> {
+                val text = p["text"]?.jsonPrimitive?.content.orEmpty()
+                if (p["matchId"]?.jsonPrimitive?.content != id || (status != "playing" && status != "over")) return ack(false, "not_found")
+                react(me, text)
+                // Alex answers some of the time, like a partner glancing at the screen.
+                scope.launch { delay(1_400); react(partner, listOf("😂", "Ha! Watch this", "🔥", "Not fair 😤", "👏").random()) }
+                ack()
+            }
             else -> ack() // draw offers, away: accepted and ignored here
         }
+    }
+
+    /** Emulator check of the invitee side: Alex invites us; accept/decline arrive through [call]. */
+    fun partnerInvite(kind: String) {
+        if (status == "playing") return
+        id = UUID.randomUUID().toString(); game = kind; status = "invited"; inviter = partner
+        players = listOf(partner, me); outcome = null; rules = null; pong = null; clock = 300_000L to 0L
+        publish()
+    }
+
+    private fun react(from: String, text: String) {
+        reactions.tryEmit(buildJsonObject { put("id", UUID.randomUUID().toString()); put("matchId", id); put("from", from); put("text", text) })
     }
 
     fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) { if (matchId == id) pong?.paddle(players.indexOf(me) + 1, x.toDouble(), y?.toDouble(), released) }
