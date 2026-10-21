@@ -138,10 +138,6 @@ private fun FeaturePreview(palette: BubblePalette, message: ChatMessage) {
 @Composable private fun ComposeCountdownPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) =
     DialogPreview(dark) { FeatureComposerContent("countdown", PreviewConnection, "Sam", false, null, null, { _, _, _, _, _ -> }, {}) }
 
-@Preview(name = "Compose check-in", widthDp = 390, heightDp = 844)
-@Composable private fun ComposeCheckInPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) =
-    DialogPreview(dark) { FeatureComposerContent("checkin", PreviewConnection, "Sam", false, null, null, { _, _, _, _, _ -> }, {}) }
-
 @Preview(name = "Compose ask", widthDp = 390, heightDp = 844)
 @Composable private fun ComposeAskPreview(@PreviewParameter(ScreenThemePreviews::class) dark: Boolean) =
     DialogPreview(dark) { FeatureComposerContent("ask", PreviewConnection, "Sam", false, null, null, { _, _, _, _, _ -> }, {}) }

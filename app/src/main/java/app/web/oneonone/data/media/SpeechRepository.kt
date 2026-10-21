@@ -17,7 +17,8 @@ import java.io.File
 import java.io.IOException
 import javax.inject.Inject
 
-const val DICTATION_MAX_MS = 120_000
+// Under the speech service's 120 s limit, so a clip stopped at the cap is still transcribed.
+const val DICTATION_MAX_MS = 118_000
 const val DICTATION_MAX_BYTES = 3_000_000L
 
 @Serializable data class Transcription(val text: String, val language: String, val durationMs: Long)
@@ -115,5 +116,5 @@ internal fun appendDictationText(draft: String, text: String): String {
         words.isEmpty() -> draft
         draft.isEmpty() || draft.last().isWhitespace() -> draft + words
         else -> "$draft $words"
-    }
+    }.take(4_000)
 }

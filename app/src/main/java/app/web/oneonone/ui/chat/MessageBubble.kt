@@ -299,6 +299,11 @@ internal fun MessageBubble(
         !(message.type == "ask" && !mine && message.payload?.get("answerB") == null)
     // Stickers draw bare (a reply quote still needs the bubble); photos sit in a thin frame with the time printed on them.
     val sticker = !deleted && quote == null && isSticker(message)
+    // One emoji and nothing else: drawn large and bare like a sticker (a reply quote keeps the bubble).
+    val bigEmoji = remember(message.content, message.type, deleted, quote == null) {
+        if (!deleted && quote == null && message.type == "text") emojiOnlyCount(message.content) else 0
+    }
+    val bare = sticker || bigEmoji > 0
     val photo = !deleted && !sticker && message.type == "image"
     BackHandler(reacting) { reacting = false }
     LaunchedEffect(selected) { if (!selected) reacting = false }
@@ -395,7 +400,7 @@ internal fun MessageBubble(
                     .then(if (currentMatch) Modifier.border(2.dp, c.accentOther, shape) else Modifier.border(1.dp, colors.edge, shape))
                 Column(
                     Modifier
-                        .then(if (!sticker) bubble else if (currentMatch) Modifier.border(2.dp, c.accentOther, shape) else Modifier)
+                        .then(if (!bare) bubble else if (currentMatch) Modifier.border(2.dp, c.accentOther, shape) else Modifier)
                         // .chat__message[data-type='alarm'] .chat__message-body { border-left: 4px solid var(--danger) }
                         .then(if (alarm) Modifier.drawBehind { drawRect(c.danger, size = Size(4.dp.toPx(), size.height)) } else Modifier)
                         .onGloballyPositioned { bubbleBox = it }
@@ -442,7 +447,7 @@ internal fun MessageBubble(
                         // Cards (S4) keep their own sizing: they may contain subcomposition that has no intrinsics.
                         .then(if (message.type == "text" || deleted || alarmAck || plainCard) Modifier.width(IntrinsicSize.Max) else Modifier)
                         .then(when {
-                            sticker -> Modifier
+                            bare -> Modifier
                             photo -> Modifier.padding(3.dp)
                             else -> Modifier.padding(start = if (alarm) 12.5.dp else 8.5.dp, end = 8.5.dp, top = 6.dp, bottom = 6.dp)
                         }),
@@ -463,6 +468,11 @@ internal fun MessageBubble(
                                 holder = textLayout,
                                 italic = true,
                             ) { MetaRow(time, Receipt.None, colors, palette, receipt = null) }
+                            bigEmoji > 0 -> Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
+                                Text(message.content.trim(), color = colors.text,
+                                    style = OneTextStyles.bubbleText.copy(fontSize = BigEmojiSize, lineHeight = BigEmojiSize * 1.2f))
+                                TimePill(time, status, colors, palette, receipt)
+                            }
                             message.type == "text" -> {
                                 preview?.invoke()
                                 // web: mark = accent-you, current row's marks = accent-other, dark text
@@ -481,10 +491,7 @@ internal fun MessageBubble(
                             // Sticker: a bubble-coloured pill hanging just under the sticker's corner. Photo: printed on the image.
                             sticker -> Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
                                 card()
-                                Box(Modifier.offset(y = (-6).dp).clip(RoundedCornerShape(OneTheme.radii.pill22))
-                                    .background(colors.backgroundStart).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                                    MetaRow(time, status, colors, palette, receipt = receipt)
-                                }
+                                TimePill(time, status, colors, palette, receipt)
                             }
                             photo -> Box {
                                 card()
@@ -665,6 +672,18 @@ private fun QuoteBlock(quote: BubbleQuote, colors: BubbleColors, modifier: Modif
             if (quote.author.isNotEmpty()) Text(quote.author, color = colors.text, style = OneTextStyles.bubbleMeta.copy(fontWeight = FontWeight.Bold, lineHeight = 14.sp))
             Text(quote.snippet, color = colors.text, style = OneTextStyles.cardHint.copy(fontSize = 12.sp, lineHeight = 16.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
+    }
+}
+
+/** One emoji 42sp, two 36sp, three 32sp. */
+private val BigEmojiSize = 42.sp
+
+/** Bare sticker / big emoji: time and ticks in a bubble-coloured pill hanging just under the content's corner. */
+@Composable
+private fun TimePill(time: String, status: Receipt, colors: BubbleColors, palette: BubblePalette, receipt: String) {
+    Box(Modifier.offset(y = (-6).dp).clip(RoundedCornerShape(OneTheme.radii.pill22))
+        .background(colors.backgroundStart).padding(horizontal = 6.dp, vertical = 2.dp)) {
+        MetaRow(time, status, colors, palette, receipt = receipt)
     }
 }
 

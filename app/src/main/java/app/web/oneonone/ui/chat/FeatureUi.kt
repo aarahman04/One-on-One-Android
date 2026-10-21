@@ -96,27 +96,41 @@ import kotlin.math.*
 
 @Composable
 fun FeatureComposer(type: String, connection: CurrentConnection, vm: FeatureViewModel, reply: String?, close: () -> Unit,
-    letterMic: (@Composable (append: (String) -> Unit) -> Unit)? = null) {
+    letterMic: (@Composable (body: String, set: (String) -> Unit) -> Unit)? = null,
+    speech: SpeechViewModel? = null, dictating: Boolean = false) {
     val signature by vm.signature.collectAsState()
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
     FeatureComposerContent(type, connection, signature, busy, error, reply,
-        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close, letterMic)
+        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close, letterMic, speech, dictating)
 }
 
 @Composable
 internal fun FeatureComposerContent(type: String, connection: CurrentConnection, signature: String, busy: Boolean, error: String?, reply: String?,
     onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, close: () -> Unit,
-    letterMic: (@Composable (append: (String) -> Unit) -> Unit)? = null) {
+    letterMic: (@Composable (body: String, set: (String) -> Unit) -> Unit)? = null,
+    speech: SpeechViewModel? = null, dictating: Boolean = false) {
     var first by rememberSaveable(type) { mutableStateOf("") }
     var second by rememberSaveable(type) { mutableStateOf("") }
     var third by rememberSaveable(type) { mutableStateOf("") }
-    var from by rememberSaveable(type) { mutableStateOf(signature.ifBlank { "me" }) }
+    val defaultFrom = connection.myNickname?.takeIf { it.isNotBlank() } ?: signature.ifBlank { "me" }
+    var from by rememberSaveable(type) { mutableStateOf(defaultFrom.take(40)) }
+    var fromEdited by rememberSaveable(type) { mutableStateOf(false) }
     var to by rememberSaveable(type) { mutableStateOf(connection.otherNickname?.take(40) ?: "you") }
-    var choice by rememberSaveable(type) { mutableStateOf(if (type == "letter") "dawn" else if (type == "checkin") "good" else "a") }
+    var choice by rememberSaveable(type) { mutableStateOf(if (type == "letter") "dawn" else "a") }
     var target by rememberSaveable(type) { mutableStateOf("") }
     var preview by rememberSaveable(type) { mutableStateOf(false) }
-    LaunchedEffect(signature) { if (from == "me" && third.isEmpty() && signature.isNotBlank()) from = signature }
+    LaunchedEffect(defaultFrom) { if (!fromEdited) from = defaultFrom.take(40) }
+    val previewKey = "${connection.id}/${SpeechViewModel.PREVIEW}"
+    val narration = speech?.narration?.collectAsState()?.value?.takeIf { it.key == previewKey } ?: NarrationState()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(preview, speech, lifecycle) {
+        if (preview) speech?.prewarmVoice()
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) speech?.stopNarration(previewKey) }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); speech?.stopNarration(previewKey) }
+    }
+    val dismiss = { speech?.stopNarration(previewKey); close() }
     val context = LocalContext.current
     val payload = buildJsonObject {
         when (type) {
@@ -124,20 +138,29 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
             "ask" -> { put("question", first.trim()); put("answerA", second.trim()) }
             "thisorthat" -> { put("optionA", first.trim()); put("optionB", second.trim()); put("pickSender", choice) }
             "countdown" -> { put("label", first.trim()); put("targetIso", target) }
-            "checkin" -> { put("mood", choice); put("note", first.trim()) }
         }
     }
     val valid = runCatching { validateFeaturePayload(connection.id, type, payload); require(type != "letter" || third.isNotBlank()) }.isSuccess
-    FeatureModal(onDismissRequest = { if (!busy) close() }, title = { Text(if (preview) "Preview letter" else CommandTitles[type] ?: type) },
+    FeatureModal(onDismissRequest = { if (!busy && !dictating) dismiss() }, title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (preview) "Preview letter" else CommandTitles[type] ?: type, Modifier.weight(1f))
+            if (preview && speech != null) LetterSpeaker(narration,
+                read = { speech.readPreview(connection.id, to.trim(), third.trim(), from.trim()) },
+                stop = { speech.stopNarration(previewKey) })
+        }
+    },
         text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (preview) LetterBody(ChatMessage(senderId = connection.myUserId, content = third, createdAt = Instant.now().toString(), type = "letter", payload = payload))
+            if (preview) {
+                ChatNotice(narration.notice, warning = true)
+                LetterBody(ChatMessage(senderId = connection.myUserId, content = third, createdAt = Instant.now().toString(), type = "letter", payload = payload))
+            }
             else when (type) {
                 "letter" -> {
                     // Every letter renders as one white handwritten page; the contract still needs an appearance, so it stays "dawn".
-                    Field("From", from, 40) { from = it }; Field("To", to, 40) { to = it }
+                    Field("From", from, 40) { from = it; fromEdited = true }; Field("To", to, 40) { to = it }
                     Field("Your letter", third, 4_000, trailing = letterMic?.let { mic -> {
-                        mic { words -> third = listOf(third.trimEnd(), words.trim()).filter { it.isNotEmpty() }.joinToString(" ").take(4_000) }
-                    } }) { third = it }
+                        mic(third) { words -> third = words.take(4_000) }
+                    } }, enabled = !dictating) { third = it }
                 }
                 "ask" -> { Field("Question", first, 300) { first = it }; Field("Your answer (sealed until they answer)", second, 500) { second = it } }
                 "thisorthat" -> {
@@ -157,19 +180,20 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
                         }, initial.year, initial.monthValue - 1, initial.dayOfMonth).apply { datePicker.minDate = System.currentTimeMillis(); show() }
                     })
                 }
-                "checkin" -> { Choices(Moods, choice) { choice = it }; Field("A note about your day", first, 300) { first = it } }
             }
             error?.let { Text(it, style = OneTextStyles.cardHint, color = OneTheme.colors.danger) }
         } },
-        confirmButton = { PrimaryButton(if (type == "letter" && !preview) "Preview" else "Send", enabled = valid && !busy, onClick = {
+        confirmButton = { PrimaryButton(if (type == "letter" && !preview) "Preview" else "Send", enabled = valid && !busy && !dictating, onClick = {
             if (type == "letter" && !preview) preview = true
-            else onSend(type, if (type == "letter") third.trim() else "", payload, reply, close)
+            else { speech?.stopNarration(previewKey); onSend(type, if (type == "letter") third.trim() else "", payload, reply, dismiss) }
         }) },
-        dismissButton = { SecondaryButton(if (preview) "Edit" else "Cancel", enabled = !busy, onClick = { if (preview) preview = false else close() }) })
+        dismissButton = { SecondaryButton(if (preview) "Edit" else "Cancel", enabled = !busy && !dictating, onClick = {
+            speech?.stopNarration(previewKey); if (preview) preview = false else dismiss()
+        }) })
 }
 
 @Composable private fun Field(label: String, value: String, maximum: Int, bubble: Boolean = false,
-    trailing: (@Composable () -> Unit)? = null, change: (String) -> Unit) {
+    trailing: (@Composable () -> Unit)? = null, enabled: Boolean = true, change: (String) -> Unit) {
     val hint = if (bubble) LocalBubbleColors.current.text.copy(alpha = .8f) else OneTheme.colors.textDim
     val counter = if (bubble) LocalBubbleColors.current.text.copy(alpha = .8f) else OneTheme.colors.muted
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -179,7 +203,7 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
             trailing()
         }
         OneTextField(value, { change(it.take(maximum)) }, Modifier.fillMaxWidth().then(if (maximum > 1_000) Modifier.heightIn(min = 132.dp, max = 212.dp) else Modifier.heightIn(max = if (maximum > 100) 212.dp else 68.dp)).semantics { contentDescription = label },
-            singleLine = false, textStyle = MaterialTheme.typography.bodyLarge)
+            singleLine = false, enabled = enabled, textStyle = MaterialTheme.typography.bodyLarge)
         Text("${value.length}/$maximum", style = MaterialTheme.typography.labelMedium, color = counter)
     }
 }
@@ -235,7 +259,7 @@ internal fun systemEventText(who: String, event: String?, value: String?): Strin
 }
 
 private val CommandTitles = mapOf("letter" to "Write a letter", "ask" to "Ask a sealed question", "thisorthat" to "This or that",
-    "countdown" to "Start a countdown", "checkin" to "Check in")
+    "countdown" to "Start a countdown")
 
 private fun moodEmoji(mood: String) = listOf("😄", "🙂", "😐", "😔", "😞").getOrElse(Moods.indexOf(mood)) { "" }
 
@@ -286,8 +310,9 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     val position = if (message.type == "voice") vm.playbackPosition.collectAsState().value else 0
     val duration = if (message.type == "voice") vm.playbackDuration.collectAsState().value else 0
     val paused = if (message.type == "voice") vm.playbackPaused.collectAsState().value else false
-    var url by remember(path) { mutableStateOf<String?>(null) }
-    var urlError by remember(path) { mutableStateOf<String?>(null) }
+    // Seeded from the in-memory signed-URL cache so a row scrolled back into view draws its photo at once.
+    var url by remember(connection.id, path) { mutableStateOf(if (message.type == "image" && path.isNotBlank()) vm.media.cachedSignedUrl(connection.id, path) else null) }
+    var urlError by remember(connection.id, path) { mutableStateOf<String?>(null) }
     var retryUrl by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val letterDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri -> uri?.let { vm.saveLetter(it, message) } }
@@ -310,7 +335,8 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
             delay(55 * 60_000L)
         }
     }
-    FeatureCardContent(message, mine, original, connection, busy, playing, url, urlError,
+    // A cached URL may be identical on retry; recreate Coil's failed painter even then.
+    key(retryUrl) { FeatureCardContent(message, mine, original, connection, busy, playing, url, urlError,
         onSend = { t, body, response, r, done -> vm.send(t, body, response, r, done) },
         onPlay = { if (speech.dictation.value.active) speech.showNotice("Stop dictation before playing a voice note.")
             else { speech.stopNarration(); vm.play(connection.id, it) } },
@@ -322,7 +348,7 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
         speech = speech, onReadLetter = {
             if (!vm.recording.value && !speech.dictation.value.active) vm.stopPlayback()
             speech.readLetter(connection.id, message, vm.recording.value)
-        })
+        }) }
     documentUri?.let { uri ->
         DocumentViewer(uri, payload.text("mime"), payload.text("name"), busy, saveCopy,
             openWith = { openAttachment(context, uri, payload.text("mime")) }, close = { documentUri = null })
@@ -428,22 +454,37 @@ internal fun FeatureCardContent(message: ChatMessage, mine: Boolean, original: C
                         }
                     } else Text("Location unavailable")
                 }
-                "image" -> if (isSticker(message)) {
-                    // Bare sticker: transparent, fitted, no photo viewer; the bubble draws only a small time pill.
-                    Box(Modifier.size(StickerSize), contentAlignment = Alignment.Center) {
-                        url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "Sticker", Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit, onError = { onImageError() }) }
-                        if (url == null && urlError == null) androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                        urlError?.let { CardAction("Retry", onClick = { onRetryPhoto() }) }
+                "image" -> {
+                    // Signed URLs change hourly; the attachment path names the bytes, so it keys Coil's caches.
+                    val context = LocalContext.current
+                    val inspection = LocalInspectionMode.current
+                    val request = remember(url, path) {
+                        url?.takeIf { !inspection }?.let { coil3.request.ImageRequest.Builder(context).data(it).memoryCacheKey(path).diskCacheKey(path).build() }
                     }
-                } else {
-                    if (url == null && urlError == null) Text("Loading photo…")
-                    url?.let { AsyncImage(if (LocalInspectionMode.current) null else it, "View shared photo", Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 320.dp).clip(RoundedCornerShape(OneTheme.radii.sm6))
-                        .bubbleClickable { reveal = true }, contentScale = ContentScale.Crop,
-                placeholder = ColorPainter(OneTheme.colors.bgRaised), error = if (LocalInspectionMode.current) ColorPainter(OneTheme.colors.bgRaised) else null,
-                        onError = { onImageError() }) }
-                    urlError?.let { Text(it); CardAction("Retry photo", onClick = { onRetryPhoto() }) }
-                    if (reveal) PhotoViewer(url, busy, onSaveCopy, close = { reveal = false })
+                    var shown by remember(path) { mutableStateOf(false) }
+                    if (isSticker(message)) {
+                        // Bare sticker: transparent, fitted, no photo viewer; the bubble draws only a small time pill.
+                        Box(Modifier.size(StickerSize), contentAlignment = Alignment.Center) {
+                            if (!shown && urlError == null) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                            request?.let { AsyncImage(it, "Sticker", Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit, onSuccess = { shown = true }, onError = { onImageError() }) }
+                            urlError?.let { CardAction("Retry", onClick = { onRetryPhoto() }) }
+                        }
+                    } else BoxWithConstraints {
+                        // The photo's own shape from the payload size: placeholder and image are one box, so nothing jumps.
+                        val box = mediaSize(payload.number("width"), payload.number("height"), payload.text("mime") == "image/gif", maxWidth)
+                        Box(Modifier.size(box).clip(RoundedCornerShape(OneTheme.radii.sm6)).background(OneTheme.colors.bgRaised)
+                            .bubbleClickable(enabled = url != null) { reveal = true }, contentAlignment = Alignment.Center) {
+                            if (!shown && urlError == null) CircularProgressIndicator(Modifier.size(24.dp), color = OneTheme.colors.textDim, strokeWidth = 2.dp)
+                            request?.let { AsyncImage(it, "View shared photo", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                                onSuccess = { shown = true }, onError = { onImageError() }) }
+                            urlError?.let { Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(it, color = OneTheme.colors.textDim, style = OneTextStyles.cardHint, textAlign = TextAlign.Center)
+                                CardAction("Retry photo", onClick = { onRetryPhoto() })
+                            } }
+                        }
+                        if (reveal) PhotoViewer(url, busy, onSaveCopy, close = { reveal = false }, cacheKey = path)
+                    }
                 }
                 "voice" -> {
                     val active = playing == path && path.isNotBlank()
@@ -684,6 +725,7 @@ internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () 
     val activity = LocalActivity.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(key, speech, lifecycle) {
+        speech?.prewarmVoice()
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP && activity?.isChangingConfigurations != true) speech?.stopNarration(key)
         }
@@ -707,33 +749,45 @@ internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () 
                     }
                 }
             }
-            if (state.phase == NarrationPhase.Loading) Box(Modifier.size(OneTheme.sizes.touch40).semantics {
-                contentDescription = "Loading narration"; liveRegion = LiveRegionMode.Polite
-            }, contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(Modifier.size(s.xl24), color = c.accentYou, strokeWidth = s.xxs2)
-            } else OneIconButton(when (state.phase) {
-                NarrationPhase.Playing -> R.drawable.ic_pause
-                NarrationPhase.Paused -> R.drawable.ic_play
-                else -> R.drawable.ic_volume
-            }, when (state.phase) {
-                NarrationPhase.Playing -> "Pause"
-                NarrationPhase.Paused -> "Resume"
-                else -> "Read letter aloud"
-            }, read)
-            if (state.phase != NarrationPhase.Idle) OneIconButton(R.drawable.ic_stop, "Stop reading", { speech?.stopNarration(key) })
+            LetterSpeaker(state, read, stop = { speech?.stopNarration(key) })
         }
     }, text = { Column(verticalArrangement = Arrangement.spacedBy(s.sm8)) { ChatNotice(state.notice ?: speechNotice, warning = true); LetterBody(message) } },
         confirmButton = { PrimaryButton("Download PDF", download) }, dismissButton = { SecondaryButton("Close", dismiss) })
 }
 
 @Composable
-internal fun PhotoViewer(url: String?, busy: Boolean, save: () -> Unit, close: () -> Unit) {
+private fun LetterSpeaker(state: NarrationState, read: () -> Unit, stop: () -> Unit) {
+    if (state.phase == NarrationPhase.Loading) Box(Modifier.size(OneTheme.sizes.touch40).semantics {
+        contentDescription = "Loading narration"; liveRegion = LiveRegionMode.Polite
+    }, contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(Modifier.size(OneTheme.spacing.xl24), color = OneTheme.colors.accentYou, strokeWidth = OneTheme.spacing.xxs2)
+    } else OneIconButton(when (state.phase) {
+        NarrationPhase.Playing -> R.drawable.ic_pause
+        NarrationPhase.Paused -> R.drawable.ic_play
+        else -> R.drawable.ic_volume
+    }, when (state.phase) {
+        NarrationPhase.Playing -> "Pause"
+        NarrationPhase.Paused -> "Resume"
+        else -> "Read letter aloud"
+    }, read)
+    if (state.phase != NarrationPhase.Idle) OneIconButton(R.drawable.ic_stop, "Stop reading", stop)
+}
+
+@Composable
+internal fun PhotoViewer(url: Any?, busy: Boolean, save: (() -> Unit)?, close: () -> Unit, cacheKey: String? = null, title: String = "Photo") {
+    val context = LocalContext.current
+    // Same cache keys as the thumbnail: the small copy shows at once while the full one loads.
+    val model = remember(url, cacheKey) {
+        if (url == null || cacheKey == null) url
+        else coil3.request.ImageRequest.Builder(context).data(url).memoryCacheKey(cacheKey).diskCacheKey(cacheKey).placeholderMemoryCacheKey(cacheKey)
+            .diskCachePolicy(if (url is java.io.File) coil3.request.CachePolicy.DISABLED else coil3.request.CachePolicy.ENABLED).build()
+    }
     var scale by remember(url) { mutableFloatStateOf(1f) }
     var pan by remember(url) { mutableStateOf(Offset.Zero) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var imageSize by remember(url) { mutableStateOf(Size.Zero) }
     var photoError by remember(url) { mutableStateOf(false) }
-    AttachmentViewerFrame("Photo", busy, save, close) {
+    AttachmentViewerFrame(title, busy, save, close) {
         Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged {
                 viewport = it
                 pan = photoPan(pan, scale, Size(it.width.toFloat(), it.height.toFloat()), imageSize)
@@ -755,11 +809,11 @@ internal fun PhotoViewer(url: String?, busy: Boolean, save: () -> Unit, close: (
                 pan = photoPan(pan * (scale / oldScale) + delta + focus * (1 - scale / oldScale), scale,
                     Size(viewport.width.toFloat(), viewport.height.toFloat()), imageSize)
             } }, contentAlignment = Alignment.Center) {
-            AsyncImage(url, "Shared photo. Pinch or double tap to zoom.", Modifier.fillMaxSize().graphicsLayer {
+            AsyncImage(model, "Photo. Pinch or double tap to zoom.", Modifier.fillMaxSize().graphicsLayer {
                 scaleX = scale; scaleY = scale; translationX = pan.x; translationY = pan.y
             }, contentScale = ContentScale.Fit, onSuccess = { imageSize = it.painter.intrinsicSize; photoError = false }, onError = { photoError = true })
-            if (photoError || url == null) Text(if (photoError) "Photo unavailable. Close and retry." else "Loading photo…",
-                color = Color.White, style = OneTextStyles.cardHint)
+            if (photoError) Text("Photo unavailable. Close and retry.", color = Color.White, style = OneTextStyles.cardHint)
+            else if (url == null || imageSize == Size.Zero) CircularProgressIndicator(Modifier.size(28.dp), color = Color.White, strokeWidth = 2.dp)
         }
     }
 }

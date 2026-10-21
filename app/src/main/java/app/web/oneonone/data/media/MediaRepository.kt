@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.location.Location
 import android.location.LocationListener
@@ -24,6 +23,7 @@ import android.provider.OpenableColumns
 import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.graphics.scale
 import app.web.oneonone.BuildConfig
 import app.web.oneonone.data.model.*
 import app.web.oneonone.data.chat.archiveFiles
@@ -52,11 +52,11 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
-import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.math.round
+import kotlin.math.roundToInt
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -80,6 +80,8 @@ interface MediaGateway {
     suspend fun upload(connection: String, kind: String, uri: Uri, duration: Double? = null): JsonObject
     suspend fun uploadSticker(connection: String, file: File): JsonObject
     suspend fun signedUrl(connection: String, path: String): String
+    /** A still-valid signed URL already in memory, without a network call: lets a re-composed photo row draw at once. */
+    fun cachedSignedUrl(connection: String, path: String): String? = null
     suspend fun download(connection: String, payload: JsonObject): Uri
     suspend fun location(): JsonObject
     suspend fun startRecording(onLimit: () -> Unit)
@@ -123,7 +125,8 @@ class MediaRepository @Inject constructor(
     private val json: Json,
 ) : MediaGateway, DictationRecorder {
     private val signing = Mutex()
-    private val urls = mutableMapOf<String, Pair<String, Long>>()
+    // Concurrent: cachedSignedUrl reads it from the main thread while signedUrl writes it under [signing].
+    private val urls = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
     private val downloadClient = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .callTimeout(60, TimeUnit.SECONDS).build()
     private var recorder: MediaRecorder? = null
@@ -166,22 +169,18 @@ class MediaRepository @Inject constructor(
                 var sample = 1
                 // ponytail: cap decoded photos at 4 MP for bounded memory; tiled full-resolution re-encoding if needed.
                 while (bounds.outWidth.toLong() * bounds.outHeight / sample / sample > 4_000_000) sample *= 2
-                val bitmap = if (Build.VERSION.SDK_INT >= 28) ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, _, _ ->
-                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                    decoder.setTargetSampleSize(sample)
-                } else {
-                    val decoded = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }))
-                    orientLegacy(decoded, bytes)
-                }
+                // BitmapFactory never auto-orients, so one explicit EXIF pass gives the same result on every API level.
+                val bitmap = orientLegacy(checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })), bytes)
+                val fitted = fitPhoto(bitmap)
                 try {
-                    width = bitmap.width; height = bitmap.height
+                    width = fitted.width; height = fitted.height
                     val encoded = ByteArrayOutputStream()
-                    val png = sourceMime == "image/png"
-                    check(bitmap.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 90, encoded)) { "Couldn't encode the image." }
+                    val png = sourceMime == "image/png" && fitted.hasAlpha()
+                    check(fitted.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, PHOTO_QUALITY, encoded)) { "Couldn't encode the image." }
                     bytes = encoded.toByteArray() // Re-encoding pixels drops EXIF/GPS metadata.
                     mime = if (png) "image/png" else "image/jpeg"
                     require(bytes.size <= attachmentLimit("image")) { "That photo exceeds 10 MiB after encoding." }
-                } finally { bitmap.recycle() }
+                } finally { fitted.recycle() }
             }
         }
         val uploaded = api.upload(connection, kind, bytes.toRequestBody(mime.toMediaType()))
@@ -230,6 +229,8 @@ class MediaRepository @Inject constructor(
         urls[path] = url to System.currentTimeMillis() + 55 * 60_000
         url
     }
+    override fun cachedSignedUrl(connection: String, path: String): String? =
+        urls[path]?.takeIf { path.startsWith("$connection/") && it.second > System.currentTimeMillis() }?.first
     private fun storageUrl(url: String) = url.toHttpUrlOrNull()?.let { it.isHttps && it.host == BuildConfig.SUPABASE_URL.toHttpUrlOrNull()?.host } == true
 
     override suspend fun saveArchive(uri: Uri, connection: String, messages: List<ChatMessage>, owner: String, other: String,
@@ -419,19 +420,43 @@ class MediaRepository @Inject constructor(
     }
 }
 
-internal fun orientLegacy(bitmap: Bitmap, bytes: ByteArray): Bitmap {
-    val orientation = runCatching { ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
-    val matrix = Matrix().apply {
-        when (orientation) {
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> { setRotate(90f); postScale(-1f, 1f) }
-            ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
-            ExifInterface.ORIENTATION_TRANSVERSE -> { setRotate(270f); postScale(-1f, 1f) }
-            ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(270f)
-        }
-    }
-    if (matrix.isIdentity) return bitmap
+/** Photos are sent at most this many pixels on the long side (a phone screen's worth), JPEG at [PHOTO_QUALITY]. */
+internal const val PHOTO_MAX_SIDE = 2_048
+internal const val PHOTO_QUALITY = 85
+
+/** [width]×[height] scaled down (never up) so the long side is at most [maxSide], keeping the aspect ratio. */
+internal fun fittedSize(width: Int, height: Int, maxSide: Int = PHOTO_MAX_SIDE): Pair<Int, Int> {
+    val long = maxOf(width, height)
+    if (long <= maxSide) return width to height
+    val scale = maxSide.toDouble() / long
+    return (width * scale).roundToInt().coerceAtLeast(1) to (height * scale).roundToInt().coerceAtLeast(1)
+}
+
+/** Downscales a decoded photo to [PHOTO_MAX_SIDE], recycling the original when a copy is made. */
+private fun fitPhoto(bitmap: Bitmap): Bitmap {
+    val (width, height) = fittedSize(bitmap.width, bitmap.height)
+    if (width == bitmap.width && height == bitmap.height) return bitmap
+    return bitmap.scale(width, height).also { if (it !== bitmap) bitmap.recycle() }
+}
+
+internal fun orientLegacy(bitmap: Bitmap, bytes: ByteArray): Bitmap =
+    orient(bitmap, runCatching { ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }.getOrDefault(ExifInterface.ORIENTATION_NORMAL))
+
+/** EXIF orientation as (clockwise degrees, then mirror horizontally). */
+internal fun exifOps(orientation: Int): Pair<Int, Boolean> = when (orientation) {
+    ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> 0 to true
+    ExifInterface.ORIENTATION_ROTATE_180 -> 180 to false
+    ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180 to true
+    ExifInterface.ORIENTATION_TRANSPOSE -> 90 to true
+    ExifInterface.ORIENTATION_ROTATE_90 -> 90 to false
+    ExifInterface.ORIENTATION_TRANSVERSE -> 270 to true
+    ExifInterface.ORIENTATION_ROTATE_270 -> 270 to false
+    else -> 0 to false
+}
+
+internal fun orient(bitmap: Bitmap, orientation: Int): Bitmap {
+    val (degrees, mirror) = exifOps(orientation)
+    if (degrees == 0 && !mirror) return bitmap
+    val matrix = Matrix().apply { postRotate(degrees.toFloat()); if (mirror) postScale(-1f, 1f) }
     return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also { if (it !== bitmap) bitmap.recycle() }
 }

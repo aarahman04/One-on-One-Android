@@ -110,7 +110,8 @@ class DemoChatActivity : ComponentActivity() {
         setContent {
             OneOnOneTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
-                    ChatScreen(connection, chat, features, stickers, onSettings = {}, onAccount = {}, onRefresh = {}, games = games, speech = speech)
+                    ChatScreen(connection, chat, features, stickers, onSettings = {}, onAccount = {}, onRefresh = {}, games = games, speech = speech,
+                        partnerAvatar = if (storeDemo) null else "file:///android_asset/stickers/packs/Shapes/03_hearts.webp" to "demo:avatar")
                 }
             }
         }
@@ -165,6 +166,7 @@ private class DemoMedia(private val context: Context, real: MediaGateway) : Medi
     }
 
     override suspend fun signedUrl(connection: String, path: String): String = File(dir, path.substringAfterLast('/')).absolutePath
+    override fun cachedSignedUrl(connection: String, path: String): String = File(dir, path.substringAfterLast('/')).absolutePath
 }
 
 private class DemoTransport(context: Context, private val json: Json, private val scope: CoroutineScope, storeScene: String?) : Transport {
@@ -214,7 +216,9 @@ private class DemoTransport(context: Context, private val json: Json, private va
             msg(ME, "Same time tomorrow? I missed you today.", 24),
             msg(ALEX, "Always, Maya. Tell me the little things.", 22),
             msg(ME, "You are my favourite part of the day, Arjun.", 20),
-        ) else listOf(
+        ) else (20 downTo 1).map { index ->
+            msg(if (index % 2 == 0) ME else ALEX, "Earlier message $index", 180L + index)
+        } + listOf(
             first,
             msg(ME, "Haha classic. This is on repeat for me today https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT", 175),
             msg(ALEX, "Also thinking of getting this https://www.amazon.in/dp/B0CHX1W1XY", 120),
@@ -225,6 +229,8 @@ private class DemoTransport(context: Context, private val json: Json, private va
             }),
             msg(ME, "", 25).copy(type = "call", payload = buildJsonObject { put("kind", "audio"); put("outcome", "completed"); put("durationSec", 312) }),
             msg(ME, "Typo-ed message you can still edit or delete (sent 5 min ago)", 5),
+            msg(ALEX, "👩🏽‍💻", 4),
+            msg(ME, "❤️ 👍🏽 🇮🇳", 3),
         )
         seed.forEach { all[checkNotNull(it.id)] = it }
         val card = when (storeScene) {

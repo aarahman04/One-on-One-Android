@@ -19,6 +19,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -178,16 +183,19 @@ internal fun TypingBubble(visible: Boolean, palette: BubblePalette) {
     }
 }
 
-/** Own voice note / sticker / GIF still uploading: shown at once, replaced by the real message when the send lands. */
+/** Own media still uploading: shown at once, replaced by the real message when the send lands. */
 @Composable
 internal fun PendingMediaBubble(item: FeatureViewModel.PendingMedia, palette: BubblePalette, modifier: Modifier = Modifier) {
     val colors = palette.mine
-    Box(modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp), contentAlignment = Alignment.CenterEnd) {
+    BoxWithConstraints(modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp), contentAlignment = Alignment.CenterEnd) {
         val bare = item.kind == "sticker" // Stickers have no bubble once sent, so none while sending either.
+        // A photo takes the box it will have once sent (the bubble's 80% width, less its frame); sized from the image once loaded.
+        var aspect by remember(item.id) { mutableStateOf<Size?>(null) }
+        val photo = mediaSize(aspect?.width?.toDouble(), aspect?.height?.toDouble(), gif = false, maxWidth = maxWidth * .8f - 6.dp)
         Row(
             (if (bare) Modifier else Modifier.bubbleTail(true, colors.backgroundStart).clip(RoundedCornerShape(OneTheme.radii.bubble8))
-                .background(colors.backgroundStart).padding(if (item.kind == "voice") 12.dp else 4.dp))
-                .semantics(mergeDescendants = true) { contentDescription = "Sending ${if (item.kind == "gif") "GIF" else item.kind}" },
+                .background(colors.backgroundStart).padding(when (item.kind) { "voice" -> 12.dp; "image" -> 3.dp; else -> 4.dp }))
+                .semantics(mergeDescendants = true) { contentDescription = "Sending ${when (item.kind) { "gif" -> "GIF"; "image" -> "photo"; else -> item.kind }}" },
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -197,6 +205,11 @@ internal fun PendingMediaBubble(item: FeatureViewModel.PendingMedia, palette: Bu
                 Text("%d:%02d".format(seconds / 60, seconds % 60), color = colors.text, style = OneTextStyles.menuItem)
                 Text("Sending…", color = colors.meta, style = OneTextStyles.cardHint)
                 androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = colors.meta, strokeWidth = 2.dp)
+            } else if (item.kind == "image") Box(Modifier.size(photo).clip(RoundedCornerShape(OneTheme.radii.sm6)).background(OneTheme.colors.bgRaised),
+                contentAlignment = Alignment.Center) {
+                coil3.compose.AsyncImage(item.uri, null, Modifier.fillMaxSize().graphicsLayer { alpha = .6f }, contentScale = ContentScale.Crop,
+                    onSuccess = { aspect = it.painter.intrinsicSize.takeIf { size -> size.width > 0 && size.height > 0 } })
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(28.dp), color = colors.text, strokeWidth = 2.5.dp)
             } else Box(Modifier.size(if (bare) StickerSize else 140.dp), contentAlignment = Alignment.Center) {
                 item.file?.let { coil3.compose.AsyncImage(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = .6f }) }
                 androidx.compose.material3.CircularProgressIndicator(Modifier.size(28.dp), color = colors.text, strokeWidth = 2.5.dp)

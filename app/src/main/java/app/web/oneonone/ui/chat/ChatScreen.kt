@@ -50,6 +50,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
@@ -179,8 +181,9 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         val result = dictated ?: return@LaunchedEffect
         if (command == "letter") return@LaunchedEffect // the open letter takes it (LetterDictation)
         if (result.owner.ownerId == connection.myUserId && result.owner.connectionId == connection.id) {
-            vm.appendDictation(result.text)
+            vm.draft(result.text) // the whole draft: what was there before plus every dictated word so far
             speech.consumeText(result.id)
+            if (!result.final) return@LaunchedEffect
             withFrameNanos { }
             if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                 runCatching { composerFocus.requestFocus(); keyboard?.show() }
@@ -310,7 +313,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val beginDictation = rememberDictation(speech, { features.recording.value }, features::stopPlayback)
     // Picking a command consumes the "/" draft, which also closes the slash menu.
     val runCommand = { name: String -> features.clearError(); vm.draft(""); when (name) {
-        "audio" -> { if (!recording) beginDictation() }
+        "audio" -> { if (!recording) beginDictation("") }
         "games" -> { keyboard?.hide(); games.hub() }
         "alarm" -> alarm = true
         else -> command = name
@@ -488,6 +491,28 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             LaunchedEffect(notice) { shown = notice; if (notice != null) { delay(4_000); shown = null } }
             ChatNotice(if (offline) "No connection · Reconnecting…" else null, Modifier.align(Alignment.TopCenter))
             ChatNotice(shown.takeIf { !offline }, Modifier.align(Alignment.BottomCenter), warning = true)
+            // Hidden under the attach sheet / slash menu; tapping smoothly returns to the end and re-pins.
+            val farFromEnd by remember { derivedStateOf {
+                val layout = list.layoutInfo
+                val visible = layout.visibleItemsInfo
+                visible.lastOrNull()?.let { last ->
+                    showScrollToLatest(layout.viewportSize.height, last.offset + last.size, layout.viewportEndOffset,
+                        layout.totalItemsCount - last.index - 1, visible.filter { it.size > 0 }.map { it.size }.average())
+                } ?: false
+            } }
+            androidx.compose.animation.AnimatedVisibility(farFromEnd && !attachmentOpen && slash.isEmpty(),
+                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 12.dp),
+                enter = fadeIn(tween(160)) + androidx.compose.animation.scaleIn(tween(160), initialScale = .6f),
+                exit = fadeOut(tween(120)) + androidx.compose.animation.scaleOut(tween(120), targetScale = .6f)) {
+                app.web.oneonone.ui.components.OneIconButton(R.drawable.ic_chevron_down, "Scroll to latest messages",
+                    onClick = { scope.launch {
+                        list.animateScrollToItem((list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+                        pinned = true; scrollToEnd()
+                    } },
+                    modifier = Modifier.shadow(4.dp, CircleShape).background(OneTheme.colors.bgRaised, CircleShape)
+                        .border(1.dp, OneTheme.colors.border, CircleShape),
+                    tint = OneTheme.colors.text)
+            }
             if (attachmentOpen) Box(Modifier.matchParentSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { attachmentOpen = false })
             AttachSheet(attachmentOpen, Modifier.align(Alignment.BottomCenter).widthIn(max = OneTheme.sizes.chatMax720).padding(bottom = 6.dp),
                 onPhoto = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
@@ -513,10 +538,12 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             val original = messages.find { it.id == id }
             ReplyBar(authorOf(original, connection).ifEmpty { "Earlier message" }, original?.let(::messageSummary) ?: "earlier message") { vm.reply(null) }
         } }
-        if (dictation.active && command != "letter") DictationBar(dictation, dictationHint, onStop = speech::stopDictation, onCancel = speech::cancelDictation)
-        else ChatComposer(
+        val dictating = dictation.active && command != "letter"
+        if (dictating) DictationBar(dictation, dictationHint, onStop = speech::stopDictation)
+        ChatComposer(
             draft = draft, onDraft = vm::draft,
-            canSend = !busy, // Text is queued instantly; an uploading voice note or sticker must not block it.
+            // Text is queued instantly; an uploading voice note or sticker must not block it. Dictation owns the draft until Stop.
+            canSend = !busy && !dictating, readOnly = dictating,
             recording = recording,
             onAttach = { more = false; attachmentOpen = !attachmentOpen },
             onEmoji = { attachmentOpen = false; stickers.clearError(); features.clearError(); composerEmoji = true },
@@ -549,7 +576,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         val close = { command = null; vm.draft(""); vm.reply(null) }
         if (type == "location") LocationConfirmation(connection, features, replyTo, close)
         else FeatureComposer(type, connection, features, replyTo, close,
-            letterMic = if (type == "letter") { append -> LetterDictation(speech, connection, beginDictation, append) } else null)
+            letterMic = if (type == "letter") { body, set -> LetterDictation(speech, connection, body, beginDictation, set) } else null,
+            speech = speech, dictating = dictation.active)
     }
     reactingTo?.let { id ->
         EmojiPickerSheet(onDismiss = { reactingTo = null }, onPick = { emoji ->

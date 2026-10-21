@@ -1086,3 +1086,61 @@ sequenceDiagram
     S-->>B: over, reason timeout
 ```
 Clients only count down from the snapshot's `clock.left`; the server alone decides `timeout`.
+
+
+## Dictation, letters, media and call repair (2026-10-21)
+
+This additive section supersedes the earlier server-first dictation and per-session TTS lifecycle notes above. No game protocol, game UI or database schema changes belong to this batch. The sibling backend `docs/API-CONTRACT.md` remains the API authority.
+
+```mermaid
+flowchart TD
+    Field[Composer or letter body: saved draft] --> VM[SpeechViewModel: account and conversation token]
+    VM --> Device{Device recognizer available?}
+    Device -->|yes| Recognizer[AndroidDeviceSpeech: main Looper, formatted partials and finals]
+    Recognizer --> Restart[SpeechTranscriber: commit segment, restart after silence or timeout]
+    Restart -->|append, at most 4000 characters| Field
+    Device -->|no| Clip[Separate AAC recording, cap 118 seconds]
+    Clip -->|Stop or cap| Whisper[SpeechRepository: existing transcribe API]
+    Whisper --> Field
+    Stop[Stop, leaving screen or app background] -->|preserve displayed words, retire callbacks| VM
+    Preview[Unsent letter preview] --> Local[Shared lazy device TextToSpeech engine]
+    Viewer[Sent letter viewer] --> Natural[LetterNarrator: authenticated narration parts]
+    Natural -->|unavailable| Local
+    Preview -->|warm on open; Edit, Send, close or ON_STOP stops| Local
+    Viewer -->|warm on open; release stops, retains engine| Local
+```
+
+`myNickname` is what the other member calls the current user; `otherNickname` is what the current user calls the partner. New letters choose From from `myNickname`, saved signature, then `me`; To remains `otherNickname`. Only unsent preview narration uses the device voice directly. The backend starts natural narration with the salutation and first body sentence within its small first-part budget; later parts retain the existing prefetch pipeline.
+
+```mermaid
+flowchart LR
+    Photo[Local photo URI] --> Pending[Close sheet, pending image bubble and local preview]
+    Photo --> Decode[IO: BitmapFactory raw decode, explicit EXIF matrix once]
+    Decode --> Resize[At most 2048 pixels long side, opaque JPEG quality 85]
+    Resize --> Upload[Existing attachment upload then MessageService send]
+    Upload --> Payload[Existing path, width and height payload]
+    Payload --> Shape[Photo placeholder uses payload aspect ratio]
+    Payload --> Cache[Signed URL cache seeded synchronously; Coil key is attachment path]
+    Cache --> Bubble[Photo bubble and full-screen viewer]
+    Header[Header avatar request and cache identity] --> Avatar[Full-screen avatar viewer]
+```
+
+Transparent PNGs and animated GIFs retain their formats; ordinary opaque photos use JPEG. Existing upload-size, decode-memory and membership checks remain. Local pending media is scoped to the active owner/conversation. GIFs use a 200 dp long-side cap. Exactly one emoji grapheme uses the sticker time/receipt-pill presentation; multiple emoji use normal bubbles; mixed text and malformed emoji sequences keep normal bubbles. The latest-message button uses approximately 1.5 viewport heights and smooth scrolling before pinning to new arrivals again.
+
+```mermaid
+sequenceDiagram
+    participant C as CallManager
+    participant M as WebRTC / media collector
+    participant S as Shared InternetTransport socket
+    participant B as Backend call registry
+    C->>M: Finish local call (best-effort device cleanup)
+    Note over C,M: Media failure uses a sibling job because finish cancels the collector
+    C->>S: Ensure connection, await Connected
+    C->>B: call:end using existing signaling seam
+    B->>B: Resolve once and write audio/video call row
+    S--xB: Last participant socket disappears
+    B->>B: Wait 30 seconds; cancel grace on reconnect
+    B->>B: Still absent: resolve and write call row
+```
+
+New `/checkin` creation is removed from Android commands/composer and rejected by the backend. Historical cards, payload decoding, old push handling and exports remain supported. No database constraint is removed. See [the Xiaomi checklist](XIAOMI-FIX-BATCH-2026-10-21.md) for device-only checks; emulator demo checks cannot establish recognizer duration, Railway latency, push delivery or real call quality.
