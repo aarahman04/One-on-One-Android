@@ -182,7 +182,7 @@ class MediaRepository @Inject constructor(
                 try {
                     width = fitted.width; height = fitted.height
                     val encoded = ByteArrayOutputStream()
-                    val png = sourceMime == "image/png"
+                    val png = sourceMime == "image/png" && fitted.hasAlpha()
                     check(fitted.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, PHOTO_QUALITY, encoded)) { "Couldn't encode the image." }
                     bytes = encoded.toByteArray() // Re-encoding pixels drops EXIF/GPS metadata.
                     mime = if (png) "image/png" else "image/jpeg"

@@ -183,7 +183,7 @@ internal fun TypingBubble(visible: Boolean, palette: BubblePalette) {
     }
 }
 
-/** Own voice note / sticker / GIF still uploading: shown at once, replaced by the real message when the send lands. */
+/** Own media still uploading: shown at once, replaced by the real message when the send lands. */
 @Composable
 internal fun PendingMediaBubble(item: FeatureViewModel.PendingMedia, palette: BubblePalette, modifier: Modifier = Modifier) {
     val colors = palette.mine

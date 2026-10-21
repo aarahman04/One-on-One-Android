@@ -287,8 +287,8 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
     val duration = if (message.type == "voice") vm.playbackDuration.collectAsState().value else 0
     val paused = if (message.type == "voice") vm.playbackPaused.collectAsState().value else false
     // Seeded from the in-memory signed-URL cache so a row scrolled back into view draws its photo at once.
-    var url by remember(path) { mutableStateOf(if (message.type == "image" && path.isNotBlank()) vm.media.cachedSignedUrl(connection.id, path) else null) }
-    var urlError by remember(path) { mutableStateOf<String?>(null) }
+    var url by remember(connection.id, path) { mutableStateOf(if (message.type == "image" && path.isNotBlank()) vm.media.cachedSignedUrl(connection.id, path) else null) }
+    var urlError by remember(connection.id, path) { mutableStateOf<String?>(null) }
     var retryUrl by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val letterDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri -> uri?.let { vm.saveLetter(it, message) } }
@@ -311,7 +311,8 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
             delay(55 * 60_000L)
         }
     }
-    FeatureCardContent(message, mine, original, connection, busy, playing, url, urlError,
+    // A cached URL may be identical on retry; recreate Coil's failed painter even then.
+    key(retryUrl) { FeatureCardContent(message, mine, original, connection, busy, playing, url, urlError,
         onSend = { t, body, response, r, done -> vm.send(t, body, response, r, done) },
         onPlay = { if (speech.dictation.value.active) speech.showNotice("Stop dictation before playing a voice note.")
             else { speech.stopNarration(); vm.play(connection.id, it) } },
@@ -323,7 +324,7 @@ fun FeatureCard(message: ChatMessage, mine: Boolean, original: ChatMessage?, con
         speech = speech, onReadLetter = {
             if (!vm.recording.value && !speech.dictation.value.active) vm.stopPlayback()
             speech.readLetter(connection.id, message, vm.recording.value)
-        })
+        }) }
     documentUri?.let { uri ->
         DocumentViewer(uri, payload.text("mime"), payload.text("name"), busy, saveCopy,
             openWith = { openAttachment(context, uri, payload.text("mime")) }, close = { documentUri = null })
@@ -748,7 +749,8 @@ internal fun PhotoViewer(url: Any?, busy: Boolean, save: (() -> Unit)?, close: (
     // Same cache keys as the thumbnail: the small copy shows at once while the full one loads.
     val model = remember(url, cacheKey) {
         if (url == null || cacheKey == null) url
-        else coil3.request.ImageRequest.Builder(context).data(url).memoryCacheKey(cacheKey).diskCacheKey(cacheKey).placeholderMemoryCacheKey(cacheKey).build()
+        else coil3.request.ImageRequest.Builder(context).data(url).memoryCacheKey(cacheKey).diskCacheKey(cacheKey).placeholderMemoryCacheKey(cacheKey)
+            .diskCachePolicy(if (url is java.io.File) coil3.request.CachePolicy.DISABLED else coil3.request.CachePolicy.ENABLED).build()
     }
     var scale by remember(url) { mutableFloatStateOf(1f) }
     var pan by remember(url) { mutableStateOf(Offset.Zero) }
@@ -780,8 +782,8 @@ internal fun PhotoViewer(url: Any?, busy: Boolean, save: (() -> Unit)?, close: (
             AsyncImage(model, "Photo. Pinch or double tap to zoom.", Modifier.fillMaxSize().graphicsLayer {
                 scaleX = scale; scaleY = scale; translationX = pan.x; translationY = pan.y
             }, contentScale = ContentScale.Fit, onSuccess = { imageSize = it.painter.intrinsicSize; photoError = false }, onError = { photoError = true })
-            if (photoError || url == null) Text(if (photoError) "Photo unavailable. Close and retry." else "Loading photo…",
-                color = Color.White, style = OneTextStyles.cardHint)
+            if (photoError) Text("Photo unavailable. Close and retry.", color = Color.White, style = OneTextStyles.cardHint)
+            else if (url == null || imageSize == Size.Zero) CircularProgressIndicator(Modifier.size(28.dp), color = Color.White, strokeWidth = 2.dp)
         }
     }
 }

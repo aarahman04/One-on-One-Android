@@ -97,7 +97,7 @@ internal fun ChatHeader(
     ) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // A photo opens full screen (WhatsApp); the initial alone has nothing to enlarge.
-            var viewing by remember { mutableStateOf(false) }
+            var viewing by remember(photo?.second) { mutableStateOf(false) }
             if (viewing && photo != null) PhotoViewer(photo.first, busy = false, save = null, close = { viewing = false }, cacheKey = photo.second, title = title)
             Box(
                 Modifier.size(OneTheme.sizes.touch40).clip(CircleShape).background(c.accentYou.copy(alpha = .18f).compositeOver(c.bg))
@@ -110,7 +110,7 @@ internal fun ChatHeader(
                 if (photo != null) {
                     val context = LocalContext.current
                     // Keyed by content (file time / avatar id), not by path or the hourly-changing signed URL.
-                    val request = remember(photo.second) {
+                    val request = remember(photo.first, photo.second) {
                         ImageRequest.Builder(context).data(photo.first).memoryCacheKey(photo.second).diskCacheKey(photo.second)
                             .diskCachePolicy(if (photo.first is File) CachePolicy.DISABLED else CachePolicy.ENABLED).build()
                     }
