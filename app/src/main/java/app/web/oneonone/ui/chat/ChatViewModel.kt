@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import javax.inject.Inject
-import app.web.oneonone.data.media.appendDictationText
 
 /** From the Android share sheet: text goes to the draft, an image or file ([kind] image|file) to the attachment preview. */
 data class SharedContent(val text: String?, val uri: String?, val kind: String?)
@@ -66,7 +65,6 @@ class ChatViewModel @Inject constructor(
     fun close(clear: Boolean) = action(showBusy = false) { service.deactivate(clear) }
     fun visible(resumed: Boolean) = service.visible(resumed)
     private var typingSentAt = 0L
-    fun appendDictation(text: String) { draft(appendDictationText(draft.value, text)) }
     fun draft(value: String) {
         saved["draft"] = value.take(4_000)
         // Typing signal: at most every 3 s while there's text; "stopped" once when it empties.

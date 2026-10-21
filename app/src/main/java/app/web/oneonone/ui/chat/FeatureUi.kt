@@ -96,27 +96,41 @@ import kotlin.math.*
 
 @Composable
 fun FeatureComposer(type: String, connection: CurrentConnection, vm: FeatureViewModel, reply: String?, close: () -> Unit,
-    letterMic: (@Composable (append: (String) -> Unit) -> Unit)? = null) {
+    letterMic: (@Composable (body: String, set: (String) -> Unit) -> Unit)? = null,
+    speech: SpeechViewModel? = null, dictating: Boolean = false) {
     val signature by vm.signature.collectAsState()
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
     FeatureComposerContent(type, connection, signature, busy, error, reply,
-        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close, letterMic)
+        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close, letterMic, speech, dictating)
 }
 
 @Composable
 internal fun FeatureComposerContent(type: String, connection: CurrentConnection, signature: String, busy: Boolean, error: String?, reply: String?,
     onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, close: () -> Unit,
-    letterMic: (@Composable (append: (String) -> Unit) -> Unit)? = null) {
+    letterMic: (@Composable (body: String, set: (String) -> Unit) -> Unit)? = null,
+    speech: SpeechViewModel? = null, dictating: Boolean = false) {
     var first by rememberSaveable(type) { mutableStateOf("") }
     var second by rememberSaveable(type) { mutableStateOf("") }
     var third by rememberSaveable(type) { mutableStateOf("") }
-    var from by rememberSaveable(type) { mutableStateOf(signature.ifBlank { "me" }) }
+    val defaultFrom = connection.myNickname?.takeIf { it.isNotBlank() } ?: signature.ifBlank { "me" }
+    var from by rememberSaveable(type) { mutableStateOf(defaultFrom.take(40)) }
+    var fromEdited by rememberSaveable(type) { mutableStateOf(false) }
     var to by rememberSaveable(type) { mutableStateOf(connection.otherNickname?.take(40) ?: "you") }
     var choice by rememberSaveable(type) { mutableStateOf(if (type == "letter") "dawn" else "a") }
     var target by rememberSaveable(type) { mutableStateOf("") }
     var preview by rememberSaveable(type) { mutableStateOf(false) }
-    LaunchedEffect(signature) { if (from == "me" && third.isEmpty() && signature.isNotBlank()) from = signature }
+    LaunchedEffect(defaultFrom) { if (!fromEdited) from = defaultFrom.take(40) }
+    val previewKey = "${connection.id}/${SpeechViewModel.PREVIEW}"
+    val narration = speech?.narration?.collectAsState()?.value?.takeIf { it.key == previewKey } ?: NarrationState()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(preview, speech, lifecycle) {
+        if (preview) speech?.prewarmVoice()
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) speech?.stopNarration(previewKey) }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); speech?.stopNarration(previewKey) }
+    }
+    val dismiss = { speech?.stopNarration(previewKey); close() }
     val context = LocalContext.current
     val payload = buildJsonObject {
         when (type) {
@@ -127,16 +141,26 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
         }
     }
     val valid = runCatching { validateFeaturePayload(connection.id, type, payload); require(type != "letter" || third.isNotBlank()) }.isSuccess
-    FeatureModal(onDismissRequest = { if (!busy) close() }, title = { Text(if (preview) "Preview letter" else CommandTitles[type] ?: type) },
+    FeatureModal(onDismissRequest = { if (!busy && !dictating) dismiss() }, title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (preview) "Preview letter" else CommandTitles[type] ?: type, Modifier.weight(1f))
+            if (preview && speech != null) LetterSpeaker(narration,
+                read = { speech.readPreview(connection.id, to.trim(), third.trim(), from.trim()) },
+                stop = { speech.stopNarration(previewKey) })
+        }
+    },
         text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (preview) LetterBody(ChatMessage(senderId = connection.myUserId, content = third, createdAt = Instant.now().toString(), type = "letter", payload = payload))
+            if (preview) {
+                ChatNotice(narration.notice, warning = true)
+                LetterBody(ChatMessage(senderId = connection.myUserId, content = third, createdAt = Instant.now().toString(), type = "letter", payload = payload))
+            }
             else when (type) {
                 "letter" -> {
                     // Every letter renders as one white handwritten page; the contract still needs an appearance, so it stays "dawn".
-                    Field("From", from, 40) { from = it }; Field("To", to, 40) { to = it }
+                    Field("From", from, 40) { from = it; fromEdited = true }; Field("To", to, 40) { to = it }
                     Field("Your letter", third, 4_000, trailing = letterMic?.let { mic -> {
-                        mic { words -> third = listOf(third.trimEnd(), words.trim()).filter { it.isNotEmpty() }.joinToString(" ").take(4_000) }
-                    } }) { third = it }
+                        mic(third) { words -> third = words.take(4_000) }
+                    } }, enabled = !dictating) { third = it }
                 }
                 "ask" -> { Field("Question", first, 300) { first = it }; Field("Your answer (sealed until they answer)", second, 500) { second = it } }
                 "thisorthat" -> {
@@ -159,15 +183,17 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
             }
             error?.let { Text(it, style = OneTextStyles.cardHint, color = OneTheme.colors.danger) }
         } },
-        confirmButton = { PrimaryButton(if (type == "letter" && !preview) "Preview" else "Send", enabled = valid && !busy, onClick = {
+        confirmButton = { PrimaryButton(if (type == "letter" && !preview) "Preview" else "Send", enabled = valid && !busy && !dictating, onClick = {
             if (type == "letter" && !preview) preview = true
-            else onSend(type, if (type == "letter") third.trim() else "", payload, reply, close)
+            else { speech?.stopNarration(previewKey); onSend(type, if (type == "letter") third.trim() else "", payload, reply, dismiss) }
         }) },
-        dismissButton = { SecondaryButton(if (preview) "Edit" else "Cancel", enabled = !busy, onClick = { if (preview) preview = false else close() }) })
+        dismissButton = { SecondaryButton(if (preview) "Edit" else "Cancel", enabled = !busy && !dictating, onClick = {
+            speech?.stopNarration(previewKey); if (preview) preview = false else dismiss()
+        }) })
 }
 
 @Composable private fun Field(label: String, value: String, maximum: Int, bubble: Boolean = false,
-    trailing: (@Composable () -> Unit)? = null, change: (String) -> Unit) {
+    trailing: (@Composable () -> Unit)? = null, enabled: Boolean = true, change: (String) -> Unit) {
     val hint = if (bubble) LocalBubbleColors.current.text.copy(alpha = .8f) else OneTheme.colors.textDim
     val counter = if (bubble) LocalBubbleColors.current.text.copy(alpha = .8f) else OneTheme.colors.muted
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -177,7 +203,7 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
             trailing()
         }
         OneTextField(value, { change(it.take(maximum)) }, Modifier.fillMaxWidth().then(if (maximum > 1_000) Modifier.heightIn(min = 132.dp, max = 212.dp) else Modifier.heightIn(max = if (maximum > 100) 212.dp else 68.dp)).semantics { contentDescription = label },
-            singleLine = false, textStyle = MaterialTheme.typography.bodyLarge)
+            singleLine = false, enabled = enabled, textStyle = MaterialTheme.typography.bodyLarge)
         Text("${value.length}/$maximum", style = MaterialTheme.typography.labelMedium, color = counter)
     }
 }
@@ -682,6 +708,7 @@ internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () 
     val activity = LocalActivity.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(key, speech, lifecycle) {
+        speech?.prewarmVoice()
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP && activity?.isChangingConfigurations != true) speech?.stopNarration(key)
         }
@@ -705,23 +732,28 @@ internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () 
                     }
                 }
             }
-            if (state.phase == NarrationPhase.Loading) Box(Modifier.size(OneTheme.sizes.touch40).semantics {
-                contentDescription = "Loading narration"; liveRegion = LiveRegionMode.Polite
-            }, contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(Modifier.size(s.xl24), color = c.accentYou, strokeWidth = s.xxs2)
-            } else OneIconButton(when (state.phase) {
-                NarrationPhase.Playing -> R.drawable.ic_pause
-                NarrationPhase.Paused -> R.drawable.ic_play
-                else -> R.drawable.ic_volume
-            }, when (state.phase) {
-                NarrationPhase.Playing -> "Pause"
-                NarrationPhase.Paused -> "Resume"
-                else -> "Read letter aloud"
-            }, read)
-            if (state.phase != NarrationPhase.Idle) OneIconButton(R.drawable.ic_stop, "Stop reading", { speech?.stopNarration(key) })
+            LetterSpeaker(state, read, stop = { speech?.stopNarration(key) })
         }
     }, text = { Column(verticalArrangement = Arrangement.spacedBy(s.sm8)) { ChatNotice(state.notice ?: speechNotice, warning = true); LetterBody(message) } },
         confirmButton = { PrimaryButton("Download PDF", download) }, dismissButton = { SecondaryButton("Close", dismiss) })
+}
+
+@Composable
+private fun LetterSpeaker(state: NarrationState, read: () -> Unit, stop: () -> Unit) {
+    if (state.phase == NarrationPhase.Loading) Box(Modifier.size(OneTheme.sizes.touch40).semantics {
+        contentDescription = "Loading narration"; liveRegion = LiveRegionMode.Polite
+    }, contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(Modifier.size(OneTheme.spacing.xl24), color = OneTheme.colors.accentYou, strokeWidth = OneTheme.spacing.xxs2)
+    } else OneIconButton(when (state.phase) {
+        NarrationPhase.Playing -> R.drawable.ic_pause
+        NarrationPhase.Paused -> R.drawable.ic_play
+        else -> R.drawable.ic_volume
+    }, when (state.phase) {
+        NarrationPhase.Playing -> "Pause"
+        NarrationPhase.Paused -> "Resume"
+        else -> "Read letter aloud"
+    }, read)
+    if (state.phase != NarrationPhase.Idle) OneIconButton(R.drawable.ic_stop, "Stop reading", stop)
 }
 
 @Composable

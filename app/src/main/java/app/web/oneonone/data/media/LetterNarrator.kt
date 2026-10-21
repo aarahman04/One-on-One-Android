@@ -24,6 +24,8 @@ interface NarrationAudio {
     fun abandonFocus()
     suspend fun prepare(file: File, completed: () -> Unit, failed: () -> Unit): NarrationPlayer
     suspend fun deviceVoice(text: String, completed: () -> Unit, failed: () -> Unit): NarrationPlayer
+    /** Starts the device voice engine ahead of [deviceVoice]; main thread, never blocks. */
+    fun prewarm()
 }
 
 /** One letter session, at most two prepared players: the current part and its prefetched successor. */
@@ -43,7 +45,7 @@ class LetterNarrator(private val api: SpeechGateway, private val audio: Narratio
     private var message = ""
     private var text = ""
 
-    fun toggle(connection: String, message: String?, localText: String) {
+    fun toggle(connection: String, message: String?, localText: String, device: Boolean = !server) {
         val key = "$connection/$message"
         if (state.value.key == key && state.value.phase != NarrationPhase.Idle) {
             try { when (state.value.phase) {
@@ -57,7 +59,7 @@ class LetterNarrator(private val api: SpeechGateway, private val audio: Narratio
         mutableState.value = NarrationState(key = key)
         if (message == null) { notice("This letter can't be read aloud"); return }
         this.connection = connection; this.message = message; text = localText
-        begin(device = !server)
+        begin(device)
     }
 
     private fun begin(device: Boolean) {
@@ -75,7 +77,7 @@ class LetterNarrator(private val api: SpeechGateway, private val audio: Narratio
                     val player = audio.deviceVoice(text, { completed(token, 0, work) }, { failed(token, IOException("Device voice failed.")) })
                     if (token != generation) { player.release(); return@launch }
                     current = Track(player, null)
-                    player.start(); update(NarrationPhase.Playing)
+                    player.start(); if (token == generation) update(NarrationPhase.Playing)
                 } else load(0, token, work)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { failed(token, error) }

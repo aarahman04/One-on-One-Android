@@ -14,12 +14,22 @@ import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import java.util.UUID
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/**
+ * App-wide (singleton) so the device TextToSpeech engine is created once, warmed when a letter opens and reused by every
+ * play: binding an engine takes a second or more. Releasing a player stops its speech and keeps the engine warm.
+ * Every engine call is on the main thread.
+ */
+@Singleton
 class AndroidNarrationAudio @Inject constructor(@ApplicationContext private val context: Context) : NarrationAudio {
     private val main = Handler(Looper.getMainLooper())
+    private var engine: TextToSpeech? = null
+    private var engineReady: CompletableDeferred<Int>? = null
     private val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
     private var request: AudioFocusRequest? = null
     override fun focus(onLost: () -> Unit): Boolean {
@@ -64,15 +74,31 @@ class AndroidNarrationAudio @Inject constructor(@ApplicationContext private val 
             if (input != null) withContext(NonCancellable + Dispatchers.IO) { input.close() }
         }
     }
+    override fun prewarm() { warmEngine() }
+    private fun warmEngine(): Pair<TextToSpeech, CompletableDeferred<Int>> {
+        val existing = engine; val ready = engineReady
+        if (existing != null && ready != null) return existing to ready
+        val started = CompletableDeferred<Int>()
+        // The constructor only binds the engine service; initialisation completes on this callback.
+        val tts = TextToSpeech(context) { started.complete(it) }
+        engine = tts; engineReady = started
+        return tts to started
+    }
+    private fun shutdownEngine() {
+        val old = engine; engine = null
+        engineReady?.complete(TextToSpeech.ERROR); engineReady = null
+        old?.shutdown()
+    }
     override suspend fun deviceVoice(text: String, completed: () -> Unit, failed: () -> Unit): NarrationPlayer {
-        val ready = CompletableDeferred<Int>()
-        val tts = TextToSpeech(context) { ready.complete(it) }
-        try {
-            if (withTimeoutOrNull(10_000) { ready.await() } != TextToSpeech.SUCCESS) throw IOException("Device voice unavailable.")
-            tts.setAudioAttributes(attributes)
-            return DeviceVoicePlayer(tts, text, main, completed, failed)
-        } catch (error: Exception) { tts.shutdown(); throw error }
-        finally { ready.cancel() }
+        val (tts, ready) = warmEngine()
+        if (withTimeoutOrNull(10_000) { ready.await() } != TextToSpeech.SUCCESS) {
+            // A failed or stuck engine is dropped so the next attempt binds a fresh one.
+            if (engine === tts) shutdownEngine()
+            throw IOException("Device voice unavailable.")
+        }
+        if (engine !== tts) throw IOException("Device voice unavailable.") // shut down while starting
+        tts.setAudioAttributes(attributes)
+        return DeviceVoicePlayer(tts, text, main, completed, failed)
     }
 }
 
@@ -95,6 +121,7 @@ private class DeviceVoicePlayer(private val tts: TextToSpeech, private val text:
     private var run = 0
     private var released = false
     private var playing = false
+    private val utterancePrefix = UUID.randomUUID().toString()
     override fun start() {
         if (released || playing) return
         playing = true
@@ -104,30 +131,33 @@ private class DeviceVoicePlayer(private val tts: TextToSpeech, private val text:
         val offsets = IntArray(chunks.size)
         for (i in 1 until chunks.size) offsets[i] = offsets[i - 1] + chunks[i - 1].length
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            private fun index(id: String?) = id?.takeIf { it.startsWith("$utterancePrefix-$token-") }?.substringAfterLast('-')?.toIntOrNull()
             override fun onStart(utteranceId: String?) {}
             override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
-                val index = utteranceId?.substringAfterLast('-')?.toIntOrNull() ?: return
+                val index = index(utteranceId) ?: return
                 main.post { if (run == token && !released && index in offsets.indices) offset = base + offsets[index] + start }
             }
             override fun onDone(utteranceId: String?) {
-                val index = utteranceId?.substringAfterLast('-')?.toIntOrNull() ?: return
+                val index = index(utteranceId) ?: return
                 main.post { if (run == token && !released && index in chunks.indices) {
                     offset = base + offsets[index] + chunks[index].length
                     if (index == chunks.lastIndex) { playing = false; completed() }
                 } }
             }
             @Deprecated("Deprecated in Java") override fun onError(utteranceId: String?) {
+                if (index(utteranceId) == null) return
                 main.post { if (run == token && !released) { playing = false; failed() } }
             }
         })
         chunks.forEachIndexed { i, chunk ->
-            if (tts.speak(chunk, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "$token-$i") == TextToSpeech.ERROR) {
-                playing = false; failed(); return
+            if (tts.speak(chunk, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "$utterancePrefix-$token-$i") == TextToSpeech.ERROR) {
+                tts.stop(); playing = false; failed(); return
             }
         }
         if (chunks.isEmpty()) { playing = false; completed() }
     }
     override fun pause() { if (!released && playing) { playing = false; run++; tts.stop() } }
     override fun link(next: NarrationPlayer?) {}
-    override fun release() { if (!released) { released = true; run++; tts.shutdown() } }
+    // The engine is shared (AndroidNarrationAudio), so a released player only silences it.
+    override fun release() { if (!released) { released = true; if (playing) tts.stop(); playing = false; run++ } }
 }
