@@ -1063,3 +1063,26 @@ client remains unchanged. Demo rules mirror the backend; a numerical fixture che
 
 The debug bot stays at its baseline through the countdown, then contacts the waiting ball. Opt-in
 `DemoPong` Logcat frames support repeatable real-touch testing; no debug controls enter release builds.
+
+### Match options and clocks (2026-10-21)
+
+```mermaid
+sequenceDiagram
+    participant A as Inviter app
+    participant S as Backend MatchManager
+    participant B as Invitee app
+    A->>S: match:invite {game, clock?: {base, inc}, points?}
+    S-->>B: match:state (clock / points shown on the invite)
+    B->>S: match:accept
+    S->>S: start clocks, arm flag timer for the side to move
+    loop each move
+        A->>S: match:move
+        S->>S: charge mover, add inc, re-arm timer
+        S-->>A: match:state {clock.left}
+        S-->>B: match:state {clock.left}
+    end
+    S->>S: flag timer / sweep: side to move at 0 ms
+    S-->>A: over, reason timeout
+    S-->>B: over, reason timeout
+```
+Clients only count down from the snapshot's `clock.left`; the server alone decides `timeout`.

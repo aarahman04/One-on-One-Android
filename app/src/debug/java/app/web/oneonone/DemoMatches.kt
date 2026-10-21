@@ -35,19 +35,31 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
     private var rules: Rules? = null
     private var pong: DemoPong? = null
     private var loop: Job? = null
+    // Invite options, mirrored from the server: a turn game's clock and Ping Pong's target score.
+    private var clock: Pair<Long, Long>? = null
+    private var points = 7
+    private val left = longArrayOf(0, 0)
+    private var turnAt = 0L
+    private var ticker: Job? = null
+    private fun now() = System.currentTimeMillis()
+    private fun clockLeft(): List<Long> = List(2) { i ->
+        if (status == "playing" && rules != null && i == turnSeat - 1) max(0L, left[i] - (now() - turnAt)) else left[i]
+    }
 
     private fun snapshot(): JsonObject = buildJsonObject {
         put("id", id); put("game", game); put("status", status); put("inviter", inviter)
         putJsonArray("players") { players.forEach { add(it) } }
         put("turn", if (status == "playing" && rules != null) players[turnSeat - 1] else null)
         put("seq", seq); put("version", version)
-        put("board", rules?.view() ?: pong?.let { p -> buildJsonObject { putJsonArray("score") { add(p.score[0]); add(p.score[1]) } } } ?: JsonNull)
+        put("board", rules?.view() ?: pong?.let { p -> buildJsonObject { putJsonArray("score") { add(p.score[0]); add(p.score[1]) }; put("target", points) } } ?: JsonNull)
         put("outcome", outcome?.let { (w, r) -> buildJsonObject { put("winner", w); put("reason", r) } } ?: JsonNull)
         put("drawOffer", null as String?)
         putJsonArray("rematch") { rematch.forEach { add(it) } }
         putJsonObject("series") { series.forEach { (k, v) -> put(k, v) } }
         putJsonArray("away") {}
         put("paused", false)
+        clock?.let { (base, inc) -> putJsonObject("clock") { put("base", base); put("inc", inc); putJsonArray("left") { clockLeft().forEach { add(it) } } } }
+        put("points", if (game == "pong") points else null)
     }
     private fun publish() { version++; states.tryEmit(snapshot()) }
     private fun ack(ok: Boolean = true, error: String? = null) = buildJsonObject {
@@ -59,8 +71,16 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
         id = UUID.randomUUID().toString(); game = kind; players = seats; status = "playing"; seq = 0
         outcome = null; rematch = mutableSetOf(); turnSeat = 1
         rules = when (kind) { "chess" -> Chess(); "tictactoe" -> Grid(3); "connect4" -> Grid(7); "reversi" -> Reversi(); else -> null }
-        pong = if (kind == "pong") DemoPong() else null
+        pong = if (kind == "pong") DemoPong(target = points) else null
         pong?.let { p -> loop = scope.launch { runPong(p) } }
+        clock?.let { (base, _) -> left.fill(base); turnAt = now() }
+        ticker?.cancel()
+        if (clock != null && rules != null) ticker = scope.launch {
+            while (status == "playing") {
+                delay(200)
+                if (status == "playing" && clockLeft()[turnSeat - 1] <= 0L) { left[turnSeat - 1] = 0; finish(3 - turnSeat, "timeout"); publish() }
+            }
+        }
         publish()
         botTurn()
     }
@@ -68,7 +88,8 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
     private fun finish(winnerSeat: Int, reason: String) {
         val winner = if (winnerSeat == 0) null else players[winnerSeat - 1]
         winner?.let { series[it] = (series[it] ?: 0) + 1 }
-        outcome = winner to reason; status = "over"; loop?.cancel()
+        if (status == "playing" && clock != null && rules != null) left[turnSeat - 1] = clockLeft()[turnSeat - 1]
+        outcome = winner to reason; status = "over"; loop?.cancel(); ticker?.cancel()
     }
 
     private fun botTurn() {
@@ -82,7 +103,9 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
 
     private fun applyMove(move: JsonObject): String? {
         val r = rules ?: return "bad_state"
+        val mover = turnSeat
         val error = r.apply(turnSeat, move) ?: run {
+            clock?.let { (_, inc) -> left[mover - 1] = max(0L, left[mover - 1] - (now() - turnAt)) + inc; turnAt = now() }
             seq++
             val o = r.outcome
             if (o != null) finish(o.first, o.second) else turnSeat = r.turn
@@ -99,6 +122,8 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
             "match:invite" -> {
                 val kind = p["game"]!!.jsonPrimitive.content
                 if (kind != game) series.keys.forEach { series[it] = 0 } // the server keeps a series per game
+                clock = (p["clock"] as? JsonObject)?.let { it["base"]!!.jsonPrimitive.long to it["inc"]!!.jsonPrimitive.long }?.takeIf { kind != "pong" }
+                points = p["points"]?.jsonPrimitive?.intOrNull ?: 7
                 id = UUID.randomUUID().toString(); game = kind; status = "invited"; inviter = me
                 players = listOf(me, partner); outcome = null; rules = null; pong = null
                 publish()
@@ -153,7 +178,7 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
             if (p.scored) { p.scored = false; publish() }
             delay(16)
         }
-        p.outcome?.let { finish(it, "first_to_7"); publish() }
+        p.outcome?.let { finish(it, if (points == 7) "first_to_7" else "first_to_points"); publish() }
     }
 
     private interface Rules {

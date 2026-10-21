@@ -4,7 +4,7 @@ import kotlinx.serialization.json.*
 import kotlin.math.*
 
 /** Local demo mirror of backend PongSim. It never supplies production game state. */
-internal class DemoPong(private val random: () -> Double = { kotlin.random.Random.nextDouble() }) {
+internal class DemoPong(private val random: () -> Double = { kotlin.random.Random.nextDouble() }, private val target: Int = 7) {
     val courtH = 1.8
     val paddles = doubleArrayOf(.5, .5)
     val paddleY = doubleArrayOf(courtH + .08, -.08)
@@ -136,7 +136,7 @@ internal class DemoPong(private val random: () -> Double = { kotlin.random.Rando
         flight = null; lastHit = 0; landed = false; spin = 0.0; razor = false
         x = .5; y = serveY(); z = 2 / 12.16; vx = 0.0; vy = 0.0; vz = 0.0
         strokes.forEach { it.fill(0.0) }; moved.fill(-1.0); samples.forEach { it.clear() }
-        if (score[seat - 1] >= 7) outcome = seat else countdown = 1000.0
+        if (score[seat - 1] >= target) outcome = seat else countdown = 1000.0
     }
     fun frame(id: String) = buildJsonObject {
         fun array(name: String, values: Iterable<Number>) { putJsonArray(name) { values.forEach { add(round(it.toDouble() * 10000) / 10000) } } }

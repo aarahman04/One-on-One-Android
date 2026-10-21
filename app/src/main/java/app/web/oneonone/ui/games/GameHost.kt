@@ -54,16 +54,21 @@ fun GameHost(vm: GameViewModel, connection: CurrentConnection, photo: Pair<Any, 
         vm.foreground(lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
         onDispose { lifecycle.removeObserver(observer); vm.foreground(false) }
     }
+    var chosen by rememberSaveable(state.stage == GameStage.Hub) { mutableStateOf<GameKind?>(null) }
     if (state.stage == GameStage.Hub) ModalBottomSheet(onDismissRequest = vm::dismissHub, containerColor = c.bgRaised,
         shape = RoundedCornerShape(topStart = OneTheme.radii.lg16, topEnd = OneTheme.radii.lg16)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = s.xl24).padding(bottom = s.xl24),
             verticalArrangement = Arrangement.spacedBy(s.md12)) {
+            chosen?.let { kind ->
+                InviteOptions(kind, vm.nickname, onBack = { chosen = null }, onInvite = { options -> chosen = null; vm.invite(kind, options) })
+                return@Column
+            }
             Text("A little time together", style = OneTextStyles.screenTitle, color = c.text)
             Text("Choose a game to play with ${vm.nickname}.", style = OneTextStyles.subtitle, color = c.textDim)
             Spacer(Modifier.height(s.xs4))
             GameKind.entries.filter { it != GameKind.Dots }.forEach { kind ->
                 val vector = remember(kind, c.accentYou) { gameVector(kind.wire, c.accentYou) }
-                Surface(onClick = { vm.invite(kind) }, shape = RoundedCornerShape(OneTheme.radii.lg16),
+                Surface(onClick = { chosen = kind }, shape = RoundedCornerShape(OneTheme.radii.lg16),
                     color = c.bg, border = BorderStroke(1.dp, c.border), modifier = Modifier.semantics { role = Role.Button }) {
                     Row(Modifier.fillMaxWidth().padding(s.lg16), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(s.lg16)) {
@@ -89,6 +94,7 @@ fun GameHost(vm: GameViewModel, connection: CurrentConnection, photo: Pair<Any, 
             Column(verticalArrangement = Arrangement.spacedBy(s.lg16)) {
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = c.accentYou, trackColor = c.border)
                 Text("Waiting for ${vm.nickname}…", Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                state.match?.let(::optionsLabel)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = c.textDim) }
                 Text("The invitation expires in 30 seconds.", style = MaterialTheme.typography.bodySmall, color = c.textDim)
             }
         }, confirmButton = { SecondaryButton("Cancel", vm::cancelInvite) })
@@ -107,7 +113,7 @@ fun GameInviteBanner(vm: GameViewModel) {
     Surface(color = c.bgRaised, border = BorderStroke(1.dp, c.accentOther.copy(alpha = .4f)),
         shape = RoundedCornerShape(OneTheme.radii.lg16), modifier = Modifier.padding(s.md12)) {
         Column(Modifier.fillMaxWidth().padding(s.lg16), verticalArrangement = Arrangement.spacedBy(s.md12)) {
-            Text("${vm.nickname} wants to play ${state.match?.game?.title.orEmpty()}", color = c.text, style = MaterialTheme.typography.titleMedium,
+            Text("${vm.nickname} wants to play ${listOfNotNull(state.match?.game?.title, state.match?.let(::optionsLabel)).joinToString(" · ")}", color = c.text, style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             Row(horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
                 PrimaryButton("Accept", vm::accept, Modifier.weight(1f))
@@ -151,10 +157,11 @@ internal fun outcomeDetail(match: Match, me: String, nickname: String): String {
         "most_boxes" -> DotsView.from(match.board)?.let { "${it.score(match.seat(me))}–${it.score(3 - match.seat(me))} boxes" } ?: "Most boxes"
         "most_discs" -> ReversiView.from(match.board)?.let { "${it.count(match.seat(me))}–${it.count(3 - match.seat(me))} discs" } ?: "Most discs"
         "equal_discs" -> "Equal discs"
-        "first_to_7" -> (match.board?.get("score") as? kotlinx.serialization.json.JsonArray)?.let { score ->
+        "first_to_7", "first_to_points" -> (match.board?.get("score") as? kotlinx.serialization.json.JsonArray)?.let { score ->
             val seat = match.seat(me)
-            "${score[seat - 1]}–${score[2 - seat]} · first to 7"
-        } ?: "First to 7"
+            "${score[seat - 1]}–${score[2 - seat]} · first to ${match.points ?: 7}"
+        } ?: "First to ${match.points ?: 7}"
+        "timeout" -> if (won) "$nickname ran out of time" else "You ran out of time"
         "resigned" -> if (won) "$nickname resigned" else "You resigned"
         "left" -> if (won) "$nickname left the game" else "You left the game"
         "abandoned" -> when { won -> "$nickname didn't come back in time"; outcome.winner == null -> "Both players were away"; else -> "You were away too long" }
@@ -196,7 +203,7 @@ private fun GameSurface(vm: GameViewModel, state: GameUi, photo: Pair<Any, Strin
                 }
                 Column(Modifier.weight(1f)) {
                     Text(vm.nickname, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                    Text(listOfNotNull(match.game.title, series).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = c.textDim, maxLines = 1)
+                    Text(listOfNotNull(match.game.title, optionsLabel(match), series).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = c.textDim, maxLines = 1)
                 }
                 if (state.stage == GameStage.Playing) TextLink("Resign", { onConfirm("resign") })
             }
@@ -254,6 +261,14 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds
                 }
                 Text(status, style = MaterialTheme.typography.titleLarge, color = if (match.turn == state.me) c.text else c.textDim,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                rememberClockLeft(match)?.let { left ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(s.md12), verticalAlignment = Alignment.CenterVertically) {
+                        Text("You", color = c.textDim, style = MaterialTheme.typography.labelLarge)
+                        ClockChip(left[state.seat - 1], match.turn == state.me, "Your")
+                        ClockChip(left[2 - state.seat], match.turn == state.partner, "${vm.nickname}'s")
+                        Text(vm.nickname, color = c.textDim, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    }
+                }
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = s.md12), contentAlignment = Alignment.Center) {
                 Box(Modifier.size(minOf(maxWidth, maxHeight))) { GameBoard(vm, state) }

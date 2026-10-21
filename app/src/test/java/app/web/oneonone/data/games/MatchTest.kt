@@ -44,6 +44,26 @@ class MatchTest {
         assertEquals(MatchOutcome(null, "agreement"), over.outcome)
     }
 
+    @Test fun decodesClocksAndTargetScoreAndFormatsThem() {
+        fun with(build: JsonObjectBuilder.() -> Unit) = MatchCodec.decode(JsonObject(matchJson() + buildJsonObject(build)))
+        val timed = with { putJsonObject("clock") { put("base", 600_000); put("inc", 5_000); putJsonArray("left") { add(598_000); add(600_000) } } }!!
+        assertEquals(MatchClock(600_000, 5_000, listOf(598_000L, 600_000L)), timed.clock)
+        assertNull(MatchCodec.decode(matchJson())!!.clock) // no clock = no time limit
+        assertNull(with { putJsonObject("clock") { put("base", 600_000); put("inc", 0); putJsonArray("left") { add(-1); add(0) } } })
+        assertNull(with { putJsonObject("clock") { put("base", "10"); put("inc", 0); putJsonArray("left") { add(1); add(1) } } })
+        assertEquals(21, with { put("points", 21) }!!.points)
+        assertNull(with { put("points", 500) }!!.points) // out of range: ignored, the default 7 applies
+        assertEquals("10 min", clockLabel(600_000, 0))
+        assertEquals("3 min + 2 s", clockLabel(180_000, 2_000))
+        assertEquals("1 h", clockLabel(3_600_000, 0))
+        assertEquals("1 min 30 s", clockLabel(90_000, 0))
+        assertEquals("30 s", clockLabel(30_000, 0))
+        assertEquals("4:59", clockFace(299_400))
+        assertEquals("0:09.4", clockFace(9_450))
+        assertEquals("1:00:00", clockFace(3_600_000))
+        assertEquals("0:00.0", clockFace(-5))
+    }
+
     @Test fun stageFollowsServerStatusAndDismissal() {
         fun m(status: String, inviter: String = "me", reason: String? = null) =
             MatchCodec.decode(matchJson(status = status, inviter = inviter, turn = null, outcome = reason?.let { outcome(null, it) }))

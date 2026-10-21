@@ -59,7 +59,7 @@ class PongClient(val seat: Int) {
             val b = numbers("b", 4)
             val p = numbers("p", 2)
             val s = (data["s"] as JsonArray).map { (it as JsonPrimitive).int }
-            require(s.size == 2 && s.all { it in 0..7 })
+            require(s.size == 2 && s.all { it in 0..99 })
             val r = if (data["r"] != null) numbers("r", 2) else floatArrayOf(CourtH, 0f)
             val z = if (data["z"] != null) numbers("z", 2) else floatArrayOf(0f, 0f)
             val curve = if (data["a"] != null && data["a"] !is JsonNull) numbers("a", 14) else null

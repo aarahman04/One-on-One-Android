@@ -119,7 +119,7 @@ class PongClientTest {
         val invalid = listOf(
             frame(listOf(1f)), frame(listOf(.5f, Float.NaN, 0f, 0f)),
             frame { put("spin", "broken") }, frame { put("serve", 3) },
-            frame { putJsonArray("s") { add(8); add(0) } }, frame { putJsonArray("a") { add(0) } },
+            frame { putJsonArray("s") { add(100); add(0) } }, frame { putJsonArray("a") { add(0) } },
         )
         invalid.forEach { assertFalse(p.receive(it, "m", 2 * ms)) }
         assertEquals(.2f, p.ballX, 0f); assertEquals(4, p.myScore)

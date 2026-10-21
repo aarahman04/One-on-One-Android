@@ -123,6 +123,16 @@ class MatchSessionTest {
         assertTrue(ch.calls.drop(1).all { it.second["matchId"]!!.jsonPrimitive.content == "m1" })
     }
 
+    @Test fun inviteCarriesTheChosenClockOrTargetScore() = runTest {
+        val (s, ch) = session()
+        s.invite(GameKind.Chess, MatchOptions(clock = 180_000L to 2_000L)); runCurrent()
+        assertEquals(buildJsonObject { put("base", 180_000L); put("inc", 2_000L) }, ch.calls.last().second["clock"])
+        s.invite(GameKind.Pong, MatchOptions(points = 21)); runCurrent()
+        assertEquals(21, ch.calls.last().second["points"]!!.jsonPrimitive.int)
+        s.invite(GameKind.TicTacToe); runCurrent()
+        assertNull(ch.calls.last().second["clock"]) // no limit: no clock sent
+    }
+
     @Test fun releaseUsesTheSameThrottleAndTheLatestPosition() = runTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()

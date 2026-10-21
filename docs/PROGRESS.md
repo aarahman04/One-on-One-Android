@@ -1798,3 +1798,30 @@ devices and genuine two-account Android play remain unverified; see the linked h
 - [ ] Variable network latency: smooth bounded prediction, no artificial wall/hold or duplicate bounce.
 - [ ] Background/resume pauses both sides and preserves score; rematch resets and swaps seats.
 - [ ] Physical frame timing, touch calibration and haptics; emulator numbers are not a phone benchmark.
+
+## Games round 3 (2026-10-21, `claude/games-round-3`, supersedes PR #43)
+
+- Chess: fixed the move preview flashing the starting position (`ChessView.played` loaded the new
+  Board's own FEN through the `apply` receiver); parsed view cached per server board so the slide
+  animation no longer stutters; classic black-and-white board (Reversi keeps green felt).
+- Clocks for every turn game (backend PR #122): presets No limit / 1 / 2 / 5 / 10 min / 1 hour, or
+  custom time each (10 s..3 h) plus a per-move bonus (0..60 s). Defaults: chess 10 min, Reversi 5,
+  Connect 4 2, Tic-Tac-Toe 1 (No limit one tap away). Server decides `timeout`; clients count down.
+- Ping Pong: target score (7 / 11 / 21 / custom 1..99); relative racket drag (no jump on touch, the
+  finger can steer from below); depth controlled by swipe speed from short to the end line, only a
+  smash goes long; jitter-resistant stroke window; capped bounce spin (no sideways exploit near the
+  net) plus a rare razor spin with a hot trail; hit/bounce sounds; app-accent table, bats and ball.
+- Tic-Tac-Toe and Connect 4 draw your own move instantly; board taps no longer flash a white box.
+- Verified: backend 102/102 + tsc; Android 216 unit tests, assembleDebug, lintDebug; emulator
+  demo screens checked. Not verified: physical phones, real two-account play, real network latency.
+
+### Xiaomi / two-phone checklist (games round 3)
+
+- [ ] Chess on both phones: move a pawn two squares mid-game; the board never flashes back.
+- [ ] Each clock preset and a custom clock; the side to move counts down on both phones; running
+      out shows "ran out of time" on both; No limit shows no clocks.
+- [ ] Ping Pong first to 11 and a custom target; scoreboard and result show the target.
+- [ ] Ping Pong strokes: soft touch lands short, strong swipe lands deep, smash goes long; diagonal
+      reaches near the corners; brushed spin bends and turns at the bounce, never straight sideways.
+- [ ] Racket never jumps when touching the screen; hit and bounce sounds play at media volume.
+- [ ] Tic-Tac-Toe / Connect 4: your mark appears immediately; no white box on tap.

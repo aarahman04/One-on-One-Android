@@ -302,7 +302,8 @@ private fun PromotionPicker(options: List<String>, white: Boolean, tile: android
 
 /** Name, avatar, captured pieces with the material lead, and whose move it is. */
 @Composable
-internal fun ChessPlayerBar(name: String, photo: Any?, white: Boolean, view: ChessView?, active: Boolean, status: String?) {
+internal fun ChessPlayerBar(name: String, photo: Any?, white: Boolean, view: ChessView?, active: Boolean, status: String?,
+                            clock: @Composable (() -> Unit)? = null) {
     val c = OneTheme.colors
     val s = OneTheme.spacing
     val taken = view?.captured(!white).orEmpty() // pieces of the other colour this player has taken
@@ -327,6 +328,7 @@ internal fun ChessPlayerBar(name: String, photo: Any?, white: Boolean, view: Che
             Text(status, Modifier.padding(horizontal = s.sm8, vertical = s.xxs2).semantics { liveRegion = LiveRegionMode.Polite },
                 style = MaterialTheme.typography.labelMedium, color = if (active) c.accentYou else c.textDim)
         }
+        clock?.invoke()
     }
 }
 
@@ -363,6 +365,7 @@ internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifie
     val playing = match.status == MatchStatus.Playing
     val partnerAway = state.partner in match.away
     val myTurn = playing && match.turn == state.me
+    val left = rememberClockLeft(match)
     Column(modifier.fillMaxWidth()) {
         ChessMoveList(view?.history.orEmpty())
         // Bar, board, bar stay together as one block, centred in the space left over.
@@ -375,7 +378,7 @@ internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifie
                         partnerAway -> "Reconnecting…"
                         !myTurn -> "Thinking…"
                         else -> null
-                    })
+                    }, clock = left?.let { { ClockChip(it[2 - state.seat], playing && !myTurn, "${vm.nickname}'s") } })
                 }
                 Box(Modifier.size(side)) {
                     if (view != null) ChessBoard(match.id, view, state.seat, enabled = state.myTurn && !match.paused, busy = state.busy, sounds = sounds, move = vm::move)
@@ -386,7 +389,7 @@ internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifie
                         myTurn && view?.checkSquare?.let { it >= 0 } == true -> "Check · your move"
                         myTurn -> "Your move"
                         else -> null
-                    })
+                    }, clock = left?.let { { ClockChip(it[state.seat - 1], myTurn, "Your") } })
                 }
             }
         }

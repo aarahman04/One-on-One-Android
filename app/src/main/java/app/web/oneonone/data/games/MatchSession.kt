@@ -94,7 +94,11 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     }
 
     fun sync() = send("match:sync")
-    fun invite(kind: GameKind) = send("match:invite") { put("game", kind.wire) }
+    fun invite(kind: GameKind, options: MatchOptions = MatchOptions()) = send("match:invite") {
+        put("game", kind.wire)
+        options.clock?.let { (base, inc) -> putJsonObject("clock") { put("base", base); put("inc", inc) } }
+        options.points?.let { put("points", it) }
+    }
     fun accept() = onMatch("match:accept")
     fun decline() = onMatch("match:decline")
     fun leave() = onMatch("match:leave")

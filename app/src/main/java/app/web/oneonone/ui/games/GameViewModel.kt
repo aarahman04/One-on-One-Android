@@ -88,11 +88,11 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         if (ui.value.stage in setOf(GameStage.Idle, GameStage.Result)) { dismissed.value = ui.value.match?.id; hub.value = true }
     }
     fun dismissHub() { hub.value = false }
-    fun invite(kind: GameKind) {
+    fun invite(kind: GameKind, options: MatchOptions = MatchOptions()) {
         if (!online || !scoped) { offlineNotice(); return }
         if (ui.value.stage !in setOf(GameStage.Idle, GameStage.Hub, GameStage.Result)) return
         dismissed.value = null; hub.value = false
-        session.invite(kind)
+        session.invite(kind, options)
     }
     fun accept() { if (ui.value.stage == GameStage.Incoming) session.accept() }
     fun decline() { if (ui.value.stage == GameStage.Incoming) session.decline() }

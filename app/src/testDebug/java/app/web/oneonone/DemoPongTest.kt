@@ -16,7 +16,7 @@ class DemoPongTest {
     }
 
     @Test fun demoUsesTheBackendStrokeFixtureAndProducesAReadableFrame() {
-        val p = DemoPong { .5 } // the backend fixture's roll: no razor spin
+        val p = DemoPong(random = { .5 }) // the backend fixture's roll: no razor spin
         p.paddle(2, .2, .21); p.step(3000.0)
         p.paddle(2, .2, .21); p.step(16.0)
         p.paddle(2, .5, .24); p.step(8.0); p.step(64.0)

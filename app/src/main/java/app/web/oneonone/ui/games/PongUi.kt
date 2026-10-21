@@ -79,7 +79,7 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
     }
     val paused = match.paused || state.partner in match.away
     Column(modifier.fillMaxWidth()) {
-        PongScoreboard(hud.mine, hud.theirs, vm.nickname)
+        PongScoreboard(hud.mine, hud.theirs, vm.nickname, match.points ?: 7)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             val unit = minOf(maxWidth / (1 + 2 * MarginX), maxHeight / (PongClient.CourtH + MarginTop + MarginBottom))
             Box(Modifier.size(unit * (1 + 2 * MarginX), unit * (PongClient.CourtH + MarginTop + MarginBottom))) {
@@ -113,16 +113,16 @@ private fun CourtNotice(text: String, modifier: Modifier) {
 }
 
 @Composable
-private fun PongScoreboard(mine: Int, theirs: Int, nickname: String) {
+private fun PongScoreboard(mine: Int, theirs: Int, nickname: String, target: Int) {
     val c = OneTheme.colors
     Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp),
         color = c.bgRaised, border = BorderStroke(1.dp, c.border)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics(mergeDescendants = true) {
-            contentDescription = "You $mine, $nickname $theirs, first to 7"
+            contentDescription = "You $mine, $nickname $theirs, first to $target"
         }, verticalAlignment = Alignment.CenterVertically) {
             Text("You", color = c.accentYou, style = MaterialTheme.typography.labelLarge)
             AnimatedContent(mine, Modifier.padding(start = 12.dp), label = "your score") { Text("$it", color = c.text, fontSize = 26.sp, fontWeight = FontWeight.Bold) }
-            Text("first to 7", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            Text("first to $target", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 style = MaterialTheme.typography.labelSmall, color = c.muted)
             AnimatedContent(theirs, Modifier.padding(end = 12.dp), label = "their score") { Text("$it", color = c.text, fontSize = 26.sp, fontWeight = FontWeight.Bold) }
             Text(nickname, color = c.accentOther, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.widthIn(max = 92.dp))
