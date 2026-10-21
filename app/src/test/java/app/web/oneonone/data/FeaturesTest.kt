@@ -92,6 +92,11 @@ class FeaturesTest {
         assertTrue(store.rows.value.isEmpty())
     }
 
+    @Test fun removedCheckinCommandKeepsLegacyContentReadable() {
+        assertFalse("checkin" in FeatureCommands)
+        assertEquals("still here", featureContent("checkin", obj("mood" to "good", "note" to "still here")))
+    }
+
     @Test fun structuredPayloadsMatchContractAndRejectBoundaryViolations() {
         val valid = mapOf(
             "letter" to obj("appearance" to "dawn", "from" to "me", "to" to "you"),
