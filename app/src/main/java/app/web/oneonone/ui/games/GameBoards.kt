@@ -59,9 +59,10 @@ internal fun CellGrid(rows: Int, columns: Int, description: (Int) -> String, ena
 private fun TicTacToeBoard(matchId: String, game: GridView, seat: Int, enabled: Boolean, move: (JsonObject) -> Unit) {
     val c = OneTheme.colors
     val motion = OneTheme.motion
-    val progress = remember(matchId) { Animatable(1f) }
+    // Animation state is created per move, so its first frame already starts from zero (no flash of the final state).
+    val progress = remember(matchId, game.last) { Animatable(if (game.last >= 0) 0f else 1f) }
     val win = remember(matchId) { Animatable(0f) }
-    LaunchedEffect(game.last) { if (game.last >= 0) { progress.snapTo(0f); progress.animateTo(1f, tween(motion.base200, easing = motion.standard)) } }
+    LaunchedEffect(progress) { progress.animateTo(1f, tween(motion.base200, easing = motion.standard)) }
     // The winning line strikes through once the last mark is drawn.
     LaunchedEffect(game.line.size) { if (game.line.isNotEmpty()) win.animateTo(1f, tween(motion.slow320, delayMillis = motion.base200, easing = motion.emphasized)) }
     val stroke = with(LocalDensity.current) { OneTheme.spacing.xs4.toPx() }
@@ -99,13 +100,12 @@ private fun TicTacToeBoard(matchId: String, game: GridView, seat: Int, enabled: 
 private fun ConnectFourBoard(matchId: String, game: GridView, seat: Int, enabled: Boolean, move: (JsonObject) -> Unit) {
     val c = OneTheme.colors
     val motion = OneTheme.motion
-    val drop = remember(matchId) { Animatable(1f) }
+    val drop = remember(matchId, game.last) { Animatable(if (game.last >= 0) 0f else 1f) }
     val glow = remember(matchId) { Animatable(0f) }
-    LaunchedEffect(game.last) {
+    LaunchedEffect(drop) {
         if (game.last < 0) return@LaunchedEffect
         // Falls like a disc: accelerating, longer from higher up, then a small settle bounce on landing.
         val rows = game.last / 7 + 1
-        drop.snapTo(0f)
         drop.animateTo(1f, tween(dropMillis(rows), easing = Gravity))
         drop.animateTo(1f, spring(.45f, 1400f), initialVelocity = -6f / rows) // same ~0.15-row hop from any height
     }
@@ -187,12 +187,10 @@ private const val FlipStaggerMs = 70
 @Composable
 private fun ReversiBoard(matchId: String, game: ReversiView, seat: Int, enabled: Boolean, move: (JsonObject) -> Unit) {
     val c = OneTheme.colors
-    val clock = remember(matchId) { Animatable(Float.MAX_VALUE) }
+    val clock = remember(matchId, game.last, game.flipped.size) { Animatable(if (game.last >= 0) 0f else Float.MAX_VALUE) }
     val waves = (game.flipped.maxOfOrNull { game.flipRank(it) } ?: 0) + 1
     val total = 120 + waves * FlipStaggerMs + FlipMs
-    LaunchedEffect(game.last, game.flipped.size) {
-        if (game.last >= 0) { clock.snapTo(0f); clock.animateTo(total.toFloat(), tween(total, easing = LinearEasing)) }
-    }
+    LaunchedEffect(clock) { if (game.last >= 0) clock.animateTo(total.toFloat(), tween(total, easing = LinearEasing)) }
     val flipped = remember(game) { game.flipped.toHashSet() }
     Box(Modifier.fillMaxSize().clip(RoundedCornerShape(OneTheme.radii.sm6)).background(ChessColors.dark)) {
         Canvas(Modifier.fillMaxSize()) {

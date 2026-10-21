@@ -221,7 +221,7 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds
             verticalAlignment = Alignment.CenterVertically) {
             Text(when (match.game) {
                 GameKind.Chess -> "Tap or drag a piece"
-                GameKind.Pong -> "Drag left and right to move your racket"
+                GameKind.Pong -> "Drag to move your racket"
                 GameKind.Connect4 -> "Tap a column"
                 GameKind.TicTacToe -> "Tap an empty square"
                 GameKind.Dots -> "Close a box to go again"
