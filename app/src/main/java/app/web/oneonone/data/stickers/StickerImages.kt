@@ -5,8 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Build
@@ -16,12 +14,7 @@ import androidx.core.graphics.scale
 import app.web.oneonone.R
 import app.web.oneonone.data.media.orientLegacy
 import app.web.oneonone.data.media.readBounded
-import com.google.mediapipe.framework.image.BitmapImageBuilder
-import com.google.mediapipe.framework.image.ByteBufferExtractor
-import com.google.mediapipe.tasks.core.BaseOptions
-import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter
 import java.io.ByteArrayOutputStream
-import java.nio.ByteOrder
 import kotlin.math.max
 
 /** Decode, orient and bound memory before inference. Call on an IO worker. */
@@ -41,38 +34,6 @@ internal fun decodeStickerPhoto(context: Context, uri: Uri): Bitmap {
     if (max(oriented.width, oriented.height) <= 1024) return oriented
     val (w, h) = stickerDimensions(oriented.width, oriented.height, 1024)
     return oriented.scale(w, h).also { if (it !== oriented) oriented.recycle() }
-}
-
-/** Bundled CPU model; no download, service, network client or credential is used. */
-internal fun cutOutSticker(context: Context, original: Bitmap): Bitmap? {
-    val options = ImageSegmenter.ImageSegmenterOptions.builder()
-        .setBaseOptions(BaseOptions.builder().setModelAssetPath("stickers/deeplab_v3.tflite").build())
-        .setOutputCategoryMask(false).setOutputConfidenceMasks(true).build()
-    return ImageSegmenter.createFromOptions(context, options).use { segmenter ->
-        // MPImage.close recycles its bitmap; the UI must keep Original available.
-        BitmapImageBuilder(original.copy(Bitmap.Config.ARGB_8888, false)).build().use input@ { input ->
-            val masks = segmenter.segment(input).confidenceMasks().orElseThrow { IllegalStateException("No subject found.") }
-            try {
-                val background = masks.first()
-                val confidence = ByteBufferExtractor.extract(background).order(ByteOrder.nativeOrder()).asFloatBuffer()
-                val pixels = IntArray(background.width * background.height)
-                var subjectPixels = 0
-                for (i in pixels.indices) {
-                    val value = confidence.get(i)
-                    if (value.isFinite() && value < .5f) subjectPixels++
-                    pixels[i] = (foregroundAlpha(value) shl 24) or 0x00FFFFFF
-                }
-                if (subjectPixels < max(16, pixels.size / 200)) return@input null
-                val mask = Bitmap.createBitmap(pixels, background.width, background.height, Bitmap.Config.ARGB_8888)
-                try {
-                    val result = original.copy(Bitmap.Config.ARGB_8888, true)
-                    val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) }
-                    Canvas(result).drawBitmap(mask, null, RectF(0f, 0f, result.width.toFloat(), result.height.toFloat()), paint)
-                    result
-                } finally { mask.recycle() }
-            } finally { masks.forEach { it.close() } }
-        }
-    }.also { check(!original.isRecycled) { "Couldn't keep the original photo." } }
 }
 
 internal fun trimSticker(source: Bitmap, trim: StickerTrim): Bitmap {

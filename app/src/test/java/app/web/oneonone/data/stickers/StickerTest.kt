@@ -71,10 +71,29 @@ class StickerTest {
         assertTrue(runCatching { encodeStickerWebP { byteArrayOf() } }.isFailure)
     }
 
-    @Test fun maskPreservesSoftEdgesButClearsBackgroundAndInvalidConfidence() {
-        assertEquals(0, foregroundAlpha(1f)); assertEquals(255, foregroundAlpha(0f))
-        assertEquals(128, foregroundAlpha(.5f))
-        assertEquals(0, foregroundAlpha(Float.NaN))
+    @Test fun birefnetLogitsPreserveSoftEdgesAndClearBackgroundAndInvalidValues() {
+        assertEquals(0, biRefNetAlpha(-20f)); assertEquals(255, biRefNetAlpha(20f))
+        assertEquals(128, biRefNetAlpha(0f))
+        assertEquals(69, biRefNetAlpha(-1f)); assertEquals(186, biRefNetAlpha(1f))
+        assertEquals(0, biRefNetAlpha(Float.NaN))
+        assertEquals(0, biRefNetAlpha(Float.POSITIVE_INFINITY))
+    }
+
+    @Test fun birefnetNormalizesRgbInPlanarOrderWithoutChangingOriginalPixels() {
+        val pixels = intArrayOf(0xffff0000.toInt(), 0xff00ff80.toInt())
+        val original = pixels.copyOf()
+        assertArrayEquals(floatArrayOf(
+            (1f - .485f) / .229f, -.485f / .229f,
+            -.456f / .224f, (1f - .456f) / .224f,
+            -.406f / .225f, (128 / 255f - .406f) / .225f,
+        ), biRefNetRgb(pixels), 1e-6f)
+        assertArrayEquals(original, pixels)
+    }
+
+    @Test fun birefnetRejectsMissingAndTruncatedDownloads() {
+        assertFalse(verifiedBiRefNetModel(File(temporary.root, "missing.onnx")))
+        val incomplete = temporary.newFile("incomplete.onnx").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        assertFalse(verifiedBiRefNetModel(incomplete))
     }
 
     @Test fun favouritesRecentAndMyStickersHaveStableOrderingAndRecentIsCappedAt16() {

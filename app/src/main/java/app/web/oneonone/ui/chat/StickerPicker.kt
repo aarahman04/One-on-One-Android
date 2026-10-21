@@ -6,13 +6,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.*
@@ -30,11 +35,14 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import app.web.oneonone.data.stickers.*
+import app.web.oneonone.R
 import app.web.oneonone.ui.components.*
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 import coil3.compose.AsyncImage
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun StickerGrid(owner: String, vm: StickerViewModel, sending: Boolean, onCreate: () -> Unit, onSend: (StickerEntry) -> Unit) {
@@ -111,55 +119,96 @@ internal fun StickerMaker(vm: StickerViewModel) {
     val trim by vm.trim.collectAsState()
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
-    val source = if (cutOut) draft.cutOut ?: draft.original else draft.original
+    val brush by vm.brush.collectAsState()
+    val source = if (cutOut) draft.manual ?: draft.cutOut ?: draft.original else draft.original
     var trimming by rememberSaveable { mutableStateOf(false) }
+    var cropBefore by rememberSaveable { mutableStateOf(StickerCrop()) }
+    var trimBefore by rememberSaveable { mutableStateOf(StickerTrim()) }
+    val bodyScroll = rememberScrollState()
+    val density = LocalDensity.current
+    val insets = WindowInsets.safeDrawing.union(WindowInsets.ime)
+    val maxHeight = with(density) { (LocalWindowInfo.current.containerSize.height.toDp()
+        - (insets.getTop(density) + insets.getBottom(density)).toDp() - 120.dp).coerceAtLeast(120.dp) }
+    LaunchedEffect(brush != null, trimming) { bodyScroll.scrollTo(0) }
     val c = OneTheme.colors
-    OneModal(onDismiss = { if (!busy) vm.closeMaker() }) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val cancel = { if (!busy) { when {
+        brush != null -> vm.cancelBrush()
+        trimming -> { vm.trim(trimBefore); vm.crop(cropBefore); trimming = false }
+        else -> vm.closeMaker()
+    } } }
+    OneModal(onDismiss = cancel) {
+        // Leave room for the modal's padding, safe insets and footer; only the tools/preview scroll.
+        Column(Modifier.fillMaxWidth().heightIn(max = maxHeight), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f, fill = false).verticalScroll(bodyScroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Make a sticker", color = c.text, style = OneTextStyles.screenTitle)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val originalModifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { selected = !cutOut; contentDescription = "Keep original photo" }
                 val cutModifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { selected = cutOut; contentDescription = "Remove photo background" }
-                if (!cutOut) PrimaryButton("Original", { vm.original(true) }, originalModifier, enabled = !busy)
-                else SecondaryButton("Original", { vm.original(true) }, originalModifier, enabled = !busy)
-                if (cutOut) PrimaryButton("Cut-out", { vm.original(false) }, cutModifier, enabled = !busy && draft.cutOut != null)
-                else SecondaryButton("Cut-out", { vm.original(false) }, cutModifier, enabled = !busy && draft.cutOut != null)
+                val switchable = !busy && !draft.processing && brush == null && !trimming
+                if (!cutOut) PrimaryButton("Original", { vm.original(true) }, originalModifier, enabled = switchable)
+                else SecondaryButton("Original", { vm.original(true) }, originalModifier, enabled = switchable)
+                if (cutOut) PrimaryButton("Cut-out", { vm.original(false) }, cutModifier, enabled = switchable && draft.original != null)
+                else SecondaryButton("Cut-out", { vm.original(false) }, cutModifier, enabled = switchable && draft.original != null)
             }
             if (draft.processing) {
-                Text(if (draft.original == null) "Opening photo…" else "Removing background…", color = c.textDim, style = OneTextStyles.cardHint)
+                Text(draft.progress ?: if (draft.original == null) "Opening photo…" else "Removing background…", color = c.textDim, style = OneTextStyles.cardHint)
                 LinearProgressIndicator(Modifier.fillMaxWidth().semantics { contentDescription = "Processing photo on this device" })
             }
+            if (cutOut && source != null) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(vm::removeBackground, enabled = !busy && !draft.processing && brush == null && !trimming,
+                        contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.semantics { contentDescription = "Remove background automatically" }) {
+                        Text("Auto", style = OneTextStyles.cardHint, color = if (busy || draft.processing) c.muted else c.text)
+                    }
+                    TextButton({ cropBefore = crop; trimBefore = trim; trimming = true }, enabled = !busy && !draft.processing && brush == null && !trimming,
+                        contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.semantics { selected = trimming }) {
+                        Text("Crop", style = OneTextStyles.cardHint, color = if (busy || draft.processing || brush != null) c.muted else if (trimming) c.accentYou else c.text)
+                    }
+                    TextButton({ vm.beginBrush(false) }, enabled = !busy && !draft.processing && !trimming,
+                        contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.semantics { selected = brush?.restore == false }) {
+                        Text("Erase", style = OneTextStyles.cardHint, color = if (busy || draft.processing || trimming) c.muted else if (brush?.restore == false) c.accentYou else c.text)
+                    }
+                    TextButton({ vm.beginBrush(true) }, enabled = !busy && !draft.processing && !trimming,
+                        contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.semantics { selected = brush?.restore == true }) {
+                        Text("Restore", style = OneTextStyles.cardHint, color = if (busy || draft.processing || trimming) c.muted else if (brush?.restore == true) c.accentYou else c.text)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    OneIconButton(R.drawable.ic_reply, "Undo brush stroke", vm::undoBrush, enabled = !busy && brush?.strokes?.isNotEmpty() == true)
+                    OneIconButton(R.drawable.ic_reply, "Redo brush stroke", vm::redoBrush, modifier = Modifier.graphicsLayer { scaleX = -1f },
+                        enabled = !busy && brush?.redo?.isNotEmpty() == true)
+                    OneIconButton(R.drawable.ic_refresh, when { trimming -> "Reset crop"; brush != null -> "Reset brush edits"; else -> "Reset cut-out edits" },
+                        { if (trimming) vm.trim(StickerTrim()) else vm.resetEdits() }, enabled = !busy && !draft.processing)
+                }
+            }
             source?.let {
-                if (trimming) {
+                if (cutOut && brush != null) {
+                    StickerBrushEditor(checkNotNull(brush), !busy, vm::stroke, vm::brushSize, vm::brushDistance)
+                } else if (cutOut && trimming) {
                     Text("Drag the corners to crop, or drag inside to move.", color = c.textDim, style = OneTextStyles.cardHint)
                     StickerTrimEditor(it, trim, enabled = !busy, onTrim = vm::trim)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SecondaryButton("Reset", { vm.trim(StickerTrim()) }, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
-                        PrimaryButton("Done", { trimming = false }, Modifier.weight(1f).heightIn(min = 48.dp))
-                    }
                 } else {
-                    val trimmed = remember(it, trim) { trimSticker(it, trim) }
-                    Text("Pinch to zoom, drag to place.", color = c.textDim, style = OneTextStyles.cardHint)
-                    StickerCropPreview(trimmed, crop, enabled = !busy, onCrop = vm::crop)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SecondaryButton("Crop", { trimming = true }, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
-                        SecondaryButton("Reset", { vm.trim(StickerTrim()) }, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
-                    }
+                    val selectedTrim = if (cutOut) trim else StickerTrim()
+                    val trimmed by produceState(it, it, selectedTrim) { value = withContext(Dispatchers.Default) { trimSticker(it, selectedTrim) } }
+                    if (cutOut) Text("Pinch to zoom, drag to place.", color = c.textDim, style = OneTextStyles.cardHint)
+                    StickerCropPreview(trimmed, if (cutOut) crop else StickerCrop(), enabled = cutOut && !busy && !draft.processing, onCrop = vm::crop)
                 }
             }
             draft.notice?.let { Text(it, color = c.textDim, style = OneTextStyles.cardHint) }
             error?.let { Text(it, color = c.danger, style = OneTextStyles.cardHint) }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryButton("Cancel", vm::closeMaker, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
-                PrimaryButton("Save", vm::save, Modifier.weight(1f).heightIn(min = 48.dp),
-                    enabled = source != null && !draft.processing && !busy && !trimming)
+                SecondaryButton("Cancel", cancel, Modifier.weight(1f).heightIn(min = 48.dp), enabled = !busy)
+                PrimaryButton(if (brush != null || trimming) "Done" else "Save", {
+                    when { brush != null -> vm.finishBrush(); trimming -> trimming = false; else -> vm.save() }
+                }, Modifier.weight(1f).heightIn(min = 48.dp), enabled = source != null && !draft.processing && !busy)
             }
         }
     }
 }
 
 @Composable
-private fun Modifier.stickerCheckerboard(): Modifier {
+internal fun Modifier.stickerCheckerboard(): Modifier {
     val c = OneTheme.colors
     return drawBehind {
         drawRect(c.bg)

@@ -100,7 +100,18 @@ internal fun encodeStickerWebP(encode: (Int) -> ByteArray): ByteArray {
     error("That crop is too detailed to fit 100 KB. Try a tighter crop.")
 }
 
-internal fun foregroundAlpha(background: Float): Int {
-    if (!background.isFinite()) return 0
-    return (((1f - background - .2f) / .6f).coerceIn(0f, 1f) * 255).roundToInt()
+internal fun biRefNetAlpha(logit: Float): Int {
+    if (!logit.isFinite()) return 0
+    return (255.0 / (1.0 + kotlin.math.exp(-logit.toDouble()))).roundToInt()
+}
+
+internal fun biRefNetRgb(pixels: IntArray): FloatArray {
+    val result = FloatArray(pixels.size * 3)
+    val means = floatArrayOf(.485f, .456f, .406f)
+    val deviations = floatArrayOf(.229f, .224f, .225f)
+    for (channel in 0..2) for (i in pixels.indices) {
+        val value = (pixels[i] ushr (16 - channel * 8)) and 255
+        result[channel * pixels.size + i] = (value / 255f - means[channel]) / deviations[channel]
+    }
+    return result
 }

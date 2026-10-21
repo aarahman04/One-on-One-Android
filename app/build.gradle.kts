@@ -118,7 +118,7 @@ dependencies {
     implementation(libs.coil.network)
     implementation(libs.coil.gif)
     implementation(libs.coil.cache.control)
-    implementation(libs.mediapipe.segmenter)
+    implementation(libs.onnxruntime)
     testImplementation(libs.junit)
     // Real org.json for unit tests (android.jar ships only stubs); call signaling is JSON.
     testImplementation(libs.orgjson)
