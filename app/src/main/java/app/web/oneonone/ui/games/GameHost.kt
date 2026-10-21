@@ -95,7 +95,7 @@ fun GameHost(vm: GameViewModel, connection: CurrentConnection, photo: Pair<Any, 
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = c.accentYou, trackColor = c.border)
                 Text("Waiting for ${vm.nickname}…", Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 state.match?.let(::optionsLabel)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = c.textDim) }
-                Text("The invitation expires in 30 seconds.", style = MaterialTheme.typography.bodySmall, color = c.textDim)
+                Text("The invitation expires in 2 minutes.", style = MaterialTheme.typography.bodySmall, color = c.textDim)
             }
         }, confirmButton = { SecondaryButton("Cancel", vm::cancelInvite) })
     if (state.stage == GameStage.Playing || state.stage == GameStage.Result) {

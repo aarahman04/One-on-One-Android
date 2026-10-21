@@ -32,7 +32,7 @@ Current Ping Pong delivery state and Claude Code follow-up:
 - Card headings use vector icons (letter, ask, this-or-that, check-in, countdown, location pin, alarm siren) instead of emoji; `alarm_title` and alarm status lines are plain text.
 - Call log icon reads "Video call"/"Voice call" to TalkBack instead of emoji names.
 - Human labels for choices (moods, Option A/B, wallpapers, theme, export formats, report categories) and system lines ("You changed the wallpaper to Samurai").
-- Composer titles read "Write a letter", "Ask a sealed question", "This or that", "Start a countdown", "Check in" instead of raw `/command`.
+- Composer titles read "Write a letter", "Ask a sealed question", "This or that", "Start a countdown" instead of raw `/command`.
 - Encryption note says "Messages are encrypted on our servers" (encrypted at rest, not end-to-end). Blocked list no longer shows raw user IDs. Loading screen follows the theme.
 - Parakeet (CC-BY-4.0) and Kokoro (Apache-2.0) server-side attribution in docs/THIRD-PARTY-LICENSES.md.
 - Release workflow defaults bumped to versionCode 13 / 2.0.6. Round contents: Android #29, #30, #31, #32, this PR; backend #109, #110.
@@ -1832,3 +1832,26 @@ devices and genuine two-account Android play remain unverified; see the linked h
 - [ ] Tic-Tac-Toe / Connect 4: your mark appears immediately; no white box on tap.
 - [ ] Finish a game, close the results on one phone (or turn it off): the other shows "has left the
       game" and no rematch button; reopening the results restores the rematch.
+
+## Fix round: photos, offline game invites, calls, /checkin (2026-10-21, `worktree-agent-af64c11ce103daa35`; backend `claude/fix-games-calls`)
+
+- Profile and chat photos: orientation is now deterministic on every API level. Pixels are decoded with
+  `BitmapFactory` (never auto-oriented), the EXIF tag is read once and all eight cases applied by `orient()`, then
+  re-encoded without EXIF. Avatars already uploaded upside down keep the wrong pixels (the tag is gone): re-upload.
+- Games: a `/game` invite no longer needs the partner online. The backend always sends the `game_invite` push
+  (ttl 120 s) and the invite lives 2 minutes (notification timeout and the waiting text follow). The client only
+  needs its own socket. Tapping the notification opens the app on the chat; `match:sync` on connect shows the banner.
+- Ping Pong icon: the handle now lies on the line from the head's centre through its edge.
+- Calls: hangup, "call dropped" and failed-accept exits wait for the socket and send `call:end` (video teardown
+  errors can no longer skip it). Backend ends a call whose participant has had no socket for 30 s.
+- `/checkin` can no longer be sent (Android composer and backend 400). Old check-in cards still render.
+- Not verified: real devices, real push delivery, real calls. Web client still offers `/checkin`
+  (`client/src/features/slashCommands.ts` line 30, `pages/ChatPage.ts` `writeCheckin` ~2569).
+
+### Xiaomi checklist (fix round)
+
+- [ ] Settings > Your Photo: upload a camera photo (portrait and landscape); preview and partner's view upright.
+- [ ] Partner app closed: send a game invite; partner gets a notification, taps it, sees the invite banner, accepts.
+- [ ] Invite left for over 2 minutes shows "expired"; decline works; Ping Pong icon handle looks aligned.
+- [ ] Video call then hang up: a call card appears in chat for both; kill the app mid-call: card appears ~30 s later.
+- [ ] Typing `/checkin` is no longer a suggestion.

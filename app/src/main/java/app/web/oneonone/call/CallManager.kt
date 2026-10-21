@@ -139,9 +139,12 @@ class CallManager @Inject constructor(
 
     fun hangup() = scope.launch {
         val id = currentCallId()
-        finish(null) // an invite still in flight sees the state change and ends its call itself
-        if (id != null) runCatching { signaling.end(id) }
+        // An invite still in flight sees the state change and ends its call itself. The server only writes the
+        // call card on `call:end`, so wait for the socket instead of dropping it, and send it even if teardown throws.
+        try { finish(null) } finally { if (id != null) endOnServer(id) }
     }
+
+    private suspend fun endOnServer(callId: String) { runCatching { connected(); signaling.end(callId) } }
 
     fun toggleMute() = scope.launch {
         val active = mutableState.value as? CallUi.Active ?: return@launch
@@ -214,7 +217,7 @@ class CallManager @Inject constructor(
             val ice = signaling.accept(incoming.callId)
             beginMedia(incoming.callId, incoming.kind, incoming.peer, ice, caller = false)
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { finish(callError(error)) }
+        catch (error: Exception) { finish(callError(error)); endOnServer(incoming.callId) }
     }
 
     private suspend fun beginMedia(callId: String, kind: CallKind, peer: String, ice: List<IceServerSpec>, caller: Boolean) {
@@ -230,7 +233,7 @@ class CallManager @Inject constructor(
             session.state.collect { media ->
                 val active = mutableState.value as? CallUi.Active ?: return@collect
                 if (active.callId != callId) return@collect
-                if (media == MediaState.Failed) { finish("Call dropped"); runCatching { signaling.end(callId) }; return@collect }
+                if (media == MediaState.Failed) { finish("Call dropped"); endOnServer(callId); return@collect }
                 mutableState.value = active.copy(media = media,
                     connectedAt = active.connectedAt ?: System.currentTimeMillis().takeIf { media == MediaState.Connected })
             }
@@ -256,7 +259,7 @@ class CallManager @Inject constructor(
 
     private fun finish(message: String?) {
         mediaJob?.cancel(); mediaJob = null
-        mutableSession.value?.close()
+        runCatching { mutableSession.value?.close() } // native teardown must never skip the rest (video has more to free)
         mutableSession.value = null
         pendingSignals = mutableListOf()
         audio.stop()

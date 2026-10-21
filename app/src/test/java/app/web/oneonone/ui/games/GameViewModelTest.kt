@@ -62,16 +62,14 @@ class GameViewModelTest {
         assertEquals(1, vm.ui.value.seat)
     }
 
-    @Test fun hubNeedsThePartnerOnline() = runTest {
+    @Test fun hubNeedsOnlyOurOwnConnectionNotThePartnerOnline() = runTest {
         val (vm, transport) = fixture(online = false)
-        vm.hub(); assertEquals("Games need Alex to be online.", vm.error.value)
-        assertEquals(GameStage.Idle, vm.ui.value.stage)
-        transport.chat.presence.emit(PresenceUpdate("other", true)); runCurrent()
         vm.hub(); runCurrent()
         assertEquals(GameStage.Hub, vm.ui.value.stage)
         transport.chat.state.value = ConnectionState.Offline; runCurrent()
         vm.dismissHub(); vm.hub(); runCurrent()
         assertEquals(GameStage.Idle, vm.ui.value.stage)
+        assertEquals("Reconnecting. Try again in a moment.", vm.error.value)
     }
 
     @Test fun incomingInviteAcceptAndDecline() = runTest {

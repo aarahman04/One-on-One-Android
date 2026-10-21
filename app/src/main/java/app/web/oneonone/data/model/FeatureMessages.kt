@@ -13,7 +13,7 @@ val FileMimes = setOf("application/pdf", "text/plain", "text/csv", "application/
     "application/vnd.openxmlformats-officedocument.presentationml.presentation")
 val Moods = listOf("great", "good", "okay", "down", "struggling")
 val ReportCategories = listOf("harassment", "hate", "sexual", "child_safety", "spam", "other")
-val FeatureCommands = listOf("letter", "ask", "countdown", "checkin", "thisorthat", "location", "alarm", "audio", "games")
+val FeatureCommands = listOf("letter", "ask", "countdown", "thisorthat", "location", "alarm", "audio", "games")
 
 fun JsonObject?.text(key: String): String = (this?.get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 fun JsonObject?.number(key: String): Double? = (this?.get(key) as? JsonPrimitive)?.doubleOrNull

@@ -38,7 +38,8 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
     var nickname = "Your One on One"; private set
     private var noticeTimer: Job? = null
     private var foreground = true
-    private val online get() = service.connection.value == ConnectionState.Connected && service.presence.value?.online == true
+    // Our own socket only: an offline partner is invited by push and answers within the invite's 2 minutes.
+    private val online get() = service.connection.value == ConnectionState.Connected
     private val scoped get() = service.active.value?.let { it.ownerId == session.me && it.connectionId == connectionId } == true
 
     init {
@@ -136,5 +137,5 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         // A stale or rejected action: fetch the authoritative state again.
         if (scoped && service.connection.value == ConnectionState.Connected && text.startsWith("The game moved on")) session.sync()
     }
-    private fun offlineNotice() { notice("Games need $nickname to be online.") }
+    private fun offlineNotice() { notice("Reconnecting. Try again in a moment.") }
 }

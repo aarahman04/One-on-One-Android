@@ -88,7 +88,6 @@ private val CommandDescriptions = mapOf(
     "games" to "Play a game together",
     "letter" to "Write a letter",
     "countdown" to "Start a shared countdown",
-    "checkin" to "How are you, really?",
     "ask" to "A sealed question, revealed together",
     "thisorthat" to "A playful pick, revealed together",
     "alarm" to "Emergency — alert them right now",

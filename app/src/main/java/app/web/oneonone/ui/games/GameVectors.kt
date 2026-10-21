@@ -60,7 +60,8 @@ internal fun gameVector(name: String, paint: Color): ImageVector {
                 "pong" -> {
                     moveTo(9f, 5f); curveTo(17f, 0f, 27f, 9f, 22f, 18f)
                     curveTo(19f, 24f, 12f, 25f, 7f, 20f); curveTo(2f, 15f, 3f, 9f, 9f, 5f); close()
-                    moveTo(8f, 21f); lineTo(12f, 24f); lineTo(7f, 30f); lineTo(3f, 27f); close()
+                    // Handle on the line from the head's centre (13.7, 13.3) through its edge, tapering outward.
+                    moveTo(8.1f, 19.7f); lineTo(11f, 21.4f); lineTo(5f, 30.8f); lineTo(2.9f, 29.6f); close()
                     moveTo(28f, 3f); curveTo(33f, 3f, 33f, 10f, 28f, 10f)
                     curveTo(23f, 10f, 23f, 3f, 28f, 3f); close()
                 }

@@ -1086,3 +1086,19 @@ sequenceDiagram
     S-->>B: over, reason timeout
 ```
 Clients only count down from the snapshot's `clock.left`; the server alone decides `timeout`.
+
+## Game invite to an offline partner (2026-10-21)
+
+```mermaid
+sequenceDiagram
+    participant A as Inviter app
+    participant S as Backend
+    participant B as Partner (app closed)
+    A->>S: match:invite
+    S-->>A: ack (invited, expires in 2 min)
+    S->>B: FCM game_invite push (ttl 120 s)
+    B->>B: tap notification, MainActivity opens chat
+    B->>S: socket connects, match:sync
+    S-->>B: invited match, banner shown
+    B->>S: match:accept (or decline / expiry)
+```
