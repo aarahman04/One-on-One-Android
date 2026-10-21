@@ -1,5 +1,8 @@
 # Android milestone progress
 
+Current Ping Pong delivery state and Claude Code follow-up:
+[PING-PONG-HANDOFF.md](games/PING-PONG-HANDOFF.md) (2026-10-21).
+
 ## Release 2.0.8 (2026-10-20, versionCode 15)
 - Signed build from main (run 39444598003) uploaded to Play by the owner. Contents: Android #37 (below), backend #115 (invite push, `game` rows, migration 040 applied in Supabase).
 - Speech fixed on Railway (no app change): the `speech` service now runs in the backend's project (`One on One`, renamed from `fabulous-connection` on 2026-10-20), so `speech.railway.internal` resolves, and the backend's `SPEECH_SERVICE_TOKEN` references `${{speech.SPEECH_SERVICE_TOKEN}}` (verified equal, values not read). The old separate `speech` project is deleted.
@@ -1767,16 +1770,24 @@ Previous installed iteration: real-touch exercise recorded as `evidence/emulator
 with 1,181 authoritative demo frames in 40 s. Observed neutral blocks, rotated brush hits, table
 landings with retained spin, open-edge travel and scoring. Contact-frame inspection exposed the remaining
 forward-stroke/back-face overlap and led to the final front-contact guard and regression tests.
-This round used the preceding .45 cap/.6 bounce tuning; the final front-face/.1?.2 spin build supersedes it; the accepted speed and bat movement were retained. Unit
+This round used the preceding .45 cap/.6 bounce tuning; the final front-face/.1-.2 spin build supersedes it; the accepted speed and bat movement were retained. Unit
 coverage checks surface clearance through the first 80 ms, plus immediate confirmed-contact display.
-Earlier completion/rematch rounds reached 7?1 and 0?7 and reset to 0?0 with seats swapped.
+Earlier completion/rematch rounds reached 7-1 and 0-7 and reset to 0-0 with seats swapped.
 
-Emulator remains visible (OneOnOne_D3, API 36, emulator-5556). At 720?1600/density280, with Gradle
-stopped and recording off, a 46.5 s steady sample rendered 2,741 frames (about59/s) with 1.50% modern
+Emulator remains visible (OneOnOne_D3, API 36, emulator-5556). At 720x1600/density280, with Gradle
+stopped and recording off, a 46.5 s steady sample rendered 2,741 frames (about 59/s) with 1.50% modern
 frame-deadline misses. This is emulator calibration, not a physical-device benchmark; earlier 1080
 recording while compiling had poor frame timing. Original display can be restored with `wm size reset`
-and `wm density reset`. No personal account/device was modified. Scripted input was stopped when it became clear it was
+and `wm density reset`. No physical phone or personal account was changed. Scripted input was stopped when it became clear it was
 competing with the owner's control. Subsequent inspection is read-only while the owner plays.
+
+Wrap-up requested by owner: latest gameplay APK reinstalled at 08:59:58 IST; installed/local SHA-256
+`c8701aaa1b2203098c4a996e274a3e08d7304e452597e9a65622a8a014ce0962` matches. Backend PR 121
+merged as `3d0c148`, Railway deployment succeeded and health passed. Android PR 43 remains open:
+gameplay `ca63c3e`; CI release packaging exhausted heap in run `39538900347`. Fix `84c12b5`
+splits release Gradle invocations and scopes demo tests to debug; retry `39540116953` was pending
+at the last check. Work stopped for Claude Code to follow up. Final front-edge/spin feel, physical
+devices and genuine two-account Android play remain unverified; see the linked handoff.
 
 ### Physical-device and real multiplayer checklist
 
