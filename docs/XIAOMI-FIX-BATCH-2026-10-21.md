@@ -2,6 +2,8 @@
 
 Use the reviewed Android feature build with its matching backend PR deployed. These are manual checks, not claims of phone verification. Keep two separately signed-in accounts available. No new database migration is required.
 
+Implementation is merged in Android PR #45 (`727ce59`) and backend PR #123 (`d982a84`). Before testing, confirm the deployed backend includes `d982a84`: at 2026-10-21 10:59 UTC its public health endpoint was healthy but Railway still reported older `3d0c148` during a platform outage. No signed Play release was made by this batch. See the [cross-check handoff](prompts/claude-cross-check-fix-batch-2026-10-21.md) for rollout evidence and limits.
+
 ## Dictation and letters (1-8)
 
 - [ ] Grant microphone permission, start /audio after existing draft text, and speak for at least 10 minutes with several long pauses. Partial words appear in the composer; completed segments accumulate without duplication. Stop retains the latest words and all original draft text.
@@ -36,6 +38,8 @@ Use the reviewed Android feature build with its matching backend PR deployed. Th
 ## Optional owner diagnostics
 
 Re-upload any avatar whose wrong orientation is already baked into its pixels. For server read-aloud latency, prevent Railway speech-service sleeping and/or set SPEECH_MODEL_TTL=0, then redeploy and measure. No changes to speech/ are part of this batch.
+
+TTL 0 specifically disables idle-model unloading after first use. It does not preload a model, disable Railway's separate sleep setting or resolve a Railway platform outage. The owner's saved TTL change has not been verified in a running deployment; confirm it after Railway recovers. Nothing new must be run in Supabase.
 
 To inspect the newest call cards in Supabase:
 

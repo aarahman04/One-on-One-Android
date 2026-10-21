@@ -1144,3 +1144,19 @@ sequenceDiagram
 ```
 
 New `/checkin` creation is removed from Android commands/composer and rejected by the backend. Historical cards, payload decoding, old push handling and exports remain supported. No database constraint is removed. See [the Xiaomi checklist](XIAOMI-FIX-BATCH-2026-10-21.md) for device-only checks; emulator demo checks cannot establish recognizer duration, Railway latency, push delivery or real call quality.
+
+### Deployment boundary and independent review
+
+Implementation commits, deployment revisions and physical-device behavior are separate evidence. `/health` establishes liveness only. At the 2026-10-21 10:59 UTC observation it returned 200 while Railway still reported the older `3d0c148` revision; the merged backend fix is `d982a84`. Recheck the deployed revision after the platform's build outage recovers.
+
+```mermaid
+flowchart LR
+    M[Merged backend fix d982a84] --> D[Railway build and deployment]
+    O[Platform control-plane outage] -. pauses new builds .-> D
+    D --> R[Confirm deployed commit includes fix]
+    R --> A[Authenticated API and speech checks]
+    A --> P[Xiaomi and two-account device checks]
+    H[Public health 200] --> L[Process reachable only]
+```
+
+`SPEECH_MODEL_TTL=0` prevents idle-model unloading after the first request; it neither preloads models nor controls Railway service sleeping. A variable saved in the dashboard is not proof that the running process has applied it. No speech-service code or database schema changed. The [Claude Code cross-check handoff](prompts/claude-cross-check-fix-batch-2026-10-21.md) separates verified implementation from rollout, device checks and review targets such as missing TURN acknowledgements and multi-device call decline ordering.
