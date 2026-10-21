@@ -28,11 +28,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -55,13 +58,13 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 import kotlin.math.roundToInt
 
-/** Classic black-and-white board (a mid grey keeps black pieces readable); the same in light and dark mode. */
+/** Classic black-and-white board; black pieces carry a light outline so they read on the black squares. */
 internal object ChessColors {
     val light = Color(0xFFF2F2F2)
-    val dark = Color(0xFF7A7A7A)
+    val dark = Color(0xFF0B0B0B)
     val lastLight = Color(0xFFF3E9A6)
-    val lastDark = Color(0xFFB8AC5E)
-    val hint = Color(0x24000000)
+    val lastDark = Color(0xFF6B6231)
+    val hint = Color(0x66909090) // reads on both the white and the black squares
     val hover = Color(0xA6FFFFFF)
     val check = Color(0xFFE5484D)
     val whiteFill = Color(0xFFFBFAF7)
@@ -99,6 +102,19 @@ private class SpriteTrack {
         return next
     }
 }
+
+/** A piece image; black pieces get a thin light outline (eight offset tinted copies) so they stay visible on black squares. */
+@Composable
+private fun ChessPiece(piece: Char, modifier: Modifier) {
+    val painter = painterResource(pieceDrawable(piece))
+    Image(painter, null, if (piece.isUpperCase()) modifier else modifier.drawBehind {
+        val w = size.minDimension * .035f
+        for (dx in -1..1) for (dy in -1..1) if (dx != 0 || dy != 0) translate(dx * w, dy * w) {
+            with(painter) { draw(size, alpha = .9f, colorFilter = ColorFilter.tint(PieceOutline)) }
+        }
+    })
+}
+private val PieceOutline = Color(0xFFD9D9D9)
 
 /** Slide time grows with distance (a one-square step is quick, a long diagonal still reads as one glide). */
 internal fun slideMillis(fromCell: Int, toCell: Int): Int {
@@ -235,7 +251,7 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
             val fade = remember { Animatable(1f) }
             LaunchedEffect(Unit) { fade.animateTo(0f, tween(captureMs, easing = LinearOutSlowInEasing)) }
             val cell = cellOf(sprite.square, white)
-            Image(painterResource(pieceDrawable(sprite.piece)), null, Modifier.size(tile)
+            ChessPiece(sprite.piece, Modifier.size(tile)
                 .offset { IntOffset((cell % 8 * tilePx).roundToInt(), (cell / 8 * tilePx).roundToInt()) }
                 .graphicsLayer { alpha = fade.value; scaleX = .85f + .15f * fade.value; scaleY = .85f + .15f * fade.value }
                 .padding(tile * .04f))
@@ -261,7 +277,7 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
                     position.animateTo(target, tween(slideMillis(fromCell, cell), easing = easing))
                 }
             }
-            Image(painterResource(pieceDrawable(sprite.piece)), null, Modifier.size(tile)
+            ChessPiece(sprite.piece, Modifier.size(tile)
                 .zIndex(if (lifted || release?.id == sprite.id) 2f else if (position.isRunning) 1f else 0f)
                 .offset {
                     // Lifted above the finger so it stays visible while dragging; placement only, no recomposition per frame.
@@ -319,7 +335,7 @@ internal fun ChessPlayerBar(name: String, photo: Any?, white: Boolean, view: Che
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.titleSmall, color = c.text, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                taken.forEach { piece -> Image(painterResource(pieceDrawable(piece)), null, Modifier.size(15.dp)) }
+                taken.forEach { piece -> ChessPiece(piece, Modifier.size(15.dp)) }
                 if (lead > 0) Text("  +$lead", style = MaterialTheme.typography.labelSmall, color = c.textDim)
             }
         }
