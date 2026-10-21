@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import app.web.oneonone.data.games.PongClient
 import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.coroutines.isActive
+import kotlin.math.abs
 import kotlin.math.ceil
 
 private const val MarginX = .28f
@@ -43,6 +44,9 @@ private const val MarginBottom = .7f
 private val TableTop = Color(0xFF17294A)
 private val TableBottom = Color(0xFF0E1A31)
 private val TableEdge = Color(0xFF0A1222)
+/** Razor spin (rare, sharp break; backend RAZOR_SPIN .6): a hot trail warns the receiver. */
+private val RazorGlow = Color(0xFFFF8A3D)
+private const val RazorSpin = .5f
 
 private class PongHud {
     var mine by mutableIntStateOf(0)
@@ -53,7 +57,7 @@ private class PongHud {
 }
 
 @Composable
-internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, footer: @Composable () -> Unit) {
+internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, sounds: GameSounds?, footer: @Composable () -> Unit) {
     val game = vm.pong ?: return
     val match = state.match ?: return
     val hud = remember(game) { PongHud() }
@@ -62,9 +66,11 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, f
     LaunchedEffect(game) {
         vm.paddle(game.myX, game.myY)
         var hits = game.hits
+        var bounce = game.bounceAt
         while (isActive) {
             withFrameNanos { game.advance(it); frame = it }
-            if (game.hits != hits) { hits = game.hits; haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+            if (game.hits != hits) { hits = game.hits; sounds?.play(GameSound.Hit); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+            if (game.bounceAt != bounce) { bounce = game.bounceAt; sounds?.play(GameSound.Bounce) }
             if (game.myScore != hud.mine || game.theirScore != hud.theirs) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             hud.mine = game.myScore; hud.theirs = game.theirScore
             hud.countdown = ceil(game.countdownMs / 1000f).toInt()
@@ -133,10 +139,20 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
         awaitEachGesture {
             val down = awaitFirstDown(); down.consume()
             val unit = size.width / (1 + 2 * MarginX)
+            // Relative drag: the racket moves with the finger from wherever it touches, so it never jumps (a jump
+            // would read as a violent stroke) and the finger can steer from below without hiding the racket.
+            var anchorFinger = down.position
+            var anchorX = game.myX; var anchorY = game.myY
             fun move(position: Offset) {
-                if (currentEnabled) onPaddle(position.x / unit - MarginX, position.y / unit - MarginTop, false)
+                if (!currentEnabled) return
+                val x = anchorX + (position.x - anchorFinger.x) / unit
+                val y = anchorY + (position.y - anchorFinger.y) / unit
+                // Past a limit, slide the anchor so turning back responds at once.
+                val cx = x.coerceIn(PongClient.RacketMin, PongClient.RacketMax)
+                val cy = y.coerceIn(PongClient.RacketNear, PongClient.RacketFar)
+                if (cx != x || cy != y) { anchorX = cx - (position.x - anchorFinger.x) / unit; anchorY = cy - (position.y - anchorFinger.y) / unit }
+                onPaddle(cx, cy, false)
             }
-            move(down.position)
             try {
                 while (true) {
                     val event = awaitPointerEvent()
@@ -178,10 +194,11 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
         drawLine(Color.White, at(-.04f, PongClient.CourtH / 2), at(1.04f, PongClient.CourtH / 2), .008f * u)
         for (post in listOf(-.04f, 1.04f)) drawCircle(Color.White, .014f * u, at(post, PongClient.CourtH / 2))
 
+        val razor = abs(game.spin) > RazorSpin
         for (index in 1 until game.trail.size) {
             val previous = game.trail[index - 1]; val point = game.trail[index]
             val k = index.toFloat() / game.trail.size
-            drawLine((if (game.spin != 0f) lerp(Color.White, mine, .6f) else Color.White).copy(alpha = .35f * k), at(previous.x, previous.y), at(point.x, point.y),
+            drawLine((if (razor) RazorGlow else if (game.spin != 0f) lerp(Color.White, mine, .6f) else Color.White).copy(alpha = (if (razor) .6f else .35f) * k), at(previous.x, previous.y), at(point.x, point.y),
                 PongClient.BallR * u * k * 1.2f, cap = StrokeCap.Round)
         }
         if (game.live) {
@@ -201,7 +218,7 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
             val h = (game.height / PongClient.ArcH).coerceIn(-1f, 1f)
             val ball = at(game.ballX, game.ballY)
             val r = PongClient.BallR * u * (1 + .35f * h)
-            drawCircle(Color.White.copy(alpha = .18f), r * 2.1f, ball)
+            drawCircle((if (razor) RazorGlow else Color.White).copy(alpha = if (razor) .35f else .18f), r * (if (razor) 2.6f else 2.1f), ball)
             drawCircle(TableEdge, r * 1.18f, ball)
             drawCircle(Brush.radialGradient(listOf(Color.White, Color(0xFFDCE3EE)), ball - Offset(r * .35f, r * .35f), r * 1.4f), r, ball)
             if (game.spin != 0f) drawArc(mine, game.spinAngle, 120f, false, ball - Offset(r * .65f, r * .65f),

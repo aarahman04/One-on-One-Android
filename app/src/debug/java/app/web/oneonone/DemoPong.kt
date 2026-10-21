@@ -4,7 +4,7 @@ import kotlinx.serialization.json.*
 import kotlin.math.*
 
 /** Local demo mirror of backend PongSim. It never supplies production game state. */
-internal class DemoPong {
+internal class DemoPong(private val random: () -> Double = { kotlin.random.Random.nextDouble() }) {
     val courtH = 1.8
     val paddles = doubleArrayOf(.5, .5)
     val paddleY = doubleArrayOf(courtH + .08, -.08)
@@ -30,6 +30,8 @@ internal class DemoPong {
     private var lastHit = 0
     private var landed = false
     private var spin = 0.0
+    private var razor = false
+    private val samples = Array(2) { ArrayDeque<DoubleArray>() }
 
     fun serving(seat: Int) = flight == null && server == seat
     private fun serveY() = if (server == 1) courtH - .24 else .24
@@ -39,13 +41,22 @@ internal class DemoPong {
         val nextX = px.coerceIn(-.26, 1.26)
         val nextY = if (py == null) paddleY[i] else if (seat == 1) py.coerceIn(1.3, 2.5) else courtH - (courtH - py).coerceIn(1.3, 2.5)
         if (py != null) modern[i] = true
-        val dx = nextX - paddles[i]; val dy = nextY - paddleY[i]
-        val dt = if (moved[i] < 0) 0.0 else (clock - moved[i]) / 1000
-        if (released || hypot(dx, dy) < 1e-5) strokes[i].fill(0.0)
+        // Mirrors the backend's ~50 ms stroke window.
+        val window = samples[i]
+        if (released) window.clear() else {
+            window.addLast(doubleArrayOf(clock, nextX, nextY))
+            while (window.size > 2 && window[1][0] <= clock - 50) window.removeFirst()
+            while (window.size > 2 && window[0][0] < clock - 100) window.removeFirst()
+        }
+        val still = hypot(nextX - paddles[i], nextY - paddleY[i]) < 1e-5
+        val ref = window.firstOrNull()
+        val dx = if (ref == null) 0.0 else nextX - ref[1]; val dy = if (ref == null) 0.0 else nextY - ref[2]
+        val dt = if (ref == null) 0.0 else (clock - ref[0]) / 1000
+        if (released || still || hypot(dx, dy) < 1e-5) strokes[i].fill(0.0)
         else if (dt > 0) {
             val sx = dx / max(dt, 1.0 / 60); val sy = dy / max(dt, 1.0 / 60)
             strokes[i][0] = (sx * StrokeGain).coerceIn(-1.0, 1.0)
-            strokes[i][1] = (sy * (if (seat == 1) -1 else 1) * StrokeGain).coerceIn(-.5, 1.0)
+            strokes[i][1] = power(sy * (if (seat == 1) -1 else 1))
             strokes[i][2] = if (py == null) (sx * StrokeGain).coerceIn(-1.0, 1.0) else dx / hypot(dx, dy)
         }
         paddles[i] = nextX; paddleY[i] = nextY; moved[i] = if (released) -1.0 else clock
@@ -74,14 +85,17 @@ internal class DemoPong {
     private fun strike(seat: Int) {
         val stroke = strokes[seat - 1]
         val px = paddles[seat - 1]; val py = paddleY[seat - 1]
-        val target = doubleArrayOf(.5 + stroke[2] * .36 * (.85 + .15 * stroke[1]),
-            (if (seat == 1) .49 else courtH - .49) + (if (seat == 1) -1 else 1) * (stroke[1] * .5 + max(0.0, stroke[1] - .85) * 2.4), -ArcH)
+        val block = if (lastHit == 3 - seat) spin * .3 else 0.0
+        val target = doubleArrayOf(.5 + stroke[2] * .5 * (.85 + .15 * stroke[1]) + block,
+            (if (seat == 1) .49 else courtH - .49) + (if (seat == 1) -1 else 1) * (-.03 + stroke[1] * .706 + max(0.0, stroke[1] - .85) * 4), -ArcH)
         val dx = target[0] - px; val dy = target[1] - py; val length = hypot(dx, dy)
         x = px + dx / length * .205; y = py + dy / length * .205
         curve(target, 1 - .22 * stroke[1])
         val brush = if (abs(stroke[2]) > .45) stroke[0] else 0.0
         lastHit = seat; landed = false
         spin = if (abs(brush) <= .08) 0.0 else sign(brush) * (.2 + .2 * min(1.0, (abs(brush) - .08) / .6))
+        razor = abs(brush) >= .85 && random() < .15
+        if (razor) spin = sign(brush) * .6
         hits++
     }
     private fun advance(dt: Double) {
@@ -103,10 +117,14 @@ internal class DemoPong {
             if (bx in 0.0..1.0 && by in 0.0..courtH) {
                 if (landed) { point(lastHit); return }
                 x = bx; y = by; z = .033; landed = true; bounces++
-                // Mirrors the backend: sidespin checks the ball and breaks it sideways.
-                val kickX = vx + spin * 2; val kickY = vy * (1 - 1.1 * abs(spin))
+                // Mirrors the backend: spin turns the heading by a capped angle (razor: sharper) and checks the pace.
+                val turn = if (razor) sign(spin) * .6 else (spin * .8).coerceIn(-.35, .35)
+                val heading = atan2(vx, vy) + turn
+                val across = hypot(vx, vy)
+                val kickX = across * sin(heading); val kickY = across * cos(heading)
                 val length = sqrt(kickX * kickX + kickY * kickY + vz * vz).takeIf { it != 0.0 } ?: 1.0
-                curve(doubleArrayOf(x + kickX / length * (30 / 12.16), y + kickY / length * (30 / 12.16), -ArcH), current.duration)
+                val reach = 30 / 12.16 * (1 - .4 * min(.6, abs(spin)))
+                curve(doubleArrayOf(x + kickX / length * reach, y + kickY / length * reach, -ArcH), current.duration)
             }
         }
         if (landed && lastHit != 0 && touches(3 - lastHit)) strike(3 - lastHit)
@@ -115,9 +133,9 @@ internal class DemoPong {
     private fun point(seat: Int) {
         score[seat - 1]++; scored = true
         if (score.sum() % 2 == 0) server = 3 - server
-        flight = null; lastHit = 0; landed = false; spin = 0.0
+        flight = null; lastHit = 0; landed = false; spin = 0.0; razor = false
         x = .5; y = serveY(); z = 2 / 12.16; vx = 0.0; vy = 0.0; vz = 0.0
-        strokes.forEach { it.fill(0.0) }; moved.fill(-1.0)
+        strokes.forEach { it.fill(0.0) }; moved.fill(-1.0); samples.forEach { it.clear() }
         if (score[seat - 1] >= 7) outcome = seat else countdown = 1000.0
     }
     fun frame(id: String) = buildJsonObject {
@@ -135,5 +153,7 @@ internal class DemoPong {
     companion object {
         private const val ArcH = 6 / 12.16
         private const val StrokeGain = 12.16 / 60
+        /** Forward speed (table widths/s) -> power; saturates softly, pulling back is a soft touch. */
+        private fun power(speed: Double) = if (speed >= 0) 1 - exp(-speed / 5) else (speed * StrokeGain).coerceIn(-.5, 0.0)
     }
 }

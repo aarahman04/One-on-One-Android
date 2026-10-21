@@ -16,13 +16,13 @@ class DemoPongTest {
     }
 
     @Test fun demoUsesTheBackendStrokeFixtureAndProducesAReadableFrame() {
-        val p = DemoPong()
+        val p = DemoPong { .5 } // the backend fixture's roll: no razor spin
         p.paddle(2, .2, .21); p.step(3000.0)
         p.paddle(2, .2, .21); p.step(16.0)
         p.paddle(2, .5, .24); p.step(8.0); p.step(64.0)
         // Same input sequence in backend PongSim, rounded by its wire encoder.
-        assertEquals(.5709, p.x, .0001); assertEquals(.5139, p.y, .0001)
-        assertEquals(.2483, p.z, .0001); assertEquals(1, p.hits)
+        assertEquals(.5951, p.x, .0001); assertEquals(.5077, p.y, .0001)
+        assertEquals(.2472, p.z, .0001); assertEquals(1, p.hits)
         val client = PongClient(1)
         assertTrue(client.receive(p.frame("m"), "m", 1_000_000))
         assertTrue(client.spin > .36f && client.spin < .4f)

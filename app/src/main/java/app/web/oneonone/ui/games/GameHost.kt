@@ -232,7 +232,7 @@ private fun PlayingContent(vm: GameViewModel, state: GameUi, photo: Any?, sounds
     }
     when (match.game) {
         GameKind.Chess -> ChessContent(vm, state, photo, modifier, sounds) { ChessDrawControls(vm, state); footer() }
-        GameKind.Pong -> PongContent(vm, state, modifier, footer)
+        GameKind.Pong -> PongContent(vm, state, modifier, sounds, footer)
         else -> Column(modifier.fillMaxWidth()) {
             val status = when {
                 match.paused || state.partner in match.away -> "Waiting for ${vm.nickname} to come back…"
