@@ -2,14 +2,35 @@
 
 Confidence: **Verified** = our code + tests; **Inferred** = reference names only.
 
-## Table tennis sidespin (Verified, `backend/src/games/pong.ts`)
-- Return angle: contact point on the round head (up to 62°) + 30 % of racket sideways speed (unchanged).
-- Spin `w` (units/s²) = 0.3 × racket sideways speed at contact, capped ±0.75.
-- Flight: `vx += w·dt` each substep, `|vx| ≤ |vy|·tan 62°`; `w` decays (τ 0.6 s).
-- Side-edge bounce sets `w = 0`; incoming spin turns the return by 0.25 rad per unit.
-- Substeps < ball radius (no tunnelling, tested at max speed with 50 ms frames). First to 7, no deuce.
-- Client extrapolates `x + vx·age + ½·w·age²` (≤150 ms) and rolls a seam at 900°/s per unit of spin.
-- Reference: see "Reference Ping Pong" below.
+## Ping Pong rebuild (2026-10-21)
+
+The owner rejected the earlier wall-bouncing game, supplied a 52 s reference video, and approved
+replacement with an open table. This section supersedes the earlier sidespin implementation.
+
+- Server-owned 3D cubic flights: two raised controls, below-table endpoint, native Hermite easing.
+- Move the racket in two dimensions on your own half, including outside the baselines and sides.
+  Swipe through the ball to aim; a forward stroke changes depth/speed; brushing sideways curves it.
+  The displayed racket tilt follows the gesture up to 55 degrees and eases back after release.
+  Stronger lateral strokes transfer spin at contact; gentle placements remain spin-free. Airborne
+  drift is gentle (.4 gain), with a one-time lateral kick at the table bounce (spin ? .8). Spin
+  persists through release/bounce and gradually fades (1.8 s time constant).
+  Light brushing starts at .1 spin; a hard brush caps at .2, about twice as much. Normal blocks stay spin-free.
+  Later racket motion cannot redirect an already-hit ball; this deliberately improves on the reference.
+- Aim gain .36 leaves more room for angled shots to land; duration .88..1.06 s softens the pace.
+- The ball must land on the table before the opponent can return it. Bounce follows its incoming
+  3D direction. Sides/corners are open; no wall reflection. A table miss loses the point; landing
+  followed by escape or another bounce wins for the last hitter. Net is decorative.
+- Serve by touching the waiting ball after the countdown (3 s first, 1 s thereafter). Server changes
+  every two total points. First to 7, no deuce. A rematch swaps seats and resets the game.
+- Accepted hits launch outside the drawn bat along the outgoing shot. Confirmed contacts snap to
+  the server flight, avoiding a blend through the head. A forward stroke meets the front face after
+  a table landing, then follows through on the confirmed return; back-face contacts are rejected.
+- Android renders actual server height/curve, a shadow, short trail, and one pulse per table bounce.
+  It predicts for at most 150 ms; it never holds the ball at a racket or invents a bounce.
+- Release/cancel clears the active stroke through the same 33 ms input throttle. New gestures replace
+  pending input; pause, result, reset and rematch discard it. Backend rejects paused/invalid input.
+- Protocol remains `pong`; optional y and additive height/curve fields are documented in contract ?12.
+  Older clients decode it but need the new renderer/controls for faithful gameplay. Web is untouched.
 
 ## Reversi (Verified, `ReversiRules`)
 - 8×8, seat 1 Black moves first; standard start: White d4/e5, Black d5/e4.
@@ -21,32 +42,32 @@ Confidence: **Verified** = our code + tests; **Inferred** = reference names only
 Rules unchanged (see contract §12). Animations follow the server's `last`; nothing is drawn that the
 server did not apply (own chess move is predicted with chesslib and reverted if rejected).
 
-## Reference Ping Pong (2026-10-21, JADX + IL2CPP metadata + Unity serialized data)
+## Reference Ping Pong: native evidence (2026-10-21)
 
-Evidence: field order per class from `global-metadata.dat` (v31), serialized values of the scene's
-MonoBehaviours, Transforms and colliders from `data.unity3d`. No method bodies exist in the APK
-(native split missing), so **every rule about what the code does with these values is inferred**.
-Values marked *serialized* are verified as stored data; their meaning comes from the Italian field name.
+Both complete packages contain ARM64 `libil2cpp.so` and compatible metadata. The APKM is older
+(3.6.4/code 2682) than the XAPK (3.15.3/code 3327). Their binaries differ, but the recovered Ping Pong
+algorithms match. The newer XAPK was used for method maps plus ELF-mapped Capstone disassembly;
+Il2CppDumper metadata maps and UnityPy scene data provide independent checks. Raw Cpp2IL disassembly
+used the wrong file offset for these libraries and was not treated as instruction evidence.
 
-| Item | Value | Status |
-|---|---|---|
-| Scene | 3D: x across, y height, z along the table | Verified (transforms) |
-| Table | box 12.16 wide × 21.92 long (ratio 1 : 1.80), top at y = 0 | Verified (BoxCollider) |
-| Net | sprites only (`ReteBordo`, `ReteInterno`), **no collider** | Verified (scene tree) |
-| Side walls | **none**; only colliders: table, two rackets, ball, two flat "player half" triggers (30 × 25) | Verified |
-| Rackets | at z = ±12 (past the table ends ±10.96), box 4 × 10 × 4.5 + capsule r 1.67 | Verified |
-| Racket travel | `vincoloSX/DX` at x = ±9.24, i.e. 1.52 × the table half-width (beyond the edges) | Serialized |
-| Racket follow | `lerpVelocitaRacchetta` 0.5 (smoothing towards the finger) | Serialized; use inferred |
-| Racket rotation | no rotation field; `angoloMassimoConsentitoGesture` 15° | Serialized; meaning inferred (swipe angle cap) |
-| Shot input | swipe sampled: 30 samples (`numeroSampleVettoreTiro`) over 0.2 s | Serialized; use inferred |
-| Ball flight | cubic Bézier template (start z −6, handles at height 3.99 / 2.86, end z 7, x +1.5), 0.9 s per shot (`tempoAnimazione`), eased by a curve with slopes 1.36 → 0.34 (fast off the racket, slowing) | Serialized; use inferred |
-| Shot modifiers | direction 8, spin 0.3, power 7, bounce coefficient 30, arc height 6 | Serialized; formulas unknown |
-| Ball | sphere trigger r 0.5 (visual r 0.4), height faked by shadow + scale | Verified / serialized |
-| Score | `scoreToWin` 7 (shared `LevelController`) | Serialized; win-by-two unknown |
-| Bot | speed range 0.15–0.20, difficulty bands easy 0.3–0.5, medium 0.4–0.6, hard 0.85–1.0, ±20 % random | Serialized; use inferred |
+**Verified from native instructions and scene data:** live per-frame touch delta; OnKeep gesture
+normalization/power/spin; release clears parameters; cubic controls and duration; live endpoint spin;
+post-table-bounce racket eligibility; bounce direction; floor fault/scoring; serve alternates every
+two points; first to seven. Stored 30-sample/0.2 s/15-degree fields are not the active input formula.
+Table is 12.16 ? 21.92; arc height 6; floor -6; direction gain 8; power gain 7; bounce length 30;
+spin endpoint delta .3 per native fixed step; racket world x +/-9.242, own z 5..20, height 2.
+No net collider or side walls exist. Supplied video independently confirms 2D racket travel,
+contact-to-serve, arcing flight, shadow, open edges and scoring.
 
-Needs gameplay observation (not possible: the APK cannot be installed without its native split):
-serve rules, whether the ball must land on the far half, net/edge handling, deuce, how spin bends the curve.
+**Adaptations:** independent server code; table-width coordinates; 60 Hz conversion of gesture
+velocity; .025 collision tolerance and <=8 ms substeps; bounded network prediction; original Canvas
+art. Reference CPU difficulty behavior and shared-manager initial-server selection are not copied.
+Initial server is random and the debug opponent is a simple bounded-speed bot.
+
+The untrusted packages installed and opened in an isolated, account-free emulator; the Ping Pong
+entry was not reached in the bounded runtime attempt. Do not describe the supplied video as a
+recording made by this session. Full addresses, pseudocode, confidence and hashes are recorded in
+`C:\Users\aarah\Game-Reverse-Engineering\reports\PINGPONG-NATIVE.md` and `APKM-XAPK-COMPARISON.md`.
 
 ## Reference turn games (same method)
 - Connect 4: the disc is a physics body (`_pinSpeed`, `_pinBounciness` 0.15) — a small bounce on landing. Inferred.

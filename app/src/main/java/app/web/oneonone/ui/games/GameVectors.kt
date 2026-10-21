@@ -58,9 +58,11 @@ internal fun gameVector(name: String, paint: Color): ImageVector {
         path(fill = SolidColor(paint)) {
             when (name) {
                 "pong" -> {
-                    moveTo(3f, 9f); lineTo(6f, 9f); lineTo(6f, 23f); lineTo(3f, 23f); close()
-                    moveTo(26f, 9f); lineTo(29f, 9f); lineTo(29f, 23f); lineTo(26f, 23f); close()
-                    moveTo(14f, 13f); lineTo(19f, 13f); lineTo(19f, 18f); lineTo(14f, 18f); close()
+                    moveTo(9f, 5f); curveTo(17f, 0f, 27f, 9f, 22f, 18f)
+                    curveTo(19f, 24f, 12f, 25f, 7f, 20f); curveTo(2f, 15f, 3f, 9f, 9f, 5f); close()
+                    moveTo(8f, 21f); lineTo(12f, 24f); lineTo(7f, 30f); lineTo(3f, 27f); close()
+                    moveTo(28f, 3f); curveTo(33f, 3f, 33f, 10f, 28f, 10f)
+                    curveTo(23f, 10f, 23f, 3f, 28f, 3f); close()
                 }
                 "tictactoe" -> {
                     moveTo(4f, 4f); lineTo(6f, 4f); lineTo(14f, 12f); lineTo(14f, 14f)

@@ -4,7 +4,7 @@ import kotlinx.serialization.json.*
 
 enum class GameKind(val wire: String, val title: String, val description: String) {
     Chess("chess", "Chess", "A little strategy, a worthy opponent"),
-    Pong("pong", "Table Tennis", "Keep the rally going · first to 7"),
+    Pong("pong", "Ping Pong", "Swipe, spin and rally · first to 7"),
     Connect4("connect4", "Connect 4", "Drop a disc, connect four"),
     TicTacToe("tictactoe", "Tic-Tac-Toe", "Three in a row, one good move"),
     Reversi("reversi", "Reversi", "Outflank and flip · most discs wins"),

@@ -109,7 +109,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         dismissed.value = match.id; hub.value = false
     }
     fun move(data: JsonObject) = session.move(data)
-    fun paddle(viewX: Float) = session.paddle(viewX)
+    fun paddle(viewX: Float, viewY: Float, released: Boolean = false) = session.paddle(viewX, viewY, released)
 
     private fun message(code: String) = when (code) {
         "partner_offline" -> "Games need $nickname to be online."

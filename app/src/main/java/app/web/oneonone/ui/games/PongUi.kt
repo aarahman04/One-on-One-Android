@@ -1,13 +1,6 @@
 package app.web.oneonone.ui.games
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -23,14 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -44,62 +35,59 @@ import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.coroutines.isActive
 import kotlin.math.ceil
 
-// Table geometry around the server's court (contract §12), in table widths. The table is 1 x CourtH; each
-// racket head is centred on an end line and its handle sticks out past the table.
-private const val HandleLength = .15f
-private const val HandleWidth = .075f
-private const val Margin = PongClient.HeadR + HandleLength + .03f
+private const val MarginX = .28f
+private const val MarginTop = .42f
+private const val MarginBottom = .7f
+private val OwnRubber = Color(0xFFEE7468)
+private val OtherRubber = Color(0xFF55B9E8)
 
-/** Scores, countdown and pause read as Compose state only when they change; the table itself redraws per frame. */
 private class PongHud {
     var mine by mutableIntStateOf(0)
     var theirs by mutableIntStateOf(0)
     var countdown by mutableIntStateOf(0)
+    var serving by mutableStateOf(false)
+    var myServe by mutableStateOf(false)
 }
 
-/** Scoreboard over the table, then the table; drag anywhere on it to move your racket. */
 @Composable
 internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, footer: @Composable () -> Unit) {
-    val game = vm.pong
+    val game = vm.pong ?: return
     val match = state.match ?: return
     val hud = remember(game) { PongHud() }
     var frame by remember(game) { mutableLongStateOf(0L) }
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(game) {
-        val client = game ?: return@LaunchedEffect
-        var hits = client.hits
+        vm.paddle(game.myX, game.myY)
+        var hits = game.hits
         while (isActive) {
-            withFrameNanos { client.advance(it); frame = it }
-            if (client.hits != hits) { hits = client.hits; haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
-            if (client.myScore != hud.mine) { hud.mine = client.myScore; haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
-            hud.theirs = client.theirScore
-            hud.countdown = ceil(client.countdownMs / 1000f).toInt()
+            withFrameNanos { game.advance(it); frame = it }
+            if (game.hits != hits) { hits = game.hits; haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+            if (game.myScore != hud.mine || game.theirScore != hud.theirs) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            hud.mine = game.myScore; hud.theirs = game.theirScore
+            hud.countdown = ceil(game.countdownMs / 1000f).toInt()
+            hud.serving = game.waitingServe; hud.myServe = game.myServe
         }
     }
     val paused = match.paused || state.partner in match.away
     Column(modifier.fillMaxWidth()) {
         PongScoreboard(hud.mine, hud.theirs, vm.nickname)
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = OneTheme.spacing.lg16), contentAlignment = Alignment.Center) {
-            val unit = minOf(maxWidth, maxHeight / (PongClient.CourtH + 2 * Margin))
-            Box(Modifier.size(unit, unit * (PongClient.CourtH + 2 * Margin)), contentAlignment = Alignment.Center) {
-                if (game != null) PongTable(game, { frame }, enabled = !paused, onPaddle = vm::paddle)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val unit = minOf(maxWidth / (1 + 2 * MarginX), maxHeight / (PongClient.CourtH + MarginTop + MarginBottom))
+            Box(Modifier.size(unit * (1 + 2 * MarginX), unit * (PongClient.CourtH + MarginTop + MarginBottom))) {
+                PongTable(game, { frame }, enabled = !paused, onPaddle = vm::paddle)
                 when {
-                    paused -> Surface(shape = RoundedCornerShape(OneTheme.radii.lg16), color = OneTheme.colors.bgRaised,
-                        border = BorderStroke(1.dp, OneTheme.colors.border)) {
-                        Text("Waiting for ${vm.nickname}…", Modifier.padding(horizontal = OneTheme.spacing.lg16, vertical = OneTheme.spacing.sm8)
-                            .semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.titleSmall, color = OneTheme.colors.text)
-                    }
-                    hud.countdown > 0 -> AnimatedContent(hud.countdown, transitionSpec = {
-                        (scaleIn(tween(220), initialScale = .6f) + fadeIn(tween(220))) togetherWith fadeOut(tween(120))
-                    }, label = "countdown") { n ->
-                        Surface(Modifier.size(88.dp), shape = RoundedCornerShape(OneTheme.radii.full), color = OneTheme.colors.bgRaised.copy(alpha = .92f),
-                            border = BorderStroke(1.dp, OneTheme.colors.border)) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("$n", Modifier.semantics { liveRegion = LiveRegionMode.Polite }, fontSize = 44.sp, fontWeight = FontWeight.Bold,
-                                    color = OneTheme.colors.text)
+                    paused -> CourtNotice("Waiting for ${vm.nickname}…", Modifier.align(Alignment.Center))
+                    hud.countdown > 0 -> Surface(Modifier.align(Alignment.Center).size(68.dp),
+                        shape = RoundedCornerShape(100), color = OneTheme.colors.bgRaised.copy(alpha = .9f)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            AnimatedContent(hud.countdown, label = "serve countdown") { count ->
+                                Text("$count", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = OneTheme.colors.text,
+                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                             }
                         }
                     }
+                    hud.serving -> CourtNotice(if (hud.myServe) "Your serve · move your racket into the ball" else "${vm.nickname} is serving",
+                        Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
                 }
             }
         }
@@ -107,133 +95,118 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, f
     }
 }
 
-/** "You 3  ·  first to 7  ·  2 Alex", scores sliding up as they change. */
+@Composable
+private fun CourtNotice(text: String, modifier: Modifier) {
+    Surface(modifier, shape = RoundedCornerShape(OneTheme.radii.md10), color = OneTheme.colors.bgRaised.copy(alpha = .94f)) {
+        Text(text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+            style = MaterialTheme.typography.labelMedium, color = OneTheme.colors.text)
+    }
+}
+
 @Composable
 private fun PongScoreboard(mine: Int, theirs: Int, nickname: String) {
     val c = OneTheme.colors
-    val s = OneTheme.spacing
-    Surface(Modifier.fillMaxWidth().padding(horizontal = s.lg16, vertical = s.sm8), shape = RoundedCornerShape(OneTheme.radii.lg16),
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp),
         color = c.bgRaised, border = BorderStroke(1.dp, c.border)) {
-        Row(Modifier.padding(horizontal = s.lg16, vertical = s.sm8).semantics(mergeDescendants = true) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics(mergeDescendants = true) {
             contentDescription = "You $mine, $nickname $theirs, first to 7"
         }, verticalAlignment = Alignment.CenterVertically) {
-            ScoreSide("You", mine, c.accentYou, Alignment.Start, Modifier.weight(1f))
-            Text("first to 7", style = MaterialTheme.typography.labelMedium, color = c.muted)
-            ScoreSide(nickname, theirs, c.accentOther, Alignment.End, Modifier.weight(1f))
+            Text("You", color = OwnRubber, style = MaterialTheme.typography.labelLarge)
+            AnimatedContent(mine, Modifier.padding(start = 12.dp), label = "your score") { Text("$it", color = c.text, fontSize = 26.sp, fontWeight = FontWeight.Bold) }
+            Text("first to 7", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                style = MaterialTheme.typography.labelSmall, color = c.muted)
+            AnimatedContent(theirs, Modifier.padding(end = 12.dp), label = "their score") { Text("$it", color = c.text, fontSize = 26.sp, fontWeight = FontWeight.Bold) }
+            Text(nickname, color = OtherRubber, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.widthIn(max = 92.dp))
         }
     }
 }
 
 @Composable
-private fun ScoreSide(name: String, score: Int, color: Color, align: Alignment.Horizontal, modifier: Modifier) {
-    Column(modifier, horizontalAlignment = align) {
-        Text(name, style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1)
-        AnimatedContent(score, transitionSpec = {
-            (slideInVertically(tween(ScoreSlideMs)) { it } + fadeIn(tween(ScoreSlideMs))) togetherWith
-                (slideOutVertically(tween(ScoreSlideMs)) { -it } + fadeOut(tween(ScoreSlideMs)))
-        }, label = "score") { value ->
-            Text("$value", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = OneTheme.colors.text)
-        }
-    }
-}
-
-private const val ScoreSlideMs = 200
-
-@Composable
-private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onPaddle: (Float) -> Unit) {
-    val c = OneTheme.colors
+private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onPaddle: (Float, Float, Boolean) -> Unit) {
     val currentEnabled by rememberUpdatedState(enabled)
-    val table = lerp(c.bgRaised, c.accentYou, .12f)
-    val line = c.text.copy(alpha = .28f)
-    val net = c.text.copy(alpha = .7f)
-    Canvas(Modifier.fillMaxSize()
-        // The whole area is the control: the finger's x is the racket's x. Every change is consumed so the
-        // screen never scrolls under a rally.
-        .pointerInput(game) {
-            awaitEachGesture {
-                val down = awaitFirstDown()
-                down.consume()
-                val w = size.width.toFloat()
-                if (currentEnabled) onPaddle(down.position.x / w)
+    Canvas(Modifier.fillMaxSize().pointerInput(game) {
+        awaitEachGesture {
+            val down = awaitFirstDown(); down.consume()
+            val unit = size.width / (1 + 2 * MarginX)
+            fun move(position: Offset) {
+                if (currentEnabled) onPaddle(position.x / unit - MarginX, position.y / unit - MarginTop, false)
+            }
+            move(down.position)
+            try {
                 while (true) {
                     val event = awaitPointerEvent()
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                     change.consume()
                     if (!change.pressed) break
-                    if (currentEnabled) onPaddle(change.position.x / w)
+                    move(change.position)
                 }
+            } finally {
+                if (currentEnabled) onPaddle(game.myX, game.myY, true)
             }
         }
-        .semantics {
-            contentDescription = "Table tennis table. Your racket is at the bottom. Drag left and right to move it."
-            customActions = listOf(
-                CustomAccessibilityAction("Move racket left") { onPaddle(game.myX - .1f); true },
-                CustomAccessibilityAction("Move racket right") { onPaddle(game.myX + .1f); true })
-        }) {
-        val now = frame() // Read in the draw phase: only the canvas redraws each display frame.
-        val u = size.width
-        val top = Margin * u
-        fun at(x: Float, y: Float) = Offset(x * u, top + y * u)
-        val tableRect = Rect(0f, top, u, top + PongClient.CourtH * u)
-        val corner = CornerRadius(.035f * u)
-        // Table, lines and net.
-        drawRoundRect(table, tableRect.topLeft, tableRect.size, corner)
-        drawRoundRect(c.border, tableRect.topLeft, tableRect.size, corner, style = Stroke(.012f * u))
-        drawLine(line, at(.5f, .03f), at(.5f, PongClient.CourtH - .03f), .012f * u)
-        val netY = top + PongClient.CourtH / 2 * u
-        drawLine(net, Offset(-.02f * u, netY), Offset(1.02f * u, netY), .022f * u)
-        drawCircle(net, .02f * u, Offset(-.02f * u, netY)); drawCircle(net, .02f * u, Offset(1.02f * u, netY))
+    }.semantics {
+        contentDescription = "Ping Pong. Move your racket around your half and swipe through the ball. A sideways brush adds spin."
+        customActions = listOf(
+            CustomAccessibilityAction("Move racket left") { if (currentEnabled) onPaddle(game.myX - .1f, game.myY, true); currentEnabled },
+            CustomAccessibilityAction("Move racket right") { if (currentEnabled) onPaddle(game.myX + .1f, game.myY, true); currentEnabled },
+            CustomAccessibilityAction("Move racket forward") { if (currentEnabled) onPaddle(game.myX, game.myY - .1f, true); currentEnabled },
+            CustomAccessibilityAction("Move racket back") { if (currentEnabled) onPaddle(game.myX, game.myY + .1f, true); currentEnabled })
+    }) {
+        val now = frame()
+        val u = size.width / (1 + 2 * MarginX)
+        fun at(x: Float, y: Float) = Offset((x + MarginX) * u, (y + MarginTop) * u)
+        val table = Rect(at(0f, 0f), at(1f, PongClient.CourtH))
+        drawRoundRect(Color.Black.copy(alpha = .18f), table.topLeft + Offset(.025f * u, .035f * u), table.size, CornerRadius(.012f * u))
+        drawRect(Color(0xFF548E43), table.topLeft, table.size)
+        drawRect(Color(0xFF284930), table.topLeft, table.size, style = Stroke(.025f * u))
+        val inset = .025f * u
+        drawRect(Color.White.copy(alpha = .85f), table.topLeft + Offset(inset, inset), Size(table.width - 2 * inset, table.height - 2 * inset), style = Stroke(.009f * u))
+        drawLine(Color.White.copy(alpha = .75f), at(.5f, .025f), at(.5f, PongClient.CourtH - .025f), .009f * u)
+        drawLine(Color(0xFF20372B), at(-.035f, PongClient.CourtH / 2), at(1.035f, PongClient.CourtH / 2), .035f * u)
+        drawLine(Color.White.copy(alpha = .9f), at(-.035f, PongClient.CourtH / 2), at(1.035f, PongClient.CourtH / 2), .009f * u)
 
-        clipPath(Path().apply { addRoundRect(RoundRect(tableRect, corner)) }) {
-            // Shadows fall on the table only.
-            val shadow = Color.Black.copy(alpha = .14f)
-            drawCircle(shadow, PongClient.HeadR * u, at(game.theirX + .025f, .03f))
-            drawCircle(shadow, PongClient.HeadR * u, at(game.myX + .025f, PongClient.CourtH + .03f))
-            if (game.live) {
-                val h = game.height
-                drawCircle(Color.Black.copy(alpha = .2f - .06f * h), PongClient.BallR * u * (1f - .15f * h),
-                    at(game.ballX + .04f * h, game.ballY + .05f * h))
-                val since = (now - game.bounceAt) / 1e6f
-                if (game.bounceAt > 0 && since in 0f..260f) {
-                    val k = since / 260f
-                    drawCircle(c.text.copy(alpha = .35f * (1 - k)), PongClient.BallR * u * (1 + 1.4f * k), at(game.bounceX, game.bounceY),
-                        style = Stroke(.006f * u))
-                }
+        for (index in 1 until game.trail.size) {
+            val previous = game.trail[index - 1]; val point = game.trail[index]
+            val k = index.toFloat() / game.trail.size
+            drawLine(Color.White.copy(alpha = .25f * k), at(previous.x, previous.y), at(point.x, point.y),
+                PongClient.BallR * u * k, cap = StrokeCap.Round)
+        }
+        if (game.live) {
+            val h = (game.height / PongClient.ArcH).coerceIn(0f, 1f)
+            drawCircle(Color.Black.copy(alpha = .19f - .05f * h), PongClient.BallR * u * (1 - .15f * h),
+                at(game.ballX + .12f * h, game.ballY + .025f * h))
+            val since = (now - game.bounceAt) / 1e6f
+            if (game.bounceAt > 0 && since in 0f..300f) {
+                val k = since / 300
+                drawCircle(Color.White.copy(alpha = .25f * (1 - k)), PongClient.BallR * u, at(game.bounceX, game.bounceY))
+                drawCircle(Color.White.copy(alpha = .65f * (1 - k)), PongClient.BallR * u * (1 + 1.2f * k), at(game.bounceX, game.bounceY), style = Stroke(.009f * u))
             }
         }
-        // Rackets: the opponent's handle points away from you, yours towards you.
-        drawRacket(at(game.theirX, 0f), up = true, color = c.accentOther, u = u)
-        drawRacket(at(game.myX, PongClient.CourtH), up = false, color = c.accentYou, u = u)
-        if (game.live) {
-            val r = PongClient.BallR * u * (1f + .28f * game.height)
+        rotate(game.theirAngle, at(game.theirX, game.theirY)) { drawRacket(at(game.theirX, game.theirY), OtherRubber, u, up = true) }
+        rotate(game.myAngle, at(game.myX, game.myY)) { drawRacket(at(game.myX, game.myY), OwnRubber, u, up = false) }
+        if (game.live && (game.height >= 0 || game.ballX !in 0f..1f || game.ballY !in 0f..PongClient.CourtH)) {
+            val h = (game.height / PongClient.ArcH).coerceIn(-1f, 1f)
             val ball = at(game.ballX, game.ballY)
+            val r = PongClient.BallR * u * (1 + .35f * h)
+            drawCircle(Color(0xFF253A2C), r * 1.22f, ball)
             drawCircle(Color.White, r, ball)
-            drawCircle(c.text.copy(alpha = .45f), r, ball, style = Stroke(.006f * u))
-            // A seam that rolls with the sidespin, so a curving shot visibly spins.
-            if (game.spin != 0f) drawArc(c.text.copy(alpha = .4f), game.spinAngle, 110f, false, ball - Offset(r * .6f, r * .6f),
-                Size(r * 1.2f, r * 1.2f), style = Stroke(.005f * u, cap = StrokeCap.Round))
+            if (game.spin != 0f) drawArc(Color(0xFF738277), game.spinAngle, 120f, false, ball - Offset(r * .65f, r * .65f),
+                Size(r * 1.3f, r * 1.3f), style = Stroke(.005f * u))
         }
     }
 }
 
-/** A table tennis racket seen from above: round head with a lighter rubber edge, short handle. */
-private fun DrawScope.drawRacket(center: Offset, up: Boolean, color: Color, u: Float) {
+private fun DrawScope.drawRacket(center: Offset, color: Color, u: Float, up: Boolean) {
     val r = PongClient.HeadR * u
-    val dir = if (up) -1f else 1f // handle direction on screen
-    val edge = lerp(color, Color.Black, .35f)
-    val handleColor = lerp(color, Color.Black, .25f)
-    val hw = HandleWidth * u
-    val handleTop = if (up) center.y - r - HandleLength * u else center.y + r * .6f
-    val handleHeight = HandleLength * u + r * .4f
-    drawRoundRect(handleColor, Offset(center.x - hw / 2, handleTop), Size(hw, handleHeight), CornerRadius(hw * .35f))
-    drawRoundRect(edge, Offset(center.x - hw / 2, handleTop), Size(hw, handleHeight), CornerRadius(hw * .35f), style = Stroke(.01f * u))
+    val edge = Color(0xFF263B31)
+    val handleWidth = .065f * u
+    val handleY = if (up) center.y - r - .12f * u else center.y + r * .55f
+    val handle = Rect(Offset(center.x - handleWidth / 2, handleY), Size(handleWidth, r * .45f + .12f * u))
+    drawCircle(Color.Black.copy(alpha = .18f), r, center + Offset(.025f * u, .025f * u))
+    drawRoundRect(lerp(color, Color.White, .2f), handle.topLeft, handle.size, CornerRadius(.015f * u))
+    drawRoundRect(edge, handle.topLeft, handle.size, CornerRadius(.015f * u), style = Stroke(.014f * u))
     drawCircle(color, r, center)
-    // The throat band where the blade meets the handle, as on a real racket.
-    val head = Path().apply { addOval(Rect(center, r)) }
-    clipPath(head) {
-        val bandTop = if (up) center.y - r else center.y + r * .55f
-        drawRect(lerp(color, Color.White, .3f), Offset(center.x - r, bandTop), Size(2 * r, r * .45f))
-    }
-    drawCircle(edge, r, center, style = Stroke(.014f * u))
-    drawLine(edge, Offset(center.x - r * .84f, center.y + dir * r * .55f), Offset(center.x + r * .84f, center.y + dir * r * .55f), .01f * u)
+    drawCircle(edge, r, center, style = Stroke(.015f * u))
+    val bandY = center.y + (if (up) -.65f else .65f) * r
+    drawLine(edge, Offset(center.x - .72f * r, bandY), Offset(center.x + .72f * r, bandY), .012f * u)
 }

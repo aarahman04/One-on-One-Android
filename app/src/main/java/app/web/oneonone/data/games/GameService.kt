@@ -14,5 +14,5 @@ class GameService @Inject constructor(private val transport: Transport, messages
     val active = messages.active
     val ended = messages.ended
     override suspend fun call(event: String, payload: JsonObject) = transport.match(event, payload)
-    override fun paddle(matchId: String, x: Float) = transport.paddle(matchId, x)
+    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) = transport.paddle(matchId, x, y, released)
 }

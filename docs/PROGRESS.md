@@ -1729,3 +1729,61 @@ possible on the emulator (needs two signed-in accounts); the stand-in is not the
 ### Xiaomi checklist
 - [ ] Chess: drag a piece and let go: it glides from your finger to the square, never back first.
 - [ ] Connect 4 / Reversi / tic-tac-toe: a new disc or mark never flashes in its final place before animating.
+
+## Ping Pong rebuild and playability tuning (2026-10-21, `codex/pong-native-mechanics`)
+
+Owner rejected the previous flat wall-bouncing game and approved a fresh replacement using the supplied
+video and recovered native mechanics. Display name is Ping Pong, with an original racket-and-ball icon
+in `/games` and result screens. No other game implementation or web-client file was changed.
+
+- Rackets move across their own half in two dimensions, including outside the table. Gesture direction
+  aims the shot; power adjusts depth and duration. Bat tilt follows the stroke up to 55 degrees and
+  eases back; this movement was retained after owner feedback.
+- Server sends height-bearing cubic flights, table bounces and serve state. Sides and corners are open.
+  Serving waits for contact after the countdown; service alternates every two points; first to seven.
+- Owner requested further improvements beyond the reference: angled shots now have more landing room,
+  duration is .88..1.06 s, and gentle placements stay spin-free. A stronger sideways brush transfers
+  persistent spin to the ball (light .1 / hard .2 after owner feedback). It curves gently in air and receives a lateral kick on the table bounce.
+- Contact resolves outside the drawn racket along the outgoing shot; confirmed hits snap promptly
+  rather than blending through the bat. The owner accepted the current speed; it was retained.
+- Canvas displays actual height, shadow, connected trail and a 300 ms contact pulse. Prediction is capped
+  at 150 ms. Removed the old side reflections, cosmetic height and artificial hold at the racket.
+- Demo opponent holds its baseline until countdown zero, avoiding the blue-bat/ball overlap. It blocks
+  at the baseline rather than retreating from the ball. Its simulation advances by elapsed time.
+- Release/cancel uses the existing 33 ms throttle; lifecycle transitions discard queued input. Backend
+  validates optional y/released and rejects paused input. Existing protocol fields/types are retained.
+
+Validation: `npm test` **94/94**, TypeScript check passed. Android
+`assembleDebug lintDebug testDebugUnitTest` passed, **214 tests**. Socket fixtures cover two clients'
+shared state, rallies, scoring and rematches; these are not two independently signed-in Android users.
+
+Visible emulator evidence and the final play round are recorded in the external `SESSION-RESULTS.md`.
+The earlier real-touch round confirmed zero-spin blocks and a rotating brush return with nonzero spin;
+its recording is `evidence/emulator/pingpong-spin-test.mp4`. It predates the final gentler tuning.
+Reference installation ran only in a disposable account-free isolated AVD; both packages opened menus,
+but Ping Pong was not reached in the bounded attempt. Supplied video is owner evidence, not our recording.
+
+Previous installed iteration: real-touch exercise recorded as `evidence/emulator/pingpong-final-play.mp4`,
+with 1,181 authoritative demo frames in 40 s. Observed neutral blocks, rotated brush hits, table
+landings with retained spin, open-edge travel and scoring. Contact-frame inspection exposed the remaining
+forward-stroke/back-face overlap and led to the final front-contact guard and regression tests.
+This round used the preceding .45 cap/.6 bounce tuning; the final front-face/.1?.2 spin build supersedes it; the accepted speed and bat movement were retained. Unit
+coverage checks surface clearance through the first 80 ms, plus immediate confirmed-contact display.
+Earlier completion/rematch rounds reached 7?1 and 0?7 and reset to 0?0 with seats swapped.
+
+Emulator remains visible (OneOnOne_D3, API 36, emulator-5556). At 720?1600/density280, with Gradle
+stopped and recording off, a 46.5 s steady sample rendered 2,741 frames (about59/s) with 1.50% modern
+frame-deadline misses. This is emulator calibration, not a physical-device benchmark; earlier 1080
+recording while compiling had poor frame timing. Original display can be restored with `wm size reset`
+and `wm density reset`. No personal account/device was modified. Scripted input was stopped when it became clear it was
+competing with the owner's control. Subsequent inspection is read-only while the owner plays.
+
+### Physical-device and real multiplayer checklist
+
+- [ ] Two independently authenticated Android accounts: invite/accept, both seats, identical score/result.
+- [ ] Xiaomi and another phone: slow/fast strokes, diagonal placement, left/right brushing and bounce kick.
+- [ ] Serve: countdown is separate from the bat, contact starts play, every two points changes server.
+- [ ] Open corner exits continue outward; a return is accepted only after a table landing.
+- [ ] Variable network latency: smooth bounded prediction, no artificial wall/hold or duplicate bounce.
+- [ ] Background/resume pauses both sides and preserves score; rematch resets and swaps seats.
+- [ ] Physical frame timing, touch calibration and haptics; emulator numbers are not a phone benchmark.

@@ -13,9 +13,11 @@ private class FakeChannel : MatchChannel {
     override val frames = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
     val calls = mutableListOf<Pair<String, JsonObject>>()
     val paddles = mutableListOf<Float>()
+    val releases = mutableListOf<Boolean>()
+    val paddleY = mutableListOf<Float?>()
     var reply: suspend (String, JsonObject) -> JsonObject = { _, _ -> buildJsonObject { put("ok", true) } }
     override suspend fun call(event: String, payload: JsonObject): JsonObject { calls += event to payload; return reply(event, payload) }
-    override fun paddle(matchId: String, x: Float) { paddles += x }
+    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) { paddles += x; paddleY += y; releases += released }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -97,16 +99,17 @@ class MatchSessionTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
         assertNotNull(s.pong)
-        s.paddle(.3f); s.paddle(.4f); s.paddle(.5f); runCurrent()
+        s.paddle(.3f, 1.9f); s.paddle(.4f, 1.9f); s.paddle(.5f, 1.9f); runCurrent()
         assertEquals(listOf(.5f), ch.paddles) // a burst collapses to the latest position
-        s.paddle(.6f); s.paddle(.7f); runCurrent()
+        s.paddle(.6f, 2f); s.paddle(.7f, 2.1f); runCurrent()
         assertEquals(listOf(.5f), ch.paddles) // within the interval: held
         advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
         assertEquals(listOf(.5f, .7f), ch.paddles)
+        assertEquals(listOf(1.9f, 2.1f), ch.paddleY)
         advanceTimeBy(1000); runCurrent()
         assertEquals(2, ch.paddles.size) // nothing new, nothing sent
         ch.states.emit(matchJson(game = "pong", turn = null, version = 2, paused = true)); runCurrent()
-        s.paddle(.6f); advanceTimeBy(100); runCurrent()
+        s.paddle(.6f, 1.9f); advanceTimeBy(100); runCurrent()
         assertEquals(2, ch.paddles.size) // paused: no input
     }
 
@@ -118,5 +121,45 @@ class MatchSessionTest {
         s.resign(); s.draw("offer"); s.away(true); runCurrent()
         assertEquals(listOf("match:resign", "match:draw", "match:away"), ch.calls.drop(1).map { it.first })
         assertTrue(ch.calls.drop(1).all { it.second["matchId"]!!.jsonPrimitive.content == "m1" })
+    }
+
+    @Test fun releaseUsesTheSameThrottleAndTheLatestPosition() = runTest {
+        val (s, ch) = session()
+        ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
+        s.paddle(.3f, 1.9f); runCurrent()
+        s.paddle(.6f, 1.9f)
+        s.paddle(.6f, 1.9f, released = true); runCurrent()
+        assertEquals(listOf(.3f), ch.paddles)
+        advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
+        assertEquals(listOf(.3f, .6f), ch.paddles)
+        assertEquals(listOf(false, true), ch.releases)
+        // A new gesture supersedes a release still waiting for its interval.
+        s.paddle(.6f, 1.9f, released = true)
+        s.paddle(.7f, 1.9f)
+        advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
+        assertEquals(.7f, ch.paddles.last(), 0f)
+        assertFalse(ch.releases.last())
+    }
+
+    @Test fun queuedPaddleInputIsDiscardedOnPauseResultRematchAndReset() = runTest {
+        for (next in listOf(
+            matchJson(game = "pong", turn = null, version = 2, paused = true),
+            matchJson(game = "pong", status = "over", turn = null, version = 2, outcome = outcome("me", "first_to_7")),
+            matchJson(id = "rematch", game = "pong", turn = null),
+        )) {
+            val (s, ch) = session()
+            ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
+            s.paddle(.3f, 1.9f); runCurrent()
+            s.paddle(.6f, 1.9f, released = true)
+            ch.states.emit(next); runCurrent()
+            advanceTimeBy(100); runCurrent()
+            assertEquals(listOf(.3f), ch.paddles)
+        }
+        val (s, ch) = session()
+        ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
+        s.paddle(.3f, 1.9f); runCurrent()
+        s.paddle(.6f, 1.9f, released = true); s.reset("me")
+        advanceTimeBy(100); runCurrent()
+        assertEquals(listOf(.3f), ch.paddles)
     }
 }

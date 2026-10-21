@@ -963,14 +963,14 @@ flowchart LR
   IT <-->|Socket.IO| BE[(Backend MatchManager)]
   BE -->|match:state| IT
   BE -->|match:pong 30/s| IT
-  MS --> PC[PongClient<br/>rotate court for seat 2,<br/>extrapolate + smooth, hold at paddle plane]
+  MS --> PC[PongClient<br/>rotate court for seat 2,<br/>evaluate server cubic + smooth]
   MS --> BV[ChessView / GridView / DotsView<br/>read-only views of board JSON]
   BV --> SP[advanceSprites<br/>stable piece ids -> 200 ms slides,<br/>capture fade, castling, en passant, promotion]
 ```
 
 Chess renders real white/black pieces on a fixed classic board; black's board is flipped;
 legal-move hints come from chesslib on the server's FEN (display only, the server validates).
-Table tennis uses a portrait court (1 : 1.6) with each player's paddle at the bottom.
+Ping Pong uses a portrait court (1 : 1.8) with each player's paddle at the bottom.
 
 ## Chess and table tennis screens (2026-10-20, 2.0.7)
 
@@ -1030,3 +1030,36 @@ flowchart LR
 
 The hub lists Reversi instead of Dots & Boxes; `GameKind.Dots` still decodes so invites and game-log
 rows from older apps keep working.
+
+## Fresh Ping Pong (2026-10-21)
+
+The owner approved replacing the old wall-bouncing implementation after supplying a reference video.
+This diagram supersedes the flat-flight/latched-acceleration diagrams above. Wire id `pong` is retained;
+no persistence schema, endpoint, authentication or other game is changed.
+
+```mermaid
+flowchart LR
+  Touch[2D touch stroke or accessibility action] --> PC[PongClient: own racket and eased tilt]
+  PC --> MS[MatchSession: latest x/y/release every 33 ms]
+  MS --> T[GameService / InternetTransport]
+  T -->|match:paddle| S[MatchManager: validate membership, pause, finite input]
+  S --> P[PongSim: gesture aim and power, selective brush spin]
+  P --> C[Cubic flight with height and easing]
+  C --> B[Descending table contact: spin kick and bounce curve]
+  B --> R[Eligible opponent return or open-edge escape]
+  R --> Score[First to 7, serve changes every 2 points]
+  P -->|match:pong at 30 Hz: curve, height, spin, rackets, serve, bounce count| PC
+  PC --> Canvas[Canvas: actual server flight, shadow, tapered trail, bounce pulse]
+  Demo[Debug-only DemoPong + bounded bot, elapsed-time clock] -. same frames .-> PC
+```
+
+Spin transfers at contact and survives release with a 1.8 s decay. A brushing stroke adds a lateral kick
+on the table; a plain block does not. Android predicts the transmitted cubic for <=150 ms, rotates x/y
+for seat two, and leaves height unchanged. It never reflects a side miss or holds the ball at a racket.
+The additive `l` flag marks return eligibility after landing. Local racket contact prevents a forward
+stroke from pushing through the ball; server contact uses the front face and launches clear of the head.
+2D input and curve fields are additive; older renderers need updating for faithful gameplay. The web
+client remains unchanged. Demo rules mirror the backend; a numerical fixture checks the shared flight.
+
+The debug bot stays at its baseline through the countdown, then contacts the waiting ball. Opt-in
+`DemoPong` Logcat frames support repeatable real-touch testing; no debug controls enter release builds.
