@@ -5,6 +5,7 @@
 # Revisit only after authenticated minified builds exercise these SDK paths on-device.
 -keep,allowoptimization class io.socket.** { *; }
 -keep,allowoptimization class org.webrtc.** { *; }
+-keep class ai.onnxruntime.** { *; }
 -keep,allowoptimization class io.github.jan.supabase.** { *; }
 -keep,allowoptimization class io.ktor.** { *; }
 -keep,allowoptimization @kotlinx.serialization.Serializable class app.web.oneonone.** { *; }
