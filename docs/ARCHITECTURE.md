@@ -1160,3 +1160,31 @@ flowchart LR
 ```
 
 `SPEECH_MODEL_TTL=0` prevents idle-model unloading after the first request; it neither preloads models nor controls Railway service sleeping. A variable saved in the dashboard is not proof that the running process has applied it. No speech-service code or database schema changed. The [Claude Code cross-check handoff](prompts/claude-cross-check-fix-batch-2026-10-21.md) separates verified implementation from rollout, device checks and review targets such as missing TURN acknowledgements and multi-device call decline ordering.
+
+## Owner visual and cut-out follow-up (2026-10-21)
+
+The later owner request permits two game-logo edits only: the shared Ping Pong silhouette has a vertical grip centred beneath the head, and Tic-Tac-Toe uses circular outer/inner arcs. Picker, chat cards and results share these vectors. Gameplay remains unchanged. The owner's `Downloads/Ref image/ref.png` clarifies the photo treatment: `PhotoViewer` uses a 94% `#161717` scrim with faint chat behind it, white controls and zero additional window dim. This supersedes the initial fully transparent draft. Documents retain their black frame. Coil image alpha and zoom behavior are unchanged.
+
+Sticker cut-out now uses **BiRefNet Lite, general-use Swin-Tiny epoch 232**, through ONNX Runtime Android **1.24.3** CPU. It replaces MediaPipe/DeepLab entirely. The default is Studio Ludens' fixed **512 px FP32 export of the unchanged upstream learned tensors**, not the memory-heavy 1024 export. Input is RGB float32 `[1,3,512,512]`, normalized with ImageNet channel means/deviations. Output logits `[1,1,512,512]` become sigmoid alpha, scaled back and composed with the original image's alpha; no edge-threshold clipping is applied. Existing crop, 512 px WebP encoding, size limit and account-owned library remain. The 512 input can lose fine detail in large photos; Restore/Erase permit manual correction.
+
+```mermaid
+flowchart LR
+    P[Gallery photo, kept on device] --> B[Bounded decode and EXIF orientation]
+    G[Pinned public 512 model download, once] --> V[Exact size and SHA-256 verification]
+    V --> C[Private no-backup model cache]
+    B --> I[Serialized BiRefNet Lite CPU inference]
+    C --> I
+    I --> A[Sigmoid alpha and original pixels]
+    A --> S[Existing crop and transparent WebP library]
+    B --> E[Manual offset Erase and Restore]
+    A --> E
+    E --> S
+```
+
+Model URL: [pinned Studio Ludens conversion](https://huggingface.co/studioludens/birefnet-lite-512/resolve/962e67969ec6acec9c19fab76acee4f5e22e990c/onnx/model.onnx), **191,877,254 bytes**, SHA-256 `1cb0fb360dadd15af77c639085d77a9df67db0c64315560c3de005f676345ac2`. All **178,489,160 bytes of unique initializer tensors** match the downloaded [upstream 1024 export](https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx) by SHA-256; both graphs use standard-domain ONNX opset 17. The conversion is independently published, not an author-published 512 asset; its export scripts are not shipped. The full download, graph, tensor provenance and real host inference were checked before selecting it.
+
+Automatic removal is an explicit Cut-out action. The app reports the one-time **192 MB** download and progress, bounds bytes and network timeouts, validates before renaming the single reusable temporary file, and keeps manual tools usable after failure. No photo, account token or API credential is sent with this public model download. Cached inference needs no network. Download/inference run off the main thread; sessions, tensors and masks close after use, and a mutex prevents overlapping allocations. Cancellation requests ORT native termination and joins its watcher before closing the handle; session creation and a stalled read can still delay worker cleanup (30-second read timeout). A preflight rejects low-RAM/low-memory devices or less than 1,750,000,000 bytes available before downloading and again before session creation. It is a conservative heuristic, not a memory reservation or a completed Android benchmark. Phone timing/memory must be measured before claiming suitability on Xiaomi.
+
+Original is an untouched photo preview. Cut-out is the editing workspace: automatic removal, crop and offset Erase/Restore, with Undo/Redo icons above the preview. The brush has a touch dot and an erase/restore circle above it; circle size (8–80 dp) and distance (0–120 dp) controls appear only for that tool. Restore uses the original photo's pixels/alpha to recover subject details the model removed. Manual tools require no model or network. Stroke history is bounded to 32 strokes/1024 points per stroke; Done applies it on a worker and starts a new baseline, so Undo/Redo applies within the active brush session. Very long strokes are decimated to preserve the endpoints within that bound. The body scrolls inside a bounded maker with a fixed footer; Crop Cancel restores its entry trim/placement. The existing crop/placement, private per-account save and WebP encoding remain the final save path.
+
+MIT notices ship in `assets/stickers/`; the ONNX JNI package has an explicit R8 keep rule. Version 1.24.3 has no telemetry initializer; both ARM64 library ELF load alignments were inspected as 16 KB. APK/AAB package alignment and minified runtime still require their separate checks. No backend, speech-service, web-client, API, database, signing or release-version change is needed for this follow-up.
