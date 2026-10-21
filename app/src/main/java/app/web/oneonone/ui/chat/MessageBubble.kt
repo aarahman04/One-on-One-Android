@@ -675,7 +675,7 @@ private fun QuoteBlock(quote: BubbleQuote, colors: BubbleColors, modifier: Modif
     }
 }
 
-/** One emoji 42sp, two 36sp, three 32sp. */
+/** A message of exactly one emoji grapheme (see [emojiOnlyCount]). */
 private val BigEmojiSize = 42.sp
 
 /** Bare sticker / big emoji: time and ticks in a bubble-coloured pill hanging just under the content's corner. */
