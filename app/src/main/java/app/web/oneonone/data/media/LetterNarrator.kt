@@ -77,7 +77,7 @@ class LetterNarrator(private val api: SpeechGateway, private val audio: Narratio
                     val player = audio.deviceVoice(text, { completed(token, 0, work) }, { failed(token, IOException("Device voice failed.")) })
                     if (token != generation) { player.release(); return@launch }
                     current = Track(player, null)
-                    player.start(); update(NarrationPhase.Playing)
+                    player.start(); if (token == generation) update(NarrationPhase.Playing)
                 } else load(0, token, work)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { failed(token, error) }

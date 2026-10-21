@@ -62,7 +62,7 @@ class SpeechViewModel @Inject constructor(api: SpeechGateway, private val audio:
         narrator.toggle(connection, PREVIEW, "Dear $to. $body. With love, $from.", device = true)
     }
     /** Starts the device voice engine early so the first tap on a speaker plays without the engine's start-up wait. */
-    fun prewarmVoice(preview: Boolean = false) { if (preview || !BuildConfig.SERVER_SPEECH) audio.prewarm() }
+    fun prewarmVoice() = audio.prewarm()
     fun stopNarration(key: String? = null) { if (key == null || narration.value.key == key) narrator.stop() }
     fun startDictation(voiceRecording: Boolean, field: String = "") {
         if (voiceRecording) { showNotice("Stop your voice note before using /audio."); return }
@@ -88,7 +88,7 @@ class SpeechViewModel @Inject constructor(api: SpeechGateway, private val audio:
     fun background() {
         narrator.stop()
         // The recognizer Activity owns this one external flow; its result is still checked against the session token.
-        if (dictation.value.phase != DictationPhase.DeviceDialog) cancelDictation()
+        if (dictation.value.phase != DictationPhase.DeviceDialog) transcriber.background()
     }
     fun closeChat() { narrator.stop(); cancelDictation(); dictationOwner = null }
     override fun onCleared() { narrator.stop(); transcriber.cancel() }

@@ -36,6 +36,8 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
     private var heard = "" // final words of this device session
     private var pending = "" // the current segment's latest partial
     private var failures = 0
+    private var segmentId = 0L
+    private var deviceSession = false
 
     fun start() {
         if (state.value.active) return
@@ -83,6 +85,7 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
                 val recorded = recorder.stopDictation()
                 if (recorded == null) throw SpeechFailure(422, "no_speech")
                 clip = recorded.file
+                if (!recorded.duration.isFinite() || recorded.duration > 120) throw SpeechFailure(413, "too_long")
                 val result = api.transcribe(recorded.file)
                 if (token == generation) {
                     if (result.text.isBlank()) throw SpeechFailure(422, "no_speech")
@@ -106,10 +109,21 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
         }
     }
 
+    /** Leaving the screen releases the recognizer immediately, preserving even its latest partial. */
+    fun background() {
+        if (deviceSession) { finish(generation, null); return }
+        when (state.value.phase) {
+            DictationPhase.Recording -> stop()
+            DictationPhase.Starting -> cancel()
+            else -> Unit
+        }
+    }
+
     private fun listen(announce: Boolean = true) {
         cancel()
         val previous = cleanup
         val token = ++generation
+        deviceSession = device.available
         mutableState.value = DictationState(if (device.available) DictationPhase.DeviceListening else DictationPhase.DeviceDialog, token = token)
         if (announce) notice("Using device speech recognition")
         newSession().launch {
@@ -120,11 +134,14 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
 
     // The platform recognizer ends a segment at every pause; it is restarted until Stop or a fatal error.
     private fun segment(token: Long) {
+        val segment = ++segmentId
         pending = ""
         try {
-            device.start({ words -> segmentEnded(token, words) }, { words ->
-                if (token == generation) { failures = 0; pending = words.trim(); live(appendDictationText(heard, pending)) }
-            }, { message, fatal -> segmentFailed(token, message, fatal) })
+            device.start({ words -> if (segment == segmentId) segmentEnded(token, words) }, { words ->
+                if (token == generation && segment == segmentId && words.isNotBlank()) {
+                    failures = 0; pending = words.trim(); live(appendDictationText(heard, pending))
+                }
+            }, { message, fatal -> if (segment == segmentId) segmentFailed(token, message, fatal) })
         } catch (error: Exception) { finish(token, "Speech recognition isn't available on this phone.") }
     }
 
@@ -134,26 +151,33 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
         val final = words.trim().ifEmpty { pending }
         pending = ""
         if (final.isNotEmpty()) { failures = 0; heard = appendDictationText(heard, final); live(heard) }
-        if (state.value.phase == DictationPhase.DeviceListening) segment(token) else finish(token, null)
+        segmentId++
+        if (state.value.phase == DictationPhase.DeviceListening) restart(token) else finish(token, null)
     }
 
     private fun segmentFailed(token: Long, message: String, fatal: Boolean) {
         if (token != generation) return
         heard = appendDictationText(heard, pending); pending = ""
+        segmentId++
+        live(heard)
         when {
             state.value.phase != DictationPhase.DeviceListening -> finish(token, null)
             fatal || ++failures >= MAX_DEVICE_RETRIES -> finish(token, message)
-            else -> session?.let { CoroutineScope(scope.coroutineContext + it).launch {
-                delay(RETRY_DELAY_MS)
-                if (token == generation && state.value.phase == DictationPhase.DeviceListening) segment(token)
-            } }
+            else -> restart(token)
         }
+    }
+
+    private fun restart(token: Long) {
+        session?.let { CoroutineScope(scope.coroutineContext + it).launch {
+            delay(RETRY_DELAY_MS)
+            if (token == generation && state.value.phase == DictationPhase.DeviceListening) segment(token)
+        } }
     }
 
     /** Ends the device session, keeping every word heard so far. */
     private fun finish(token: Long, message: String?) {
         if (token != generation) return
-        val words = heard
+        val words = appendDictationText(heard, pending)
         cancel()
         if (words.isNotBlank()) deliver(words)
         message?.let(notice)
@@ -169,8 +193,8 @@ class SpeechTranscriber(private val api: SpeechGateway, private val recorder: Di
         return CoroutineScope(scope.coroutineContext + job)
     }
     fun cancel() {
-        generation++; timer?.cancel(); device.cancel()
-        heard = ""; pending = ""; failures = 0
+        generation++; segmentId++; timer?.cancel(); device.cancel()
+        heard = ""; pending = ""; failures = 0; deviceSession = false
         val old = session; session = null; old?.cancel()
         val file = clip; clip = null
         mutableState.value = DictationState()

@@ -1,8 +1,6 @@
 package app.web.oneonone.data.media
 
-import android.content.ComponentCallbacks2
 import android.content.Context
-import android.content.res.Configuration
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -16,6 +14,7 @@ import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -23,21 +22,14 @@ import kotlin.coroutines.resumeWithException
 
 /**
  * App-wide (singleton) so the device TextToSpeech engine is created once, warmed when a letter opens and reused by every
- * play: binding an engine takes a second or more. It is shut down when the app leaves the screen (narration stops then
- * anyway), so a bound engine is never held in the background. Every engine call is on the main thread.
+ * play: binding an engine takes a second or more. Releasing a player stops its speech and keeps the engine warm.
+ * Every engine call is on the main thread.
  */
 @Singleton
 class AndroidNarrationAudio @Inject constructor(@ApplicationContext private val context: Context) : NarrationAudio {
     private val main = Handler(Looper.getMainLooper())
     private var engine: TextToSpeech? = null
     private var engineReady: CompletableDeferred<Int>? = null
-    init {
-        context.registerComponentCallbacks(object : ComponentCallbacks2 {
-            override fun onTrimMemory(level: Int) { if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) shutdownEngine() }
-            override fun onConfigurationChanged(newConfig: Configuration) {}
-            @Deprecated("Deprecated in Java") override fun onLowMemory() { shutdownEngine() }
-        })
-    }
     private val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
     private var request: AudioFocusRequest? = null
     override fun focus(onLost: () -> Unit): Boolean {
@@ -129,6 +121,7 @@ private class DeviceVoicePlayer(private val tts: TextToSpeech, private val text:
     private var run = 0
     private var released = false
     private var playing = false
+    private val utterancePrefix = UUID.randomUUID().toString()
     override fun start() {
         if (released || playing) return
         playing = true
@@ -138,25 +131,27 @@ private class DeviceVoicePlayer(private val tts: TextToSpeech, private val text:
         val offsets = IntArray(chunks.size)
         for (i in 1 until chunks.size) offsets[i] = offsets[i - 1] + chunks[i - 1].length
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            private fun index(id: String?) = id?.takeIf { it.startsWith("$utterancePrefix-$token-") }?.substringAfterLast('-')?.toIntOrNull()
             override fun onStart(utteranceId: String?) {}
             override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
-                val index = utteranceId?.substringAfterLast('-')?.toIntOrNull() ?: return
+                val index = index(utteranceId) ?: return
                 main.post { if (run == token && !released && index in offsets.indices) offset = base + offsets[index] + start }
             }
             override fun onDone(utteranceId: String?) {
-                val index = utteranceId?.substringAfterLast('-')?.toIntOrNull() ?: return
+                val index = index(utteranceId) ?: return
                 main.post { if (run == token && !released && index in chunks.indices) {
                     offset = base + offsets[index] + chunks[index].length
                     if (index == chunks.lastIndex) { playing = false; completed() }
                 } }
             }
             @Deprecated("Deprecated in Java") override fun onError(utteranceId: String?) {
+                if (index(utteranceId) == null) return
                 main.post { if (run == token && !released) { playing = false; failed() } }
             }
         })
         chunks.forEachIndexed { i, chunk ->
-            if (tts.speak(chunk, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "$token-$i") == TextToSpeech.ERROR) {
-                playing = false; failed(); return
+            if (tts.speak(chunk, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "$utterancePrefix-$token-$i") == TextToSpeech.ERROR) {
+                tts.stop(); playing = false; failed(); return
             }
         }
         if (chunks.isEmpty()) { playing = false; completed() }

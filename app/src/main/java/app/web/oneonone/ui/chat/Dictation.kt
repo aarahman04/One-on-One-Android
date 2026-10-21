@@ -136,7 +136,7 @@ internal fun LetterDictation(vm: SpeechViewModel, connection: CurrentConnection,
     }
     // Closing the letter turns the mic off; words already in the letter stay. Rotation keeps listening.
     val activity = LocalActivity.current
-    DisposableEffect(vm) { onDispose { if (vm.dictation.value.active && activity?.isChangingConfigurations != true) vm.cancelDictation() } }
+    DisposableEffect(vm) { onDispose { if (vm.dictation.value.active && activity?.isChangingConfigurations != true) vm.background() } }
     val busy = state.phase == DictationPhase.Starting || state.phase == DictationPhase.Transcribing
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
         if (state.active) Text(when (state.phase) {
@@ -161,16 +161,15 @@ private val LabelIconSize = 16.dp
 @Composable private fun LabelGlyph(icon: Int, tint: Color) = Icon(painterResource(icon), null, Modifier.size(LabelIconSize), tint = tint)
 
 /**
- * A label-sized icon with a full 40dp touch target that adds no height to the label row: it lays out as 16dp wide and 0
- * tall, and the 40dp target is centred on the row's midline, overflowing it (hit-testing follows the placed bounds).
+ * Keep the 40dp target centred on the label without allocating a taller label row.
  */
 @Composable
 private fun LabelIcon(description: String?, onClick: (() -> Unit)?, content: @Composable () -> Unit) {
     Box(Modifier
         .layout { measurable, constraints ->
             val placeable = measurable.measure(constraints)
-            val width = LabelIconSize.roundToPx()
-            layout(width, 0) { placeable.place((width - placeable.width) / 2, -placeable.height / 2) }
+            val height = LabelIconSize.roundToPx()
+            layout(placeable.width, height) { placeable.place(0, (height - placeable.height) / 2) }
         }
         .size(OneTheme.sizes.touch40)
         .clip(CircleShape)

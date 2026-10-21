@@ -14,11 +14,13 @@ import javax.inject.Inject
 class AndroidDeviceSpeech @Inject constructor(@ApplicationContext private val context: Context) : DeviceSpeech {
     private var recognizer: SpeechRecognizer? = null
     private var generation = 0
-    override val available get() = SpeechRecognizer.isRecognitionAvailable(context)
+    override val available get() = (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) ||
+        SpeechRecognizer.isRecognitionAvailable(context)
     override fun start(text: (String) -> Unit, partial: (String) -> Unit, failed: (message: String, fatal: Boolean) -> Unit) {
         cancel()
         val token = ++generation
-        val created = SpeechRecognizer.createSpeechRecognizer(context)
+        val created = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context))
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(context) else SpeechRecognizer.createSpeechRecognizer(context)
         recognizer = created
         created.setRecognitionListener(object : RecognitionListener {
             private fun Bundle?.first() = this?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()

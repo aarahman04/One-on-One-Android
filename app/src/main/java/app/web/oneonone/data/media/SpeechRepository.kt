@@ -116,5 +116,5 @@ internal fun appendDictationText(draft: String, text: String): String {
         words.isEmpty() -> draft
         draft.isEmpty() || draft.last().isWhitespace() -> draft + words
         else -> "$draft $words"
-    }
+    }.take(4_000)
 }
