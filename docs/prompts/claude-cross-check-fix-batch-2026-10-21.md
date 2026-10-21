@@ -2,6 +2,8 @@
 
 ## Start here
 
+Current review: [Android PR #46](https://github.com/aarahman04/One-on-One-Android/pull/46), branch `fix/game-icons-transparent-birefnet`. It is open for this independent cross-check; no direct main push or new Play release was made.
+
 **Later owner priority:** after the original batch merged, the owner requested centred Ping Pong logo grip, circular Tic-Tac-Toe logo O, transparent photo-viewer background and replacement of poor sticker cut-outs with [BiRefNet](https://github.com/ZhengPeng7/BiRefNet). These changes are on `fix/game-icons-transparent-birefnet`, based on Android `727ce59` plus the documentation commit `1e8374e`. This explicitly permits the two logo edits; it does not reopen gameplay issues 10/11. Review the later branch's full diff against `727ce59` as well as the original ranges below. Follow the later verification evidence in PROGRESS rather than applying the old 237-test count to the new runtime changes.
 
 New code to cross-check: `ui/games/GameVectors.kt`; photo-only overlay in `ui/chat/DocumentViewer.kt` and `PhotoViewer` in `FeatureUi.kt`; `data/stickers/BiRefNet.kt`, `StickerImages.kt`, `StickerMath.kt`, `StickerBrush.kt`; `StickerViewModel.kt`, `StickerPicker.kt`, `StickerBrushEditor.kt`; sticker/memory/brush tests, version catalogue, R8 rules and MIT notices. The owner rejected the first tilted grip: the final grip is vertical beneath the head. Their `C:\Users\aarah\Downloads\Ref image\ref.png` clarifies the WhatsApp-style viewer as a **94% dark translucent scrim**, not the first zero-opacity draft. White controls remain readable and documents retain opaque black.
