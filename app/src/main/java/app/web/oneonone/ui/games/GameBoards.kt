@@ -49,15 +49,19 @@ internal fun CellGrid(rows: Int, columns: Int, description: (Int) -> String, ena
             repeat(columns) { col ->
                 val index = r * columns + col
                 Box(Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = description(index) }
-                    .clickable(enabled = enabled(index), role = Role.Button) { click(index) }, contentAlignment = Alignment.Center) { content(index) }
+                    
+                    // No ripple: boards draw their own feedback, and a per-cell flash reads as a stray white box.
+                    .clickable(interactionSource = null, indication = null, enabled = enabled(index), role = Role.Button) { click(index) }, contentAlignment = Alignment.Center) { content(index) }
             }
         } }
     }
 }
 
 @Composable
-private fun TicTacToeBoard(matchId: String, game: GridView, seat: Int, enabled: Boolean, move: (JsonObject) -> Unit) {
+private fun TicTacToeBoard(matchId: String, server: GridView, seat: Int, enabled: Boolean, move: (JsonObject) -> Unit) {
     val c = OneTheme.colors
+    val pending = rememberPending(matchId, server)
+    val game = pending.value?.let { server.played(it, seat) } ?: server
     val motion = OneTheme.motion
     // Animation state is created per move, so its first frame already starts from zero (no flash of the final state).
     val progress = remember(matchId, game.last) { Animatable(if (game.last >= 0) 0f else 1f) }
@@ -92,13 +96,15 @@ private fun TicTacToeBoard(matchId: String, game: GridView, seat: Int, enabled: 
             }
         }
         CellGrid(3, 3, { "Row ${it / 3 + 1}, column ${it % 3 + 1}, ${when (game.cells[it]) { 1 -> "X"; 2 -> "O"; else -> "empty" }}" },
-            { enabled && game.cells[it] == 0 }, { move(buildJsonObject { put("cell", it) }) })
+            { enabled && pending.value == null && game.cells[it] == 0 }, { pending.value = it; move(buildJsonObject { put("cell", it) }) })
     }
 }
 
 @Composable
-private fun ConnectFourBoard(matchId: String, game: GridView, seat: Int, enabled: Boolean, move: (JsonObject) -> Unit) {
+private fun ConnectFourBoard(matchId: String, server: GridView, seat: Int, enabled: Boolean, move: (JsonObject) -> Unit) {
     val c = OneTheme.colors
+    val pending = rememberPending(matchId, server)
+    val game = pending.value?.let { server.played(it, seat) } ?: server
     val motion = OneTheme.motion
     val drop = remember(matchId, game.last) { Animatable(if (game.last >= 0) 0f else 1f) }
     val glow = remember(matchId) { Animatable(0f) }
@@ -125,7 +131,7 @@ private fun ConnectFourBoard(matchId: String, game: GridView, seat: Int, enabled
             }
         }
         CellGrid(6, 7, { "Column ${it % 7 + 1}, row ${it / 7 + 1}, ${if (game.cells[it] == 0) "empty" else if (game.cells[it] == seat) "your disc" else "partner's disc"}" },
-            { enabled && game.landing(it % 7) >= 0 }, { move(buildJsonObject { put("col", it % 7) }) })
+            { enabled && pending.value == null && game.landing(it % 7) >= 0 }, { pending.value = game.landing(it % 7); move(buildJsonObject { put("col", it % 7) }) })
     }
 }
 
@@ -171,6 +177,17 @@ private fun DotsBoard(matchId: String, game: DotsView, seat: Int, nickname: Stri
     }
 }
 
+/**
+ * The player's own mark/disc, drawn at once while the server confirms it. Cleared by the server's next board,
+ * or after a short wait if the move was rejected (the board then simply shows the server's state).
+ */
+@Composable
+private fun rememberPending(matchId: String, server: GridView): MutableState<Int?> {
+    val pending = remember(matchId, server.last, server.cells.count { it != 0 }) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(pending.value) { if (pending.value != null) { kotlinx.coroutines.delay(2500); pending.value = null } }
+    return pending
+}
+
 /** Ease-in like free fall. */
 private val Gravity = androidx.compose.animation.core.CubicBezierEasing(.5f, 0f, .9f, .5f)
 
@@ -181,7 +198,7 @@ private const val FlipMs = 260
 private const val FlipStaggerMs = 70
 
 /**
- * Reversi on the same green as the chess board, black and white discs. The new disc drops in, then the
+ * Reversi on green felt, black and white discs. The new disc drops in, then the
  * outflanked discs turn over edge-on (narrowing, swapping colour, widening) in a wave from it.
  */
 @Composable
@@ -192,15 +209,15 @@ private fun ReversiBoard(matchId: String, game: ReversiView, seat: Int, enabled:
     val total = 120 + waves * FlipStaggerMs + FlipMs
     LaunchedEffect(clock) { if (game.last >= 0) clock.animateTo(total.toFloat(), tween(total, easing = LinearEasing)) }
     val flipped = remember(game) { game.flipped.toHashSet() }
-    Box(Modifier.fillMaxSize().clip(RoundedCornerShape(OneTheme.radii.sm6)).background(ChessColors.dark)) {
+    Box(Modifier.fillMaxSize().clip(RoundedCornerShape(OneTheme.radii.sm6)).background(ReversiFelt)) {
         Canvas(Modifier.fillMaxSize()) {
             val t = size.width / 8
             val ms = clock.value
             for (i in 1..7) {
-                drawLine(ChessColors.light.copy(alpha = .35f), Offset(i * t, 0f), Offset(i * t, size.height), 1.5f)
-                drawLine(ChessColors.light.copy(alpha = .35f), Offset(0f, i * t), Offset(size.width, i * t), 1.5f)
+                drawLine(ReversiLine.copy(alpha = .35f), Offset(i * t, 0f), Offset(i * t, size.height), 1.5f)
+                drawLine(ReversiLine.copy(alpha = .35f), Offset(0f, i * t), Offset(size.width, i * t), 1.5f)
             }
-            if (game.last >= 0) drawRect(ChessColors.lastDark.copy(alpha = .55f), Offset(game.last % 8 * t, game.last / 8 * t), Size(t, t))
+            if (game.last >= 0) drawRect(ReversiLast.copy(alpha = .55f), Offset(game.last % 8 * t, game.last / 8 * t), Size(t, t))
             for (i in 0..63) {
                 val owner = game.cells[i]
                 if (owner == 0) continue
@@ -231,3 +248,8 @@ private fun ReversiBoard(matchId: String, game: ReversiView, seat: Int, enabled:
             { enabled && it in legal }, { move(buildJsonObject { put("cell", it) }) })
     }
 }
+
+// Reversi keeps its traditional green felt (the chess board is black and white).
+private val ReversiFelt = Color(0xFF2F7A4B)
+private val ReversiLine = Color(0xFFCFE8D5)
+private val ReversiLast = Color(0xFF8FCB5A)

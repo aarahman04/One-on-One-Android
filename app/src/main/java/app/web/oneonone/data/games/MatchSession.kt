@@ -10,7 +10,7 @@ interface MatchChannel {
     val frames: Flow<JsonObject>
     /** Emits a `match:*` event and returns its ack. */
     suspend fun call(event: String, payload: JsonObject): JsonObject
-    fun paddle(matchId: String, x: Float)
+    fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false)
 }
 
 enum class GameStage { Idle, Hub, Outgoing, Incoming, Playing, Result }
@@ -39,7 +39,7 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     val errors = mutableErrors.asSharedFlow()
     var me = ""; private set
     var pong: PongClient? = null; private set
-    private var pendingPaddle: Float? = null
+    private var pendingPaddle: Triple<Float, Float, Boolean>? = null
     private var paddleJob: Job? = null
 
     init {
@@ -56,6 +56,9 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
         if (next == null || me.isEmpty() || next.seat(me) == 0) return
         val current = match.value
         if (current != null && current.id == next.id && next.version < current.version) return
+        if (current?.id != next.id || next.status != MatchStatus.Playing || next.paused) {
+            paddleJob?.cancel(); pendingPaddle = null
+        }
         if (next.game == GameKind.Pong && (current?.id != next.id || pong == null)) pong = PongClient(next.seat(me))
         if (next.game != GameKind.Pong) pong = null
         mutableMatch.value = next
@@ -91,7 +94,11 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     }
 
     fun sync() = send("match:sync")
-    fun invite(kind: GameKind) = send("match:invite") { put("game", kind.wire) }
+    fun invite(kind: GameKind, options: MatchOptions = MatchOptions()) = send("match:invite") {
+        put("game", kind.wire)
+        options.clock?.let { (base, inc) -> putJsonObject("clock") { put("base", base); put("inc", inc) } }
+        options.points?.let { put("points", it) }
+    }
     fun accept() = onMatch("match:accept")
     fun decline() = onMatch("match:decline")
     fun leave() = onMatch("match:leave")
@@ -116,17 +123,18 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     }
 
     /** Own paddle (view x); sent at most every [PaddleIntervalMs], always the latest position. */
-    fun paddle(viewX: Float) {
+    fun paddle(viewX: Float, viewY: Float, released: Boolean = false) {
         val m = match.value ?: return
         val client = pong ?: return
         if (m.status != MatchStatus.Playing || m.paused) return
-        pendingPaddle = client.paddle(viewX)
+        val (x, y) = client.paddle(viewX, viewY, released)
+        pendingPaddle = Triple(x, y, released)
         if (paddleJob?.isActive == true) return
         paddleJob = scope.launch {
             while (true) {
-                val x = pendingPaddle ?: break
+                val input = pendingPaddle ?: break
                 pendingPaddle = null
-                channel.paddle(m.id, x)
+                channel.paddle(m.id, input.first, input.second, input.third)
                 delay(PaddleIntervalMs)
             }
         }

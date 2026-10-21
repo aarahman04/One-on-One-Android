@@ -1,5 +1,8 @@
 # Android milestone progress
 
+Current Ping Pong delivery state and Claude Code follow-up:
+[PING-PONG-HANDOFF.md](games/PING-PONG-HANDOFF.md) (2026-10-21).
+
 ## Release 2.0.8 (2026-10-20, versionCode 15)
 - Signed build from main (run 39444598003) uploaded to Play by the owner. Contents: Android #37 (below), backend #115 (invite push, `game` rows, migration 040 applied in Supabase).
 - Speech fixed on Railway (no app change): the `speech` service now runs in the backend's project (`One on One`, renamed from `fabulous-connection` on 2026-10-20), so `speech.railway.internal` resolves, and the backend's `SPEECH_SERVICE_TOKEN` references `${{speech.SPEECH_SERVICE_TOKEN}}` (verified equal, values not read). The old separate `speech` project is deleted.
@@ -1729,3 +1732,103 @@ possible on the emulator (needs two signed-in accounts); the stand-in is not the
 ### Xiaomi checklist
 - [ ] Chess: drag a piece and let go: it glides from your finger to the square, never back first.
 - [ ] Connect 4 / Reversi / tic-tac-toe: a new disc or mark never flashes in its final place before animating.
+
+## Ping Pong rebuild and playability tuning (2026-10-21, `codex/pong-native-mechanics`)
+
+Owner rejected the previous flat wall-bouncing game and approved a fresh replacement using the supplied
+video and recovered native mechanics. Display name is Ping Pong, with an original racket-and-ball icon
+in `/games` and result screens. No other game implementation or web-client file was changed.
+
+- Rackets move across their own half in two dimensions, including outside the table. Gesture direction
+  aims the shot; power adjusts depth and duration. Bat tilt follows the stroke up to 55 degrees and
+  eases back; this movement was retained after owner feedback.
+- Server sends height-bearing cubic flights, table bounces and serve state. Sides and corners are open.
+  Serving waits for contact after the countdown; service alternates every two points; first to seven.
+- Owner requested further improvements beyond the reference: angled shots now have more landing room,
+  duration is .88..1.06 s, and gentle placements stay spin-free. A stronger sideways brush transfers
+  persistent spin to the ball (light .1 / hard .2 after owner feedback). It curves gently in air and receives a lateral kick on the table bounce.
+- Contact resolves outside the drawn racket along the outgoing shot; confirmed hits snap promptly
+  rather than blending through the bat. The owner accepted the current speed; it was retained.
+- Canvas displays actual height, shadow, connected trail and a 300 ms contact pulse. Prediction is capped
+  at 150 ms. Removed the old side reflections, cosmetic height and artificial hold at the racket.
+- Demo opponent holds its baseline until countdown zero, avoiding the blue-bat/ball overlap. It blocks
+  at the baseline rather than retreating from the ball. Its simulation advances by elapsed time.
+- Release/cancel uses the existing 33 ms throttle; lifecycle transitions discard queued input. Backend
+  validates optional y/released and rejects paused input. Existing protocol fields/types are retained.
+
+Validation: `npm test` **94/94**, TypeScript check passed. Android
+`assembleDebug lintDebug testDebugUnitTest` passed, **214 tests**. Socket fixtures cover two clients'
+shared state, rallies, scoring and rematches; these are not two independently signed-in Android users.
+
+Visible emulator evidence and the final play round are recorded in the external `SESSION-RESULTS.md`.
+The earlier real-touch round confirmed zero-spin blocks and a rotating brush return with nonzero spin;
+its recording is `evidence/emulator/pingpong-spin-test.mp4`. It predates the final gentler tuning.
+Reference installation ran only in a disposable account-free isolated AVD; both packages opened menus,
+but Ping Pong was not reached in the bounded attempt. Supplied video is owner evidence, not our recording.
+
+Previous installed iteration: real-touch exercise recorded as `evidence/emulator/pingpong-final-play.mp4`,
+with 1,181 authoritative demo frames in 40 s. Observed neutral blocks, rotated brush hits, table
+landings with retained spin, open-edge travel and scoring. Contact-frame inspection exposed the remaining
+forward-stroke/back-face overlap and led to the final front-contact guard and regression tests.
+This round used the preceding .45 cap/.6 bounce tuning; the final front-face/.1-.2 spin build supersedes it; the accepted speed and bat movement were retained. Unit
+coverage checks surface clearance through the first 80 ms, plus immediate confirmed-contact display.
+Earlier completion/rematch rounds reached 7-1 and 0-7 and reset to 0-0 with seats swapped.
+
+Emulator remains visible (OneOnOne_D3, API 36, emulator-5556). At 720x1600/density280, with Gradle
+stopped and recording off, a 46.5 s steady sample rendered 2,741 frames (about 59/s) with 1.50% modern
+frame-deadline misses. This is emulator calibration, not a physical-device benchmark; earlier 1080
+recording while compiling had poor frame timing. Original display can be restored with `wm size reset`
+and `wm density reset`. No physical phone or personal account was changed. Scripted input was stopped when it became clear it was
+competing with the owner's control. Subsequent inspection is read-only while the owner plays.
+
+Wrap-up requested by owner: latest gameplay APK reinstalled at 08:59:58 IST; installed/local SHA-256
+`c8701aaa1b2203098c4a996e274a3e08d7304e452597e9a65622a8a014ce0962` matches. Backend PR 121
+merged as `3d0c148`, Railway deployment succeeded and health passed. Android PR 43 remains open:
+gameplay `ca63c3e`; CI release packaging exhausted heap in run `39538900347`. Fix `84c12b5`
+splits release Gradle invocations and scopes demo tests to debug; retry `39540116953` was pending
+at the last check. Work stopped for Claude Code to follow up. Final front-edge/spin feel, physical
+devices and genuine two-account Android play remain unverified; see the linked handoff.
+
+### Physical-device and real multiplayer checklist
+
+- [ ] Two independently authenticated Android accounts: invite/accept, both seats, identical score/result.
+- [ ] Xiaomi and another phone: slow/fast strokes, diagonal placement, left/right brushing and bounce kick.
+- [ ] Serve: countdown is separate from the bat, contact starts play, every two points changes server.
+- [ ] Open corner exits continue outward; a return is accepted only after a table landing.
+- [ ] Variable network latency: smooth bounded prediction, no artificial wall/hold or duplicate bounce.
+- [ ] Background/resume pauses both sides and preserves score; rematch resets and swaps seats.
+- [ ] Physical frame timing, touch calibration and haptics; emulator numbers are not a phone benchmark.
+
+## Games round 3 (2026-10-21, `claude/games-round-3`, supersedes PR #43)
+
+- Chess: fixed the move preview flashing the starting position (`ChessView.played` loaded the new
+  Board's own FEN through the `apply` receiver); parsed view cached per server board so the slide
+  animation no longer stutters; classic black-and-white board (Reversi keeps green felt).
+- Clocks for every turn game (backend PR #122): presets No limit / 1 / 2 / 5 / 10 min / 1 hour, or
+  custom time each (10 s..3 h) plus a per-move bonus (0..60 s). Defaults: chess 10 min, Reversi 5,
+  Connect 4 2, Tic-Tac-Toe 1 (No limit one tap away). Server decides `timeout`; clients count down.
+- Ping Pong: target score (7 / 11 / 21 / custom 1..99); relative racket drag (no jump on touch, the
+  finger can steer from below); depth controlled by swipe speed from short to the end line, only a
+  smash goes long; jitter-resistant stroke window; capped bounce spin (no sideways exploit near the
+  net) plus a rare razor spin with a hot trail; hit/bounce sounds; app-accent table, bats and ball.
+- Tic-Tac-Toe and Connect 4 draw your own move instantly; board taps no longer flash a white box.
+- Owner playtest follow-ups: chess squares jet black (no piece outlines). Ping Pong spin made clearly
+  visible and physically correct: it hooks against the brush (so wide spin shots bend back onto the
+  table), bends 8-14% of the table width in flight and turns up to ~29 deg at the bounce; razor ~46 deg.
+- Rematch when the partner left: closing the results or losing the connection there lists you in
+  `away`; the partner sees "<name> has left the game" instead of a rematch that can never be answered.
+- Verified: backend 103/103 + tsc; Android 216 unit tests, assembleDebug, lintDebug; emulator
+  demo screens checked; owner played chess and Ping Pong on the emulator demo. Not verified: physical phones, real two-account play, real network latency.
+
+### Xiaomi / two-phone checklist (games round 3)
+
+- [ ] Chess on both phones: move a pawn two squares mid-game; the board never flashes back.
+- [ ] Each clock preset and a custom clock; the side to move counts down on both phones; running
+      out shows "ran out of time" on both; No limit shows no clocks.
+- [ ] Ping Pong first to 11 and a custom target; scoreboard and result show the target.
+- [ ] Ping Pong strokes: soft touch lands short, strong swipe lands deep, smash goes long; diagonal
+      reaches near the corners; brushed spin bends and turns at the bounce, never straight sideways.
+- [ ] Racket never jumps when touching the screen; hit and bounce sounds play at media volume.
+- [ ] Tic-Tac-Toe / Connect 4: your mark appears immediately; no white box on tap.
+- [ ] Finish a game, close the results on one phone (or turn it off): the other shows "has left the
+      game" and no rematch button; reopening the results restores the rematch.

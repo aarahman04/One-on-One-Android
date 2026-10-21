@@ -40,7 +40,9 @@ jobs:
         run: ./gradlew --no-daemon assembleDebug lintDebug testDebugUnitTest
       - name: Smoke-test minified release without signing credentials
         run: |
-          ./gradlew --no-daemon assembleRelease bundleRelease lintRelease
+          # Release minifier state must be freed before bundletool packages the AAB.
+          ./gradlew --no-daemon --max-workers=2 assembleRelease
+          ./gradlew --no-daemon --max-workers=2 bundleRelease lintRelease
           python3 scripts/check_native_libs.py --self-test
           python3 scripts/check_native_libs.py app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/bundle/release/app-release.aab
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 app/build/outputs/apk/release/app-release-unsigned.apk

@@ -1,5 +1,6 @@
 package app.web.oneonone
 
+import android.util.Log
 import com.github.bhlangonijr.chesslib.Board
 import com.github.bhlangonijr.chesslib.Side
 import kotlinx.coroutines.*
@@ -7,6 +8,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.serialization.json.*
 import java.util.UUID
 import kotlin.math.*
+
+private const val PongLogTag = "DemoPong"
 
 /**
  * Debug-only stand-in for the server's matches (contract §12) so the real game screens can be played on an
@@ -30,21 +33,33 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
     private var rematch = mutableSetOf<String>()
     private val series = mutableMapOf(me to 0, partner to 0)
     private var rules: Rules? = null
-    private var pong: Pong? = null
+    private var pong: DemoPong? = null
     private var loop: Job? = null
+    // Invite options, mirrored from the server: a turn game's clock and Ping Pong's target score.
+    private var clock: Pair<Long, Long>? = null
+    private var points = 7
+    private val left = longArrayOf(0, 0)
+    private var turnAt = 0L
+    private var ticker: Job? = null
+    private fun now() = System.currentTimeMillis()
+    private fun clockLeft(): List<Long> = List(2) { i ->
+        if (status == "playing" && rules != null && i == turnSeat - 1) max(0L, left[i] - (now() - turnAt)) else left[i]
+    }
 
     private fun snapshot(): JsonObject = buildJsonObject {
         put("id", id); put("game", game); put("status", status); put("inviter", inviter)
         putJsonArray("players") { players.forEach { add(it) } }
         put("turn", if (status == "playing" && rules != null) players[turnSeat - 1] else null)
         put("seq", seq); put("version", version)
-        put("board", rules?.view() ?: pong?.let { p -> buildJsonObject { putJsonArray("score") { add(p.score[0]); add(p.score[1]) } } } ?: JsonNull)
+        put("board", rules?.view() ?: pong?.let { p -> buildJsonObject { putJsonArray("score") { add(p.score[0]); add(p.score[1]) }; put("target", points) } } ?: JsonNull)
         put("outcome", outcome?.let { (w, r) -> buildJsonObject { put("winner", w); put("reason", r) } } ?: JsonNull)
         put("drawOffer", null as String?)
         putJsonArray("rematch") { rematch.forEach { add(it) } }
         putJsonObject("series") { series.forEach { (k, v) -> put(k, v) } }
         putJsonArray("away") {}
         put("paused", false)
+        clock?.let { (base, inc) -> putJsonObject("clock") { put("base", base); put("inc", inc); putJsonArray("left") { clockLeft().forEach { add(it) } } } }
+        put("points", if (game == "pong") points else null)
     }
     private fun publish() { version++; states.tryEmit(snapshot()) }
     private fun ack(ok: Boolean = true, error: String? = null) = buildJsonObject {
@@ -56,8 +71,16 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
         id = UUID.randomUUID().toString(); game = kind; players = seats; status = "playing"; seq = 0
         outcome = null; rematch = mutableSetOf(); turnSeat = 1
         rules = when (kind) { "chess" -> Chess(); "tictactoe" -> Grid(3); "connect4" -> Grid(7); "reversi" -> Reversi(); else -> null }
-        pong = if (kind == "pong") Pong() else null
+        pong = if (kind == "pong") DemoPong(target = points) else null
         pong?.let { p -> loop = scope.launch { runPong(p) } }
+        clock?.let { (base, _) -> left.fill(base); turnAt = now() }
+        ticker?.cancel()
+        if (clock != null && rules != null) ticker = scope.launch {
+            while (status == "playing") {
+                delay(200)
+                if (status == "playing" && clockLeft()[turnSeat - 1] <= 0L) { left[turnSeat - 1] = 0; finish(3 - turnSeat, "timeout"); publish() }
+            }
+        }
         publish()
         botTurn()
     }
@@ -65,7 +88,8 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
     private fun finish(winnerSeat: Int, reason: String) {
         val winner = if (winnerSeat == 0) null else players[winnerSeat - 1]
         winner?.let { series[it] = (series[it] ?: 0) + 1 }
-        outcome = winner to reason; status = "over"; loop?.cancel()
+        if (status == "playing" && clock != null && rules != null) left[turnSeat - 1] = clockLeft()[turnSeat - 1]
+        outcome = winner to reason; status = "over"; loop?.cancel(); ticker?.cancel()
     }
 
     private fun botTurn() {
@@ -79,7 +103,9 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
 
     private fun applyMove(move: JsonObject): String? {
         val r = rules ?: return "bad_state"
+        val mover = turnSeat
         val error = r.apply(turnSeat, move) ?: run {
+            clock?.let { (_, inc) -> left[mover - 1] = max(0L, left[mover - 1] - (now() - turnAt)) + inc; turnAt = now() }
             seq++
             val o = r.outcome
             if (o != null) finish(o.first, o.second) else turnSeat = r.turn
@@ -96,6 +122,8 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
             "match:invite" -> {
                 val kind = p["game"]!!.jsonPrimitive.content
                 if (kind != game) series.keys.forEach { series[it] = 0 } // the server keeps a series per game
+                clock = (p["clock"] as? JsonObject)?.let { it["base"]!!.jsonPrimitive.long to it["inc"]!!.jsonPrimitive.long }?.takeIf { kind != "pong" }
+                points = p["points"]?.jsonPrimitive?.intOrNull ?: 7
                 id = UUID.randomUUID().toString(); game = kind; status = "invited"; inviter = me
                 players = listOf(me, partner); outcome = null; rules = null; pong = null
                 publish()
@@ -122,22 +150,35 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
         }
     }
 
-    fun paddle(matchId: String, x: Float) { if (matchId == id) pong?.paddle(players.indexOf(me) + 1, x.toDouble()) }
+    fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) { if (matchId == id) pong?.paddle(players.indexOf(me) + 1, x.toDouble(), y?.toDouble(), released) }
 
-    private suspend fun runPong(p: Pong) {
-        var n = 0
+    private suspend fun runPong(p: DemoPong) {
+        var last = System.nanoTime()
+        var frameMs = 0.0
         val botSeat = players.indexOf(partner) + 1
         while (currentCoroutineContext().isActive && p.outcome == null) {
-            // The bot follows the ball at a limited speed, so fast angled shots can beat it.
+            val now = System.nanoTime()
+            val ms = ((now - last) / 1e6).coerceIn(1.0, 50.0)
+            last = now
+            val reach = .0024 * ms
+            // Hold the baseline until countdown ends; don't sit on top of the waiting ball.
             val target = if (p.vy != 0.0 && (p.vy < 0) == (botSeat == 2)) p.x else .5
             val cur = p.paddles[botSeat - 1]
-            p.paddle(botSeat, cur + (target - cur).coerceIn(-.022, .022))
-            p.step(1000.0 / 60)
-            if (++n % 2 == 0 || p.outcome != null) frames.tryEmit(p.frame(id))
+            val targetY = if (p.serving(botSeat) && p.countdown == 0.0) p.y else if (botSeat == 1) p.courtH + .08 else -.08
+            val py = p.paddleY[botSeat - 1]
+            p.paddle(botSeat, cur + (target - cur).coerceIn(-reach, reach), py + (targetY - py).coerceIn(-reach, reach), released = true)
+            p.step(ms)
+            frameMs += ms
+            if (frameMs >= 1000.0 / 30 || p.outcome != null) {
+                frameMs %= 1000.0 / 30
+                val frame = p.frame(id)
+                frames.tryEmit(frame)
+                if (Log.isLoggable(PongLogTag, Log.DEBUG)) Log.d(PongLogTag, frame.toString())
+            }
             if (p.scored) { p.scored = false; publish() }
             delay(16)
         }
-        p.outcome?.let { finish(it, "first_to_7"); publish() }
+        p.outcome?.let { finish(it, if (points == 7) "first_to_7" else "first_to_points"); publish() }
     }
 
     private interface Rules {
@@ -240,70 +281,4 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
         override fun botMove() = legal(turn).randomOrNull()?.let { c -> buildJsonObject { put("cell", c) } }
     }
 
-    /** Copy of backend/src/games/pong.ts (top-down, sidespin, first to 7). */
-    private class Pong {
-        val courtH = 1.8; val headR = .13; val ballR = .03; val slack = .025
-        var x = .5; var y = courtH / 2; var vx = 0.0; var vy = 0.0; var spin = 0.0
-        val paddles = doubleArrayOf(.5, .5); val score = intArrayOf(0, 0)
-        var countdown = 3000.0; var hits = 0; var outcome: Int? = null; var scored = false
-        private var clock = 0.0; private val swing = doubleArrayOf(0.0, 0.0); private val moved = doubleArrayOf(-1.0, -1.0)
-        private var serveTo = 2
-        private val maxAngle = 62 * PI / 180
-        fun paddle(seat: Int, px: Double) {
-            val i = seat - 1; val next = px.coerceIn(headR * .6, 1 - headR * .6)
-            val dt = if (moved[i] < 0) 0.0 else (clock - moved[i]) / 1000
-            if (dt > 0) swing[i] = .5 * swing[i] + .5 * ((next - paddles[i]) / max(dt, 1.0 / 60)).coerceIn(-6.0, 6.0)
-            paddles[i] = next; moved[i] = clock
-        }
-        fun step(ms: Double) {
-            if (outcome != null) return
-            clock += ms
-            for (i in 0..1) if (clock - moved[i] > 120) swing[i] = 0.0
-            if (countdown > 0) { countdown -= ms; if (countdown <= 0) { countdown = 0.0; serve() }; return }
-            val dt = ms / 1000
-            val n = min(32, max(1, ceil(hypot(vx, vy) * dt / (ballR * .8)).toInt()))
-            val decay = exp(-dt / n / .6)
-            for (k in 0 until n) {
-                if (outcome != null || countdown != 0.0) break
-                if (spin != 0.0) { val cap = abs(vy) * tan(maxAngle); vx = (vx + spin * dt / n).coerceIn(-cap, cap); spin *= decay }
-                x += vx * dt / n; y += vy * dt / n
-                if (x < ballR) { x = 2 * ballR - x; vx = abs(vx); spin = 0.0 } else if (x > 1 - ballR) { x = 2 * (1 - ballR) - x; vx = -abs(vx); spin = 0.0 }
-                when {
-                    vy > 0 && y <= courtH && touches(1) -> hit(1)
-                    vy < 0 && y >= 0 && touches(2) -> hit(2)
-                    y - ballR > courtH -> point(2)
-                    y + ballR < 0 -> point(1)
-                }
-            }
-        }
-        private fun head(seat: Int) = paddles[seat - 1] to if (seat == 1) courtH else 0.0
-        private fun touches(seat: Int) = head(seat).let { (hx, hy) -> hypot(x - hx, y - hy) <= headR + ballR + slack }
-        private fun serve() { val a = (Math.random() * 2 - 1) * PI / 8; vx = .95 * sin(a); vy = .95 * cos(a) * if (serveTo == 1) 1 else -1 }
-        private fun hit(seat: Int) {
-            val (hx, hy) = head(seat); val away = if (seat == 1) -1 else 1
-            var nx = x - hx; var ny = (y - hy) * away; val len = hypot(nx, ny).takeIf { it > 0 } ?: 1.0
-            nx /= len; ny = max(ny / len, .05)
-            var angle = atan2(nx, ny)
-            val speed = min(2.6, max(.95, hypot(vx, vy) * 1.06))
-            angle += atan2(.3 * swing[seat - 1], speed) + .25 * spin
-            angle = angle.coerceIn(-maxAngle, maxAngle)
-            spin = (.3 * swing[seat - 1]).coerceIn(-.75, .75)
-            vx = speed * sin(angle); vy = speed * cos(angle) * away
-            x = (hx + sin(angle) * (headR + ballR)).coerceIn(ballR, 1 - ballR); y = hy + cos(angle) * (headR + ballR) * away
-            hits++
-        }
-        private fun point(scorer: Int) {
-            score[scorer - 1]++; x = .5; y = courtH / 2; vx = 0.0; vy = 0.0; spin = 0.0; scored = true
-            if (score[scorer - 1] >= 7) { outcome = scorer; return }
-            serveTo = 3 - scorer; countdown = 1200.0
-        }
-        private fun r4(v: Double) = (v * 10000).roundToInt() / 10000.0
-        fun frame(id: String) = buildJsonObject {
-            put("id", id); put("t", System.currentTimeMillis())
-            putJsonArray("b") { add(r4(x)); add(r4(y)); add(r4(vx)); add(r4(vy)) }
-            putJsonArray("p") { add(r4(paddles[0])); add(r4(paddles[1])) }
-            putJsonArray("s") { add(score[0]); add(score[1]) }
-            put("c", ceil(countdown).toInt()); put("h", hits); put("w", r4(spin))
-        }
-    }
 }

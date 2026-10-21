@@ -17,7 +17,7 @@ interface Transport {
     val matchStates: Flow<JsonObject> get() = emptyFlow()
     val pongFrames: Flow<JsonObject> get() = emptyFlow()
     suspend fun match(event: String, payload: JsonObject): JsonObject = error("Not supported.")
-    fun paddle(matchId: String, x: Float) {}
+    fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false) {}
     suspend fun start()
     suspend fun stop()
     suspend fun send(message: SendMessage): ChatMessage

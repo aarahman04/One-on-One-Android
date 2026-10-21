@@ -22,7 +22,7 @@ class GameLogTest {
         assertEquals("Chess" to "You won · 4 min 12 sec", gameLogText(row("me", "checkmate"), "me", "Alex"))
         assertEquals("Chess" to "Alex won · 4 min 12 sec", gameLogText(row("them", "resigned"), "me", "Alex"))
         assertEquals("Connect 4" to "A draw · 45 sec", gameLogText(row(null, "board_full", 45, "connect4"), "me", "Alex"))
-        assertEquals("Table Tennis" to "Game ended · 1 hr", gameLogText(row(null, "abandoned", 3600, "pong"), "me", "Alex"))
+        assertEquals("Ping Pong" to "Game ended · 1 hr", gameLogText(row(null, "abandoned", 3600, "pong"), "me", "Alex"))
         assertEquals("Game" to "Game ended · 0 sec", gameLogText(ChatMessage("g2", "me", "", "2026-10-20T10:00:00Z", "game"), "me", "Alex"))
     }
 

@@ -55,13 +55,13 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 import kotlin.math.roundToInt
 
-/** Familiar green board colours and highlights; the same in light and dark mode, like a real board. */
+/** Classic black-and-white board; the same in light and dark mode. */
 internal object ChessColors {
-    val light = Color(0xFFEBECD0)
-    val dark = Color(0xFF739552)
-    val lastLight = Color(0xFFF5F682)
-    val lastDark = Color(0xFFB9CA43)
-    val hint = Color(0x24000000)
+    val light = Color(0xFFF2F2F2)
+    val dark = Color(0xFF0B0B0B)
+    val lastLight = Color(0xFFF3E9A6)
+    val lastDark = Color(0xFF6B6231)
+    val hint = Color(0x66909090) // reads on both the white and the black squares
     val hover = Color(0xA6FFFFFF)
     val check = Color(0xFFE5484D)
     val whiteFill = Color(0xFFFBFAF7)
@@ -98,6 +98,12 @@ private class SpriteTrack {
         previous = next; position = view.position
         return next
     }
+}
+
+/** A piece image. */
+@Composable
+private fun ChessPiece(piece: Char, modifier: Modifier) {
+    Image(painterResource(pieceDrawable(piece)), null, modifier)
 }
 
 /** Slide time grows with distance (a one-square step is quick, a long diagonal still reads as one glide). */
@@ -235,7 +241,7 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
             val fade = remember { Animatable(1f) }
             LaunchedEffect(Unit) { fade.animateTo(0f, tween(captureMs, easing = LinearOutSlowInEasing)) }
             val cell = cellOf(sprite.square, white)
-            Image(painterResource(pieceDrawable(sprite.piece)), null, Modifier.size(tile)
+            ChessPiece(sprite.piece, Modifier.size(tile)
                 .offset { IntOffset((cell % 8 * tilePx).roundToInt(), (cell / 8 * tilePx).roundToInt()) }
                 .graphicsLayer { alpha = fade.value; scaleX = .85f + .15f * fade.value; scaleY = .85f + .15f * fade.value }
                 .padding(tile * .04f))
@@ -261,7 +267,7 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
                     position.animateTo(target, tween(slideMillis(fromCell, cell), easing = easing))
                 }
             }
-            Image(painterResource(pieceDrawable(sprite.piece)), null, Modifier.size(tile)
+            ChessPiece(sprite.piece, Modifier.size(tile)
                 .zIndex(if (lifted || release?.id == sprite.id) 2f else if (position.isRunning) 1f else 0f)
                 .offset {
                     // Lifted above the finger so it stays visible while dragging; placement only, no recomposition per frame.
@@ -302,7 +308,8 @@ private fun PromotionPicker(options: List<String>, white: Boolean, tile: android
 
 /** Name, avatar, captured pieces with the material lead, and whose move it is. */
 @Composable
-internal fun ChessPlayerBar(name: String, photo: Any?, white: Boolean, view: ChessView?, active: Boolean, status: String?) {
+internal fun ChessPlayerBar(name: String, photo: Any?, white: Boolean, view: ChessView?, active: Boolean, status: String?,
+                            clock: @Composable (() -> Unit)? = null) {
     val c = OneTheme.colors
     val s = OneTheme.spacing
     val taken = view?.captured(!white).orEmpty() // pieces of the other colour this player has taken
@@ -318,7 +325,7 @@ internal fun ChessPlayerBar(name: String, photo: Any?, white: Boolean, view: Che
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.titleSmall, color = c.text, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                taken.forEach { piece -> Image(painterResource(pieceDrawable(piece)), null, Modifier.size(15.dp)) }
+                taken.forEach { piece -> ChessPiece(piece, Modifier.size(15.dp)) }
                 if (lead > 0) Text("  +$lead", style = MaterialTheme.typography.labelSmall, color = c.textDim)
             }
         }
@@ -327,6 +334,7 @@ internal fun ChessPlayerBar(name: String, photo: Any?, white: Boolean, view: Che
             Text(status, Modifier.padding(horizontal = s.sm8, vertical = s.xxs2).semantics { liveRegion = LiveRegionMode.Polite },
                 style = MaterialTheme.typography.labelMedium, color = if (active) c.accentYou else c.textDim)
         }
+        clock?.invoke()
     }
 }
 
@@ -357,11 +365,13 @@ internal fun ChessMoveList(history: List<String>) {
 @Composable
 internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifier: Modifier, sounds: GameSounds?, footer: @Composable () -> Unit) {
     val match = state.match ?: return
-    val view = ChessView.from(match.board)
+    // Parsing runs chesslib move generation: once per server board, not on every frame of an animation.
+    val view = remember(match.board) { ChessView.from(match.board) }
     val white = state.seat == 1
     val playing = match.status == MatchStatus.Playing
     val partnerAway = state.partner in match.away
     val myTurn = playing && match.turn == state.me
+    val left = rememberClockLeft(match)
     Column(modifier.fillMaxWidth()) {
         ChessMoveList(view?.history.orEmpty())
         // Bar, board, bar stay together as one block, centred in the space left over.
@@ -374,7 +384,7 @@ internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifie
                         partnerAway -> "Reconnecting…"
                         !myTurn -> "Thinking…"
                         else -> null
-                    })
+                    }, clock = left?.let { { ClockChip(it[2 - state.seat], playing && !myTurn, "${vm.nickname}'s") } })
                 }
                 Box(Modifier.size(side)) {
                     if (view != null) ChessBoard(match.id, view, state.seat, enabled = state.myTurn && !match.paused, busy = state.busy, sounds = sounds, move = vm::move)
@@ -385,7 +395,7 @@ internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifie
                         myTurn && view?.checkSquare?.let { it >= 0 } == true -> "Check · your move"
                         myTurn -> "Your move"
                         else -> null
-                    })
+                    }, clock = left?.let { { ClockChip(it[state.seat - 1], myTurn, "Your") } })
                 }
             }
         }
@@ -401,7 +411,7 @@ internal fun ChessDrawControls(vm: GameViewModel, state: GameUi) {
     val c = OneTheme.colors
     val s = OneTheme.spacing
     val match = state.match ?: return
-    val view = ChessView.from(match.board) ?: return
+    val view = remember(match.board) { ChessView.from(match.board) } ?: return
     if (match.drawOffer == state.partner) Surface(color = c.bgRaised, border = BorderStroke(1.dp, c.accentOther.copy(alpha = .4f)),
         shape = RoundedCornerShape(OneTheme.radii.lg16), modifier = Modifier.padding(horizontal = s.md12, vertical = s.xs4)) {
         Row(Modifier.fillMaxWidth().padding(s.md12), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(s.sm8)) {

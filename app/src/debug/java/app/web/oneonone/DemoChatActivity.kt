@@ -189,7 +189,7 @@ private class DemoTransport(context: Context, private val json: Json, private va
     override val matchStates get() = matches.states
     override val pongFrames get() = matches.frames
     override suspend fun match(event: String, payload: JsonObject) = matches.call(event, payload)
-    override fun paddle(matchId: String, x: Float) = matches.paddle(matchId, x)
+    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) = matches.paddle(matchId, x, y, released)
     override val presence = kotlinx.coroutines.flow.flow { while (true) { emit(PresenceUpdate(ALEX, true)); kotlinx.coroutines.delay(2000) } }
     private val all = linkedMapOf<String, ChatMessage>()
     private var replies = 0

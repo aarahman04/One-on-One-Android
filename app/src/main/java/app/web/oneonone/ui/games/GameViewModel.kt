@@ -60,6 +60,8 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
                     }
                 }
                 if (match?.status == MatchStatus.Playing) hub.value = false
+                // A reconnect marks us present again; results we already closed stay closed for the partner.
+                if (match?.status == MatchStatus.Over && match.id == dismissed.value && session.me !in match.away) session.leave()
                 previous = match
             }
         }
@@ -85,14 +87,17 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
     fun hub() {
         mutableError.value = null
         if (!online || !scoped) { offlineNotice(); return }
-        if (ui.value.stage in setOf(GameStage.Idle, GameStage.Result)) { dismissed.value = ui.value.match?.id; hub.value = true }
+        if (ui.value.stage in setOf(GameStage.Idle, GameStage.Result)) {
+            if (ui.value.stage == GameStage.Result) session.leave() // tells the partner we left the results
+            dismissed.value = ui.value.match?.id; hub.value = true
+        }
     }
     fun dismissHub() { hub.value = false }
-    fun invite(kind: GameKind) {
+    fun invite(kind: GameKind, options: MatchOptions = MatchOptions()) {
         if (!online || !scoped) { offlineNotice(); return }
         if (ui.value.stage !in setOf(GameStage.Idle, GameStage.Hub, GameStage.Result)) return
         dismissed.value = null; hub.value = false
-        session.invite(kind)
+        session.invite(kind, options)
     }
     fun accept() { if (ui.value.stage == GameStage.Incoming) session.accept() }
     fun decline() { if (ui.value.stage == GameStage.Incoming) session.decline() }
@@ -105,11 +110,11 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
     fun draw(action: String) { if (ui.value.stage == GameStage.Playing) session.draw(action) }
     fun done() {
         val match = ui.value.match ?: return
-        if (match.status == MatchStatus.Over && session.me in match.rematch) session.leave()
+        if (match.status == MatchStatus.Over) session.leave() // tells the partner we left, withdrawing any rematch request
         dismissed.value = match.id; hub.value = false
     }
     fun move(data: JsonObject) = session.move(data)
-    fun paddle(viewX: Float) = session.paddle(viewX)
+    fun paddle(viewX: Float, viewY: Float, released: Boolean = false) = session.paddle(viewX, viewY, released)
 
     private fun message(code: String) = when (code) {
         "partner_offline" -> "Games need $nickname to be online."
@@ -121,6 +126,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         "stale", "out_of_order", "game_over", "bad_state", "not_found" -> "The game moved on. Showing the latest board."
         "no_claim" -> "There's no draw to claim right now."
         "match_gone" -> "This game is no longer available."
+        "partner_left" -> "$nickname has left the game."
         "network" -> "Couldn't reach the game. Check your connection."
         else -> "Something went wrong with the game."
     }

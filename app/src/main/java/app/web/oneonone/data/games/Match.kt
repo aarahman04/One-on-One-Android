@@ -4,7 +4,7 @@ import kotlinx.serialization.json.*
 
 enum class GameKind(val wire: String, val title: String, val description: String) {
     Chess("chess", "Chess", "A little strategy, a worthy opponent"),
-    Pong("pong", "Table Tennis", "Keep the rally going · first to 7"),
+    Pong("pong", "Ping Pong", "Swipe, spin and rally"),
     Connect4("connect4", "Connect 4", "Drop a disc, connect four"),
     TicTacToe("tictactoe", "Tic-Tac-Toe", "Three in a row, one good move"),
     Reversi("reversi", "Reversi", "Outflank and flip · most discs wins"),
@@ -14,6 +14,35 @@ enum class GameKind(val wire: String, val title: String, val description: String
 
 enum class MatchStatus(val wire: String) { Invited("invited"), Playing("playing"), Over("over") }
 data class MatchOutcome(val winner: String?, val reason: String)
+
+/** A turn game's time control: each seat starts with [base] ms, gains [inc] ms per move; [left] is per seat at the snapshot. */
+data class MatchClock(val base: Long, val inc: Long, val left: List<Long>)
+
+/** What the inviter chooses: a turn game's clock (null = no time limit) or Ping Pong's target score. */
+data class MatchOptions(val clock: Pair<Long, Long>? = null, val points: Int? = null)
+
+/** "10 min", "3 min + 2 s", "30 s", "1 h" for a time control. */
+fun clockLabel(base: Long, inc: Long): String {
+    val s = base / 1000
+    val main = when {
+        s % 3600 == 0L -> "${s / 3600} h"
+        s % 60 == 0L -> "${s / 60} min"
+        s > 60 -> "${s / 60} min ${s % 60} s"
+        else -> "$s s"
+    }
+    return if (inc > 0) "$main + ${inc / 1000} s" else main
+}
+
+/** Clock face: "1:05:00", "4:59", "0:09.4" under ten seconds. */
+fun clockFace(ms: Long): String {
+    val t = ms.coerceAtLeast(0)
+    val s = t / 1000
+    return when {
+        s >= 3600 -> "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60)
+        t < 10_000 -> "0:%02d.%d".format(s, t / 100 % 10)
+        else -> "%d:%02d".format(s / 60, s % 60)
+    }
+}
 
 /** The server's authoritative match (contract §12). Clients render it; they never decide it. */
 data class Match(
@@ -32,6 +61,9 @@ data class Match(
     val series: Map<String, Int>,
     val away: List<String>,
     val paused: Boolean,
+    val clock: MatchClock? = null,
+    /** Ping Pong's target score (7 by default). */
+    val points: Int? = null,
 ) {
     /** 1 or 2 for a player (chess: 1 = white), 0 otherwise. */
     fun seat(user: String) = players.indexOf(user) + 1
@@ -48,6 +80,7 @@ object MatchCodec {
 
     private fun JsonObject.text(key: String) = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
     private fun JsonObject.int(key: String) = (get(key) as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull
+    private fun JsonObject.long(key: String) = (get(key) as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
     private fun JsonObject.texts(key: String) = (get(key) as? JsonArray)?.map { (it as JsonPrimitive).also { p -> require(p.isString) }.content }
 
     fun decode(value: JsonElement?): Match? = runCatching {
@@ -64,6 +97,12 @@ object MatchCodec {
         require(member(turn) && member(outcome?.winner) && member(drawOffer) && inviter in players)
         require((status == MatchStatus.Over) == (outcome != null))
         val series = (o["series"] as? JsonObject)?.mapValues { (it.value as JsonPrimitive).int } ?: emptyMap()
+        val clock = (o["clock"] as? JsonObject)?.let { c ->
+            val left = (c["left"] as JsonArray).map { (it as JsonPrimitive).long }
+            MatchClock(c.long("base")!!, c.long("inc")!!, left).also {
+                require(it.base > 0 && it.inc >= 0 && left.size == 2 && left.all { ms -> ms >= 0 })
+            }
+        }
         Match(
             id = o.text("id")!!.also { require(it.isNotBlank() && it.length <= 64) },
             game = game, status = status, inviter = inviter, players = players, turn = turn,
@@ -73,6 +112,8 @@ object MatchCodec {
             series = series.filterKeys { it in players },
             away = o.texts("away").orEmpty().filter { it in players },
             paused = (o["paused"] as? JsonPrimitive)?.booleanOrNull == true,
+            clock = clock,
+            points = o.int("points")?.takeIf { it in 1..99 },
         )
     }.getOrNull()
 }
