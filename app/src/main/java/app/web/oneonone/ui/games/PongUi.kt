@@ -44,9 +44,9 @@ private const val MarginBottom = .7f
 private val TableTop = Color(0xFF17294A)
 private val TableBottom = Color(0xFF0E1A31)
 private val TableEdge = Color(0xFF0A1222)
-/** Razor spin (rare, sharp break; backend RAZOR_SPIN .6): a hot trail warns the receiver. */
+/** Razor spin (rare, sharp break; backend RAZOR_SPIN .7, normal spin at most .5): a hot trail warns the receiver. */
 private val RazorGlow = Color(0xFFFF8A3D)
-private const val RazorSpin = .5f
+private const val RazorSpin = .6f
 
 private class PongHud {
     var mine by mutableIntStateOf(0)

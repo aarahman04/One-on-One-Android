@@ -150,7 +150,7 @@ class PongClient(val seat: Int) {
         const val RacketNear = 1.3f
         const val RacketFar = 2.5f
         const val ArcH = 6f / 12.16f
-        private const val SpinDrift = .4f
+        private const val SpinDrift = .8f // backend SPIN_DRIFT
         private const val ContactR = HeadR + BallR + .02f
         private const val SpinTau = 1.8f
 

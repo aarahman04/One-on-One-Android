@@ -91,18 +91,19 @@ internal class DemoPong(private val random: () -> Double = { kotlin.random.Rando
         val dx = target[0] - px; val dy = target[1] - py; val length = hypot(dx, dy)
         x = px + dx / length * .205; y = py + dy / length * .205
         curve(target, 1 - .22 * stroke[1])
-        val brush = if (abs(stroke[2]) > .45) stroke[0] else 0.0
+        val brush = if (abs(stroke[2]) > .3) stroke[0] else 0.0
         lastHit = seat; landed = false
-        spin = if (abs(brush) <= .08) 0.0 else sign(brush) * (.2 + .2 * min(1.0, (abs(brush) - .08) / .6))
+        // Hooks against the brush, as on the backend.
+        spin = if (abs(brush) <= .08) 0.0 else -sign(brush) * (.25 + .25 * min(1.0, (abs(brush) - .08) / .6))
         razor = abs(brush) >= .85 && random() < .15
-        if (razor) spin = sign(brush) * .6
+        if (razor) spin = -sign(brush) * .7
         hits++
     }
     private fun advance(dt: Double) {
         val current = flight ?: return
         val oldX = x; val oldY = y; val oldZ = z
         val decay = exp(-dt / 1.8)
-        current.points[3][0] += spin * .4 * 1.8 * (1 - decay)
+        current.points[3][0] += spin * .8 * 1.8 * (1 - decay)
         spin *= decay
         current.elapsed += dt
         val t = (current.elapsed / current.duration).coerceIn(0.0, 1.0)
@@ -118,12 +119,12 @@ internal class DemoPong(private val random: () -> Double = { kotlin.random.Rando
                 if (landed) { point(lastHit); return }
                 x = bx; y = by; z = .033; landed = true; bounces++
                 // Mirrors the backend: spin turns the heading by a capped angle (razor: sharper) and checks the pace.
-                val turn = if (razor) sign(spin) * .6 else (spin * .8).coerceIn(-.35, .35)
+                val turn = if (razor) sign(spin) * .8 else (spin * 1.1).coerceIn(-.5, .5)
                 val heading = atan2(vx, vy) + turn
                 val across = hypot(vx, vy)
                 val kickX = across * sin(heading); val kickY = across * cos(heading)
                 val length = sqrt(kickX * kickX + kickY * kickY + vz * vz).takeIf { it != 0.0 } ?: 1.0
-                val reach = 30 / 12.16 * (1 - .4 * min(.6, abs(spin)))
+                val reach = 30 / 12.16 * (1 - .4 * min(.7, abs(spin)))
                 curve(doubleArrayOf(x + kickX / length * reach, y + kickY / length * reach, -ArcH), current.duration)
             }
         }

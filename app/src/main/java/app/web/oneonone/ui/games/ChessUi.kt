@@ -28,14 +28,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -58,7 +55,7 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 import kotlin.math.roundToInt
 
-/** Classic black-and-white board; black pieces carry a light outline so they read on the black squares. */
+/** Classic black-and-white board; the same in light and dark mode. */
 internal object ChessColors {
     val light = Color(0xFFF2F2F2)
     val dark = Color(0xFF0B0B0B)
@@ -103,18 +100,11 @@ private class SpriteTrack {
     }
 }
 
-/** A piece image; black pieces get a thin light outline (eight offset tinted copies) so they stay visible on black squares. */
+/** A piece image. */
 @Composable
 private fun ChessPiece(piece: Char, modifier: Modifier) {
-    val painter = painterResource(pieceDrawable(piece))
-    Image(painter, null, if (piece.isUpperCase()) modifier else modifier.drawBehind {
-        val w = size.minDimension * .035f
-        for (dx in -1..1) for (dy in -1..1) if (dx != 0 || dy != 0) translate(dx * w, dy * w) {
-            with(painter) { draw(size, alpha = .9f, colorFilter = ColorFilter.tint(PieceOutline)) }
-        }
-    })
+    Image(painterResource(pieceDrawable(piece)), null, modifier)
 }
-private val PieceOutline = Color(0xFFD9D9D9)
 
 /** Slide time grows with distance (a one-square step is quick, a long diagonal still reads as one glide). */
 internal fun slideMillis(fromCell: Int, toCell: Int): Int {

@@ -287,16 +287,21 @@ private fun ResultActions(vm: GameViewModel, state: GameUi, compact: Boolean) {
     val series = seriesText(match, state.me, state.partner, vm.nickname)
     val iAsked = state.me in match.rematch
     val theyAsked = state.partner in match.rematch
+    // They closed the results or their phone went offline: a rematch can't be answered, so don't offer one.
+    val theyLeft = state.partner in match.away
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (compact) s.sm8 else s.lg16)) {
         Text(outcomeTitle(match, state.me, vm.nickname), style = if (compact) MaterialTheme.typography.titleLarge else OneTextStyles.screenTitle,
             textAlign = TextAlign.Center, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         Text(listOfNotNull(outcomeDetail(match, state.me, vm.nickname), series.takeIf { compact }).joinToString(" · "),
             color = c.textDim, style = OneTextStyles.subtitle, textAlign = TextAlign.Center)
         if (series != null && !compact) Text(series, style = MaterialTheme.typography.titleMedium)
-        if (theyAsked) Text("${vm.nickname} wants a rematch", color = c.accentOther, style = MaterialTheme.typography.bodyMedium,
+        if (theyLeft) Text("${vm.nickname} has left the game", color = c.textDim, style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        else if (theyAsked) Text("${vm.nickname} wants a rematch", color = c.accentOther, style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         if (match.outcome?.reason != "connection_ended") {
-            if (iAsked) SecondaryButton("Waiting for ${vm.nickname}…", {}, Modifier.fillMaxWidth(), enabled = false)
+            if (theyLeft) Unit
+            else if (iAsked) SecondaryButton("Waiting for ${vm.nickname}…", {}, Modifier.fillMaxWidth(), enabled = false)
             else PrimaryButton(if (theyAsked) "Accept rematch" else "Rematch", vm::rematch, Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
                 SecondaryButton("New game", vm::hub, Modifier.weight(1f))

@@ -1812,8 +1812,13 @@ devices and genuine two-account Android play remain unverified; see the linked h
   smash goes long; jitter-resistant stroke window; capped bounce spin (no sideways exploit near the
   net) plus a rare razor spin with a hot trail; hit/bounce sounds; app-accent table, bats and ball.
 - Tic-Tac-Toe and Connect 4 draw your own move instantly; board taps no longer flash a white box.
-- Verified: backend 102/102 + tsc; Android 216 unit tests, assembleDebug, lintDebug; emulator
-  demo screens checked. Not verified: physical phones, real two-account play, real network latency.
+- Owner playtest follow-ups: chess squares jet black (no piece outlines). Ping Pong spin made clearly
+  visible and physically correct: it hooks against the brush (so wide spin shots bend back onto the
+  table), bends 8-14% of the table width in flight and turns up to ~29 deg at the bounce; razor ~46 deg.
+- Rematch when the partner left: closing the results or losing the connection there lists you in
+  `away`; the partner sees "<name> has left the game" instead of a rematch that can never be answered.
+- Verified: backend 103/103 + tsc; Android 216 unit tests, assembleDebug, lintDebug; emulator
+  demo screens checked; owner played chess and Ping Pong on the emulator demo. Not verified: physical phones, real two-account play, real network latency.
 
 ### Xiaomi / two-phone checklist (games round 3)
 
@@ -1825,3 +1830,5 @@ devices and genuine two-account Android play remain unverified; see the linked h
       reaches near the corners; brushed spin bends and turns at the bounce, never straight sideways.
 - [ ] Racket never jumps when touching the screen; hit and bounce sounds play at media volume.
 - [ ] Tic-Tac-Toe / Connect 4: your mark appears immediately; no white box on tap.
+- [ ] Finish a game, close the results on one phone (or turn it off): the other shows "has left the
+      game" and no rematch button; reopening the results restores the rematch.
