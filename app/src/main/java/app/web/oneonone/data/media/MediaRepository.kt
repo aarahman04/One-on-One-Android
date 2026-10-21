@@ -23,6 +23,7 @@ import android.provider.OpenableColumns
 import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.graphics.scale
 import app.web.oneonone.BuildConfig
 import app.web.oneonone.data.model.*
 import app.web.oneonone.data.chat.archiveFiles
@@ -55,6 +56,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.math.round
+import kotlin.math.roundToInt
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -78,6 +80,8 @@ interface MediaGateway {
     suspend fun upload(connection: String, kind: String, uri: Uri, duration: Double? = null): JsonObject
     suspend fun uploadSticker(connection: String, file: File): JsonObject
     suspend fun signedUrl(connection: String, path: String): String
+    /** A still-valid signed URL already in memory, without a network call: lets a re-composed photo row draw at once. */
+    fun cachedSignedUrl(connection: String, path: String): String? = null
     suspend fun download(connection: String, payload: JsonObject): Uri
     suspend fun location(): JsonObject
     suspend fun startRecording(onLimit: () -> Unit)
@@ -121,7 +125,8 @@ class MediaRepository @Inject constructor(
     private val json: Json,
 ) : MediaGateway, DictationRecorder {
     private val signing = Mutex()
-    private val urls = mutableMapOf<String, Pair<String, Long>>()
+    // Concurrent: cachedSignedUrl reads it from the main thread while signedUrl writes it under [signing].
+    private val urls = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
     private val downloadClient = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .callTimeout(60, TimeUnit.SECONDS).build()
     private var recorder: MediaRecorder? = null
@@ -166,15 +171,16 @@ class MediaRepository @Inject constructor(
                 while (bounds.outWidth.toLong() * bounds.outHeight / sample / sample > 4_000_000) sample *= 2
                 // BitmapFactory never auto-orients, so one explicit EXIF pass gives the same result on every API level.
                 val bitmap = orientLegacy(checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })), bytes)
+                val fitted = fitPhoto(bitmap)
                 try {
-                    width = bitmap.width; height = bitmap.height
+                    width = fitted.width; height = fitted.height
                     val encoded = ByteArrayOutputStream()
-                    val png = sourceMime == "image/png"
-                    check(bitmap.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 90, encoded)) { "Couldn't encode the image." }
+                    val png = sourceMime == "image/png" && fitted.hasAlpha()
+                    check(fitted.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, PHOTO_QUALITY, encoded)) { "Couldn't encode the image." }
                     bytes = encoded.toByteArray() // Re-encoding pixels drops EXIF/GPS metadata.
                     mime = if (png) "image/png" else "image/jpeg"
                     require(bytes.size <= attachmentLimit("image")) { "That photo exceeds 10 MiB after encoding." }
-                } finally { bitmap.recycle() }
+                } finally { fitted.recycle() }
             }
         }
         val uploaded = api.upload(connection, kind, bytes.toRequestBody(mime.toMediaType()))
@@ -223,6 +229,8 @@ class MediaRepository @Inject constructor(
         urls[path] = url to System.currentTimeMillis() + 55 * 60_000
         url
     }
+    override fun cachedSignedUrl(connection: String, path: String): String? =
+        urls[path]?.takeIf { path.startsWith("$connection/") && it.second > System.currentTimeMillis() }?.first
     private fun storageUrl(url: String) = url.toHttpUrlOrNull()?.let { it.isHttps && it.host == BuildConfig.SUPABASE_URL.toHttpUrlOrNull()?.host } == true
 
     override suspend fun saveArchive(uri: Uri, connection: String, messages: List<ChatMessage>, owner: String, other: String,
@@ -410,6 +418,25 @@ class MediaRepository @Inject constructor(
             }
         }
     }
+}
+
+/** Photos are sent at most this many pixels on the long side (a phone screen's worth), JPEG at [PHOTO_QUALITY]. */
+internal const val PHOTO_MAX_SIDE = 2_048
+internal const val PHOTO_QUALITY = 85
+
+/** [width]×[height] scaled down (never up) so the long side is at most [maxSide], keeping the aspect ratio. */
+internal fun fittedSize(width: Int, height: Int, maxSide: Int = PHOTO_MAX_SIDE): Pair<Int, Int> {
+    val long = maxOf(width, height)
+    if (long <= maxSide) return width to height
+    val scale = maxSide.toDouble() / long
+    return (width * scale).roundToInt().coerceAtLeast(1) to (height * scale).roundToInt().coerceAtLeast(1)
+}
+
+/** Downscales a decoded photo to [PHOTO_MAX_SIDE], recycling the original when a copy is made. */
+private fun fitPhoto(bitmap: Bitmap): Bitmap {
+    val (width, height) = fittedSize(bitmap.width, bitmap.height)
+    if (width == bitmap.width && height == bitmap.height) return bitmap
+    return bitmap.scale(width, height).also { if (it !== bitmap) bitmap.recycle() }
 }
 
 internal fun orientLegacy(bitmap: Bitmap, bytes: ByteArray): Bitmap =

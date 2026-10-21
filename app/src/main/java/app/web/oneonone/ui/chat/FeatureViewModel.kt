@@ -57,8 +57,8 @@ class FeatureViewModel @Inject constructor(
             }
         }
     } }
-    /** Voice/sticker/GIF still uploading: drawn at once as a "Sending…" bubble so a send never looks stuck. */
-    data class PendingMedia(val id: String, val kind: String, val file: File? = null, val duration: Double? = null)
+    /** Voice/sticker/GIF/photo still uploading: drawn at once as a "Sending…" bubble so a send never looks stuck. */
+    data class PendingMedia(val id: String, val kind: String, val file: File? = null, val duration: Double? = null, val uri: Uri? = null)
     private val mutablePending = MutableStateFlow(emptyList<PendingMedia>())
     val pending = mutablePending.asStateFlow()
     private suspend fun <T> showing(item: PendingMedia, block: suspend () -> T): T {
@@ -80,7 +80,10 @@ class FeatureViewModel @Inject constructor(
         onDone()
     }
     fun upload(connection: CurrentConnection, kind: String, uri: Uri, reply: String?, onDone: () -> Unit) = action {
-        sendMedia(connection, kind, uri, reply); onDone()
+        if (kind != "image") { sendMedia(connection, kind, uri, reply); onDone(); return@action }
+        // Photos close the sheet at once like GIFs; the local picture shows as a pending bubble while it uploads.
+        onDone()
+        showing(PendingMedia(UUID.randomUUID().toString(), "image", uri = uri)) { sendMedia(connection, kind, uri, reply) }
     }
     private suspend fun sendMedia(connection: CurrentConnection, kind: String, uri: Uri, reply: String?) {
         val session = ChatSession(connection.myUserId, connection.id)

@@ -72,7 +72,7 @@ internal fun pdfBitmapHeight(width: Int, pageWidth: Int, pageHeight: Int): Int {
 }
 
 @Composable
-internal fun AttachmentViewerFrame(name: String, busy: Boolean, save: () -> Unit, close: () -> Unit,
+internal fun AttachmentViewerFrame(name: String, busy: Boolean, save: (() -> Unit)?, close: () -> Unit,
                                    openWith: (() -> Unit)? = null, content: @Composable () -> Unit) {
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val view = LocalView.current
@@ -88,7 +88,7 @@ internal fun AttachmentViewerFrame(name: String, busy: Boolean, save: () -> Unit
                 OneIconButton(R.drawable.ic_x, "Close viewer", close, tint = Color.White)
                 Text(name, Modifier.weight(1f).padding(horizontal = 8.dp), color = Color.White,
                     style = OneTextStyles.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                OneIconButton(R.drawable.ic_download, "Save a copy", save, tint = Color.White, enabled = !busy)
+                save?.let { OneIconButton(R.drawable.ic_download, "Save a copy", it, tint = Color.White, enabled = !busy) }
                 openWith?.let { OneIconButton(R.drawable.ic_open_with, "Open with…", it, tint = Color.White, enabled = !busy) }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) { content() }
