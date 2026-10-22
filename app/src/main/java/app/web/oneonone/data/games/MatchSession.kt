@@ -11,7 +11,7 @@ interface MatchChannel {
     val reactions: Flow<JsonObject> get() = emptyFlow()
     /** Emits a `match:*` event and returns its ack. */
     suspend fun call(event: String, payload: JsonObject): JsonObject
-    fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false)
+    fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false, touch: Pair<Float, Float>? = null)
 }
 
 enum class GameStage { Idle, Hub, Outgoing, Incoming, Playing, Result }
@@ -43,7 +43,8 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     val reactions = mutableReactions.asSharedFlow()
     var me = ""; private set
     var pong: PongClient? = null; private set
-    private var pendingPaddle: Triple<Float, Float, Boolean>? = null
+    private data class PaddleInput(val x: Float, val y: Float, val released: Boolean, val touch: Pair<Float, Float>?)
+    private var pendingPaddle: PaddleInput? = null
     private var paddleJob: Job? = null
 
     init {
@@ -143,18 +144,19 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     }
 
     /** Own paddle (view x); sent at most every [PaddleIntervalMs], always the latest position. */
-    fun paddle(viewX: Float, viewY: Float, released: Boolean = false) {
+    fun paddle(viewX: Float, viewY: Float, released: Boolean = false, touch: Pair<Float, Float>? = null) {
         val m = match.value ?: return
         val client = pong ?: return
         if (m.status != MatchStatus.Playing || m.paused) return
-        val (x, y) = client.paddle(viewX, viewY, released)
-        pendingPaddle = Triple(x, y, released)
+        val (x, y) = client.paddle(viewX, viewY)
+        val serverTouch = touch?.let { if (client.seat == 1) it else 1 - it.first to PongClient.CourtH - it.second }
+        pendingPaddle = PaddleInput(x, y, released, serverTouch)
         if (paddleJob?.isActive == true) return
         paddleJob = scope.launch {
             while (true) {
                 val input = pendingPaddle ?: break
                 pendingPaddle = null
-                channel.paddle(m.id, input.first, input.second, input.third)
+                channel.paddle(m.id, input.x, input.y, input.released, input.touch)
                 delay(PaddleIntervalMs)
             }
         }

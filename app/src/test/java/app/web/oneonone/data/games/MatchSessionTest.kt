@@ -16,9 +16,12 @@ private class FakeChannel : MatchChannel {
     val paddles = mutableListOf<Float>()
     val releases = mutableListOf<Boolean>()
     val paddleY = mutableListOf<Float?>()
+    val touches = mutableListOf<Pair<Float, Float>?>()
     var reply: suspend (String, JsonObject) -> JsonObject = { _, _ -> buildJsonObject { put("ok", true) } }
     override suspend fun call(event: String, payload: JsonObject): JsonObject { calls += event to payload; return reply(event, payload) }
-    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) { paddles += x; paddleY += y; releases += released }
+    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean, touch: Pair<Float, Float>?) {
+        paddles += x; paddleY += y; releases += released; touches += touch
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -159,8 +162,9 @@ class MatchSessionTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
         assertNotNull(s.pong)
-        s.paddle(.3f, 1.9f); s.paddle(.4f, 1.9f); s.paddle(.5f, 1.9f); runCurrent()
+        s.paddle(.3f, 1.9f); s.paddle(.4f, 1.9f); s.paddle(.5f, 1.9f, touch = .8f to 1.7f); runCurrent()
         assertEquals(listOf(.5f), ch.paddles) // a burst collapses to the latest position
+        assertEquals(listOf(.8f to 1.7f), ch.touches)
         s.paddle(.6f, 2f); s.paddle(.7f, 2.1f); runCurrent()
         assertEquals(listOf(.5f), ch.paddles) // within the interval: held
         advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()

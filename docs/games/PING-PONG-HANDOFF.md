@@ -1,5 +1,8 @@
 # Ping Pong handoff to Claude Code - 2026-10-21
 
+Historical handoff: the owner's subsequent remake request resumed development.
+See [2026-10-22 reference remake](PONG-REFERENCE-REMAKE.md) for current behavior.
+
 The owner asked Codex to wrap up, update docs and hand over. Work has stopped. This
 handoff supersedes older instructions to keep testing or finish Android CI/merge.
 No further gameplay changes, emulator input or merge were made during wrap-up.

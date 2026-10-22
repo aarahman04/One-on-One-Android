@@ -1,7 +1,21 @@
 # Android milestone progress
 
-Current Ping Pong delivery state and Claude Code follow-up:
-[PING-PONG-HANDOFF.md](games/PING-PONG-HANDOFF.md) (2026-10-21).
+Current Ping Pong work: [reference remake](games/PONG-REFERENCE-REMAKE.md)
+(2026-10-22). The 2026-10-21 handoff describes the earlier implementation.
+
+## Ping Pong reference remake and red-racket contact (2026-10-22)
+
+- Rebuilt the existing game from recovered flight/stroke constants and the owner's video: live finger-controlled endpoint drift, native cubic/easing, elapsed-time racket following, green court, upright red/cyan rackets and a short white trail.
+- Optional raw `touch` samples keep finger power/spin separate from the eased racket; additive `drift` lets Android render the authoritative curve without the previous exponential approximation. Existing authentication, custom points, pause and rematch stay in their existing layers.
+- Fixed the owner's forward-stroke overlap: collision includes both black outlines and the ball's height-dependent size. Client and server stop an advancing racket at its front contact; the renderer holds pending contact on the rim, and the simulator tests existing contact before advancing the flight. Scores and hit counts remain authoritative.
+- Validation: debug build, lint and 260 Android tests passed; backend final full rerun passed 124/124 and TypeScript checking passed. An unrelated call-disconnect test raced in an earlier run; isolated and full reruns passed without changing it. Final debug APK installed on separate `PongRemake_Check`; controls left to the owner. Remaining phone checks and artifact hash are in the reference-remake document. No production deploy or Play upload.
+
+### Xiaomi checklist
+
+- [ ] Pull red racket back and swipe forward into a return, including near either side: ball meets the black rim and travels away.
+- [ ] Neutral blocks, soft placements and hard forward strokes retain predictable aim and pace; finger release stops sideways steering.
+- [ ] Test both seats on two accounts with normal and delayed network; verify scores, custom target, serves, pause/resume and rematch.
+- [ ] Check light/dark themes, TalkBack controls, and smooth racket following at the phone's available refresh rates.
 
 ## Release 2.0.9 (2026-10-21, versionCode 16)
 - Release workflow defaults bumped to 16 / 2.0.9. Contents since 2.0.8: games round 3 and Ping Pong (#43/#44), owner fix batch (#45), logos/viewer/BiRefNet stickers (#46), cross-check (#47); backend #122, #123, #124. No new migration (latest remains 040).

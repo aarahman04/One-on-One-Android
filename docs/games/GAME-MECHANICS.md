@@ -2,7 +2,10 @@
 
 Confidence: **Verified** = our code + tests; **Inferred** = reference names only.
 
-## Ping Pong rebuild (2026-10-21)
+The [2026-10-22 reference remake](PONG-REFERENCE-REMAKE.md) supersedes the
+Ping Pong implementation and older extraction findings below.
+
+## Ping Pong rebuild (2026-10-21, historical)
 
 The owner rejected the earlier wall-bouncing game, supplied a 52 s reference video, and approved
 replacement with an open table. This section supersedes the earlier sidespin implementation.

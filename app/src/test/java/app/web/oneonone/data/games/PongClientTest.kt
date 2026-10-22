@@ -18,8 +18,8 @@ class PongClientTest {
         putJsonArray("z") { add(.16f); add(0f) }
         extra()
     }
-    private fun JsonObjectBuilder.arc(elapsed: Float = .2f) {
-        putJsonArray("a") { listOf(.5f, 1.7f, .16f, .5f, 1.4f, .49f, .7f, .5f, .49f, .7f, .5f, -.49f, elapsed, .9f).forEach { add(it) } }
+    private fun JsonObjectBuilder.arc(elapsed: Float = .2f, endX: Float = .7f) {
+        putJsonArray("a") { listOf(.5f, 1.7f, .16f, .5f, 1.4f, .49f, .7f, .5f, .49f, endX, .5f, -.49f, elapsed, .9f).forEach { add(it) } }
     }
 
     @Test fun seatTwoRotatesBothCoordinatesAndOwnScoreComesFirst() {
@@ -32,12 +32,6 @@ class PongClientTest {
         val moved = two.paddle(.25f, 2.1f)
         assertEquals(.75f, moved.first, 1e-5f); assertEquals(-.3f, moved.second, 1e-5f)
         assertEquals(PongClient.RacketMax to PongClient.RacketNear, one.paddle(5f, -4f))
-        one.paddle(.5f, 2f); one.paddle(.6f, 1.9f)
-        one.advance(ms); one.advance(30 * ms)
-        assertTrue(one.myAngle > 0)
-        one.paddle(.6f, 1.9f, true)
-        for (i in 1..30) one.advance((30 + i * 20) * ms)
-        assertEquals(0f, one.myAngle, .01f)
     }
 
     @Test fun displaysActualCubicHeightAndRotatesTheWholeFlight() {
@@ -49,7 +43,7 @@ class PongClientTest {
         assertEquals(1f, one.ballX + two.ballX, 1e-4f)
         assertEquals(PongClient.CourtH, one.ballY + two.ballY, 1e-4f)
         assertEquals(one.height, two.height, 1e-4f)
-        assertTrue(one.trail.isNotEmpty() && one.trail.size <= 8)
+        assertTrue(one.trail.isNotEmpty() && one.trail.size <= 26)
         val arc = FloatArray(14).also { it[0] = .1f; it[9] = .8f; it[13] = 1f }
         assertEquals(.1f, PongClient.flightPosition(arc, 0f, 0f)[0], 1e-5f)
         assertEquals(.8f, PongClient.flightPosition(arc, 1f, 0f)[0], 1e-5f)
@@ -73,7 +67,6 @@ class PongClientTest {
         for (i in 1..16) { plain.advance(i * 10 * ms); one.advance(i * 10 * ms); two.advance(i * 10 * ms) }
         assertTrue(one.ballX > plain.ballX + .005f)
         assertEquals(1f, one.ballX + two.ballX, 1e-4f)
-        assertTrue(one.spinAngle > 0 && two.spinAngle < 0)
     }
 
     @Test fun bounceIsReportedOnceAndAWaitingServeClearsTheTrail() {
@@ -106,10 +99,41 @@ class PongClientTest {
         p.paddle(.98f, 1.8f)
         p.paddle(1.03f, 1.3f)
         assertTrue(p.myY > p.ballY + .15f)
-        assertEquals(.19f, kotlin.math.hypot(p.myX - p.ballX, p.myY - p.ballY), 1e-4f)
+        assertEquals(PongClient.contactRadius(p.height), kotlin.math.hypot(p.myX - p.ballX, p.myY - p.ballY), 1e-4f)
         p.receive(frame(listOf(1.03f, 1.4f, 0f, -1f)) { put("h", 2); put("l", false) }, "m", 20 * ms)
         p.paddle(1.03f, 1.3f)
         assertEquals(1.3f, p.myY, 1e-5f)
+    }
+
+    @Test fun incomingBallStopsAtTheBlackRimWhileTheReturnIsPending() {
+        for (seat in 1..2) {
+            val p = PongClient(seat)
+            val b = if (seat == 1) listOf(.5f, 1.45f, 0f, 3f) else listOf(.5f, .35f, 0f, -3f)
+            p.receive(frame(b) { put("l", true); put("drift", 0f) }, "m", ms)
+            p.paddle(.5f, 1.8f)
+            p.paddle(.5f, 1.3f)
+            for (i in 1..10) {
+                p.advance((1 + i * 10) * ms)
+                assertTrue(p.myY - p.ballY >= PongClient.contactRadius(p.height) - .0001f)
+            }
+            assertEquals(1, p.hits); assertEquals(if (seat == 1) 4 else 2, p.myScore)
+            val returned = if (seat == 1) listOf(.5f, 1.4f, 0f, -1f) else listOf(.5f, .4f, 0f, 1f)
+            p.receive(frame(returned) { put("h", 2); put("drift", 0f) }, "m", 110 * ms)
+            p.advance(120 * ms)
+            assertEquals(2, p.hits)
+            assertTrue(p.ballY < 1.4f)
+        }
+    }
+
+    @Test fun sweptContactCatchesAWholeHeadCrossingButAllowsSideAndBackMisses() {
+        val radius = PongClient.contactRadius(.16f)
+        assertEquals((.8f - radius - .2f) / 1.2f,
+            PongClient.frontContact(.5f, .2f, .5f, 1.4f, .5f, .8f, radius)!!, 1e-5f)
+        assertNull(PongClient.frontContact(.9f, .2f, .9f, 1.4f, .5f, .8f, radius))
+        assertNull(PongClient.frontContact(.5f, 1f, .5f, .2f, .5f, .8f, radius))
+        for (height in listOf(0f, .16f, PongClient.ArcH))
+            assertEquals(PongClient.HeadR + PongClient.HeadOutline / 2 + 1.35f * PongClient.ballRadius(height),
+                PongClient.contactRadius(height), 1e-6f)
     }
 
     @Test fun malformedFramesAreRejectedAtomicallyAndLegacyFieldsStillWork() {
@@ -119,11 +143,60 @@ class PongClientTest {
         val invalid = listOf(
             frame(listOf(1f)), frame(listOf(.5f, Float.NaN, 0f, 0f)),
             frame { put("spin", "broken") }, frame { put("serve", 3) },
+            frame { put("drift", "NaN") }, frame { put("t", -1) },
             frame { putJsonArray("s") { add(100); add(0) } }, frame { putJsonArray("a") { add(0) } },
         )
         invalid.forEach { assertFalse(p.receive(it, "m", 2 * ms)) }
         assertEquals(.2f, p.ballX, 0f); assertEquals(4, p.myScore)
         val legacy = JsonObject(frame().filterKeys { it !in setOf("r", "z") })
         assertTrue(p.receive(legacy, "m", 3 * ms)); assertEquals(0f, p.height, 0f)
+    }
+
+    @Test fun nativeEndpointDriftIsLinearAndRotatesWithTheWholeFlight() {
+        val f = frame { arc(.5f); put("spin", 1f); put("drift", 1.2336f) }
+        val one = PongClient(1); val two = PongClient(2)
+        one.receive(f, "m", ms); two.receive(f, "m", ms)
+        one.advance(101 * ms); two.advance(101 * ms)
+        val curve = f["a"]!!.jsonArray.map { it.jsonPrimitive.float }.toFloatArray()
+        val expected = PongClient.flightPosition(curve, .1f, 1f, 1.2336f)
+        assertEquals(expected[0], one.ballX, 1e-5f)
+        assertEquals(expected[1], one.ballY, 1e-5f)
+        assertEquals(expected[2], one.height, 1e-5f)
+        assertEquals(1f, one.ballX + two.ballX, 1e-5f)
+        assertEquals(PongClient.CourtH, one.ballY + two.ballY, 1e-5f)
+    }
+
+    @Test fun lateSnapshotsDoNotRewindAFlightAndOlderPacketsAreRejected() {
+        val p = PongClient(1)
+        p.receive(frame { arc(); put("drift", .2f); put("t", 1000) }, "m", ms)
+        p.advance(91 * ms)
+        val before = listOf(p.ballX, p.ballY, p.height)
+        // Server progressed 50 ms; the second packet spent 40 ms longer in transit.
+        assertTrue(p.receive(frame { arc(.25f, .71f); put("drift", .2f); put("t", 1050) }, "m", 91 * ms))
+        p.advance(91 * ms)
+        listOf(p.ballX, p.ballY, p.height).zip(before).forEach { (actual, expected) -> assertEquals(expected, actual, 1e-5f) }
+        assertFalse(p.receive(frame { arc(); put("t", 1049); put("h", 99) }, "m", 92 * ms))
+        assertEquals(1, p.hits)
+    }
+
+    @Test fun racketFollowingHasTheSameResponseAt60And120Hz() {
+        val sixty = PongClient.racketFollow(1f / 60)
+        val oneTwenty = PongClient.racketFollow(1f / 120)
+        assertEquals(.5f, sixty, 1e-5f)
+        assertEquals(sixty, 1 - (1 - oneTwenty) * (1 - oneTwenty), 1e-5f)
+        val ninety = PongClient.racketFollow(1f / 90)
+        assertEquals(.75f, 1 - (1 - ninety) * (1 - ninety) * (1 - ninety), 1e-5f)
+        assertEquals(0f, PongClient.racketFollow(0f), 0f)
+    }
+
+    @Test fun trailCoversOnlyTheLastThreeTenthsOfASecondAndContinuesThroughContact() {
+        val p = PongClient(1)
+        p.receive(frame { arc(); put("drift", 0f) }, "m", ms)
+        for (i in 1..50) p.advance(i * 10 * ms)
+        assertTrue(p.trail.isNotEmpty())
+        assertTrue(p.trail.all { 500 * ms - it.atNanos <= 300 * ms })
+        val size = p.trail.size
+        p.receive(frame { arc(); put("h", 2); put("drift", 0f) }, "m", 501 * ms)
+        assertEquals(size, p.trail.size)
     }
 }

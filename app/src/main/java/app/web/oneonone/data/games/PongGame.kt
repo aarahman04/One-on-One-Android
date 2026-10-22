@@ -3,7 +3,7 @@ package app.web.oneonone.data.games
 import kotlinx.serialization.json.*
 import kotlin.math.*
 
-data class PongTrail(val x: Float, val y: Float, val height: Float)
+data class PongTrail(val x: Float, val y: Float, val height: Float, val atNanos: Long)
 
 /** Displays the server's Ping Pong flight. Touch owns only the local racket, never the ball or score. */
 class PongClient(val seat: Int) {
@@ -15,8 +15,6 @@ class PongClient(val seat: Int) {
     var myY = CourtH + .08f; private set
     var theirX = .5f; private set
     var theirY = -.08f; private set
-    var myAngle = 0f; private set
-    var theirAngle = 0f; private set
     var myScore = 0; private set
     var theirScore = 0; private set
     var countdownMs = 0; private set
@@ -25,7 +23,6 @@ class PongClient(val seat: Int) {
     var hits = 0; private set
     var live = false; private set
     var spin = 0f; private set
-    var spinAngle = 0f; private set
     var bounceX = 0f; private set
     var bounceY = 0f; private set
     var bounceAt = 0L; private set
@@ -34,15 +31,16 @@ class PongClient(val seat: Int) {
     private var frame = FloatArray(4)
     private var arc: FloatArray? = null
     private var frameHeight = 0f
+    private var frameDrift: Float? = null
     private var frameTheirX = .5f
     private var frameTheirY = -.08f
     private var frameCountdown = 0
     private var frameAt = 0L
+    private var serverOffset: Long? = null
+    private var lastTimestamp = 0L
     private var lastAdvance = 0L
     private var lastTrail = 0L
     private var bounces = 0
-    private var racketAngle = 0f
-    private var remoteAngle = 0f
     private var returnReady = false
 
     private fun viewX(x: Float) = if (seat == 1) x else 1 - x
@@ -66,6 +64,10 @@ class PongClient(val seat: Int) {
             if (curve != null) require(curve[12] >= 0 && curve[13] in .1f..2f)
             val incomingSpin = data["spin"]?.let { (it as JsonPrimitive).float } ?: 0f
             require(incomingSpin.isFinite())
+            val incomingDrift = data["drift"]?.let { (it as JsonPrimitive).float }
+            require(incomingDrift == null || incomingDrift.isFinite())
+            val timestamp = data["t"]?.let { (it as JsonPrimitive).long }
+            require(timestamp == null || timestamp in lastTimestamp..Long.MAX_VALUE / 1_000_000)
             val countdown = (data["c"] as JsonPrimitive).int
             val hitCount = (data["h"] as JsonPrimitive).int
             val serving = data["serve"]?.let { (it as JsonPrimitive).int } ?: 0
@@ -78,21 +80,27 @@ class PongClient(val seat: Int) {
             arc = curve?.also { for (i in 0..3) { it[i * 3] = viewX(it[i * 3]); it[i * 3 + 1] = viewY(it[i * 3 + 1]) } }
             frameHeight = z[0]
             val nextTheirX = viewX(p[2 - seat]); val nextTheirY = viewY(r[2 - seat])
-            remoteAngle = strokeAngle(nextTheirX - frameTheirX, nextTheirY - frameTheirY)
             frameTheirX = nextTheirX; frameTheirY = nextTheirY
             frameCountdown = countdown
             myScore = s[seat - 1]; theirScore = s[2 - seat]
             spin = if (seat == 1) incomingSpin else -incomingSpin
+            frameDrift = incomingDrift?.let { if (seat == 1) it else -it }
             hits = hitCount
             waitingServe = serving != 0; myServe = serving == seat
             returnReady = landed
             if (bounceCount > bounces) { bounceX = frame[0]; bounceY = frame[1]; bounceAt = nowNanos }
             bounces = bounceCount
-            frameAt = nowNanos
+            frameAt = if (timestamp == null) nowNanos else {
+                // Anchor to the fastest packet so a delayed snapshot cannot rewind the same flight.
+                val sentAt = timestamp * 1_000_000
+                val offset = minOf(serverOffset ?: Long.MAX_VALUE, nowNanos - sentAt)
+                serverOffset = offset; lastTimestamp = timestamp
+                sentAt + offset
+            }
             if (!live || newHit || curve == null && b[2] == 0f && b[3] == 0f) {
                 ballX = frame[0]; ballY = frame[1]; height = frameHeight
-                theirX = frameTheirX; theirY = frameTheirY
-                trailPoints.clear()
+                if (!live) { theirX = frameTheirX; theirY = frameTheirY }
+                if (!live || curve == null) trailPoints.clear()
             }
             live = true
             true
@@ -107,36 +115,40 @@ class PongClient(val seat: Int) {
         countdownMs = (frameCountdown - (age * 1000).toInt()).coerceAtLeast(0)
         val curve = arc
         val target = if (curve == null) floatArrayOf(frame[0] + frame[2] * age, frame[1] + frame[3] * age, frameHeight)
-            else flightPosition(curve, age, spin)
-        val k = if (abs(target[0] - ballX) + abs(target[1] - ballY) > .35f) 1f else 1 - exp(-45f * dt)
+            else flightPosition(curve, age, spin, frameDrift)
+        if (frameDrift != null && frame[3] > 0 && returnReady && target[2] >= -BallR) {
+            // Keep a pending local contact on the painted rim until the server confirms the return.
+            val contact = frontContact(ballX, ballY, target[0], target[1], myX, myY, contactRadius(max(height, target[2])))
+            if (contact != null) {
+                target[0] = ballX + (target[0] - ballX) * contact
+                target[1] = ballY + (target[1] - ballY) * contact
+                target[2] = height + (target[2] - height) * contact
+            }
+        }
+        val k = if (frameDrift != null || abs(target[0] - ballX) + abs(target[1] - ballY) > .35f) 1f else 1 - exp(-45f * dt)
         ballX += (target[0] - ballX) * k
         ballY += (target[1] - ballY) * k
         height += (target[2] - height) * k
         val follow = 1 - exp(-35f * dt)
         theirX += (frameTheirX - theirX) * follow; theirY += (frameTheirY - theirY) * follow
-        val turn = 1 - exp(-18f * dt)
-        myAngle += (racketAngle - myAngle) * turn
-        theirAngle += (remoteAngle - theirAngle) * turn
-        spinAngle = (spinAngle + spin * exp(-age / SpinTau) * dt * 900) % 360
         if (curve != null && nowNanos - lastTrail >= 12_000_000L) {
-            trailPoints.addLast(PongTrail(ballX, ballY, height))
-            while (trailPoints.size > 8) trailPoints.removeFirst()
+            trailPoints.addLast(PongTrail(ballX, ballY, height, nowNanos))
+            while (trailPoints.size > 1 && nowNanos - trailPoints.first().atNanos > 300_000_000L) trailPoints.removeFirst()
             lastTrail = nowNanos
         }
     }
 
     /** Returns the two server coordinates after rotating seat two's view. */
-    fun paddle(x: Float, y: Float, released: Boolean = false): Pair<Float, Float> {
+    fun paddle(x: Float, y: Float): Pair<Float, Float> {
         val nextX = x.coerceIn(RacketMin, RacketMax)
         var nextY = y.coerceIn(RacketNear, RacketFar)
         val incoming = frame[3] > 0 && returnReady || waitingServe && myServe && countdownMs == 0
-        if (incoming && nextY < myY && myY >= ballY && abs(nextX - ballX) < ContactR) {
+        val radius = contactRadius(height)
+        if (incoming && nextY < myY && myY >= ballY && abs(nextX - ballX) < radius) {
             // Meet the incoming ball with the front face before the finger can push the head through it.
-            val contactY = ballY + sqrt(ContactR * ContactR - (nextX - ballX).pow(2))
+            val contactY = ballY + sqrt(radius * radius - (nextX - ballX).pow(2))
             if (myY >= contactY && nextY < contactY) nextY = contactY.coerceIn(RacketNear, RacketFar)
         }
-        val dx = nextX - myX; val dy = nextY - myY
-        racketAngle = if (released) 0f else strokeAngle(dx, dy)
         myX = nextX; myY = nextY
         return viewX(myX) to viewY(myY)
     }
@@ -145,24 +157,44 @@ class PongClient(val seat: Int) {
         const val CourtH = 1.8f
         const val HeadR = .137f
         const val BallR = .033f
+        const val HeadOutline = .025f
         const val RacketMin = -.26f
         const val RacketMax = 1.26f
         const val RacketNear = 1.3f
         const val RacketFar = 2.5f
         const val ArcH = 6f / 12.16f
-        private const val SpinDrift = .8f // backend SPIN_DRIFT
-        private const val ContactR = HeadR + BallR + .02f
-        private const val SpinTau = 1.8f
+        private const val LegacySpinDrift = .8f
+        private const val LegacySpinTau = 1.8f
 
-        private fun strokeAngle(dx: Float, dy: Float) = if (hypot(dx, dy) < .001f) 0f
-            else (atan2(dx, abs(dy) + .005f) * 180f / PI.toFloat()).coerceIn(-55f, 55f)
+        internal fun ballRadius(height: Float) = BallR * (1 + .7f * (height / ArcH).coerceIn(0f, 1f))
+        internal fun contactRadius(height: Float) = HeadR + HeadOutline / 2 + ballRadius(height) * 1.35f
 
-        internal fun flightPosition(arc: FloatArray, age: Float, spin: Float): FloatArray {
+        /** First front-face contact of a segment, including a segment that crosses the entire head. */
+        internal fun frontContact(x0: Float, y0: Float, x1: Float, y1: Float, px: Float, py: Float, radius: Float): Float? {
+            if (y0 > py) return null
+            val dx = x1 - x0; val dy = y1 - y0
+            val ox = x0 - px; val oy = y0 - py
+            val c = ox * ox + oy * oy - radius * radius
+            if (c <= 1e-7f) return if (ox * dx + oy * dy < 0) 0f else null
+            val a = dx * dx + dy * dy
+            if (a < 1e-12f) return null
+            val b = ox * dx + oy * dy
+            val discriminant = b * b - a * c
+            if (discriminant < 0) return null
+            val t = (-b - sqrt(discriminant)) / a
+            return t.takeIf { it in 0f..1f && y0 + dy * it <= py }
+        }
+
+        /** Halfway to a held touch per 60 Hz frame, including on 90/120 Hz displays. */
+        internal fun racketFollow(seconds: Float) = 1 - exp(-41.58883f * seconds.coerceIn(0f, .1f))
+
+        internal fun flightPosition(arc: FloatArray, age: Float, spin: Float, drift: Float? = null): FloatArray {
             val t = ((arc[12] + age) / arc[13]).coerceIn(0f, 1f)
             val u = (t * t * t - 2 * t * t + t) * 1.363f + (-2 * t * t * t + 3 * t * t) + (t * t * t - t * t) * .3368f
             val a = 1 - u
             return FloatArray(3) { i ->
-                val end = arc[9 + i] + if (i == 0) spin * SpinDrift * SpinTau * (1 - exp(-age / SpinTau)) else 0f
+                val end = arc[9 + i] + if (i == 0) drift?.let { it * age }
+                    ?: (spin * LegacySpinDrift * LegacySpinTau * (1 - exp(-age / LegacySpinTau))) else 0f
                 a * a * a * arc[i] + 3 * a * a * u * arc[3 + i] + 3 * a * u * u * arc[6 + i] + u * u * u * end
             }
         }

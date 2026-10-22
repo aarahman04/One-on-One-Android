@@ -1,5 +1,30 @@
 # Native Android architecture
 
+## Ping Pong reference remake (2026-10-22)
+
+This supersedes the older Ping Pong mechanics below. The server owns hits,
+bounces, scores and curve clocks. Raw finger targets travel beside eased racket
+coordinates through the existing authenticated transport, so display following
+does not prolong a stopped finger's stroke. `PongClient` rotates seat two,
+compensates excess packet delay and evaluates native cubic flights per display
+frame. Painted-outline collision geometry is shared by Android drawing and local
+contact guarding; backend and debug simulator mirror it. A pending incoming ball
+stops on the local rim until an authoritative return arrives; no local score or
+hit is generated. See [reference remake](games/PONG-REFERENCE-REMAKE.md).
+
+```mermaid
+flowchart LR
+    Touch[Held finger] --> UI[PongUi: time-based racket following]
+    UI --> VM[GameViewModel]
+    VM --> Session[MatchSession: rotate and coalesce racket plus touch]
+    Session --> Service[GameService and InternetTransport]
+    Service --> Server[PongSim: stroke samples and outline contacts]
+    Server --> Frame[Authoritative cubic, drift and timestamp]
+    Frame --> Client[PongClient: evaluate flight and guard pending contact]
+    Client --> Canvas[Canvas: court, outlined rackets, ball and trail]
+    Demo[Debug DemoPong] -. matching frame .-> Client
+```
+
 ## Natural voice and dictation (2026-10-19)
 
 `SpeechViewModel` owns both speech sessions and scopes delivered text to the
