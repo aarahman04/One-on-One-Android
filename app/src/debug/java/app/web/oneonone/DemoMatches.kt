@@ -15,7 +15,7 @@ private const val PongLogTag = "DemoPong"
  * Debug-only stand-in for the server's matches (contract §12) so the real game screens can be played on an
  * emulator without accounts: the partner auto-accepts and answers with a random legal move; table tennis runs
  * a copy of the server simulation with a tracking bot. Not multiplayer, never in release builds.
- * shortcut: rules mirror backend/src/games at 2026-10-21; re-copy if the server rules change.
+ * shortcut: rules mirror backend/src/games at 2026-10-22; re-copy if the server rules change.
  */
 internal class DemoMatches(private val scope: CoroutineScope, private val me: String, private val partner: String) {
     val states = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
@@ -195,7 +195,9 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
         reactions.tryEmit(buildJsonObject { put("id", UUID.randomUUID().toString()); put("matchId", id); put("from", from); put("text", text) })
     }
 
-    fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) { if (matchId == id) pong?.paddle(players.indexOf(me) + 1, x.toDouble(), y?.toDouble(), released) }
+    fun paddle(matchId: String, x: Float, y: Float?, released: Boolean, touch: Pair<Float, Float>?) {
+        if (matchId == id) pong?.paddle(players.indexOf(me) + 1, x.toDouble(), y?.toDouble(), released, touch?.let { it.first.toDouble() to it.second.toDouble() })
+    }
 
     private suspend fun runPong(p: DemoPong) {
         var last = System.nanoTime()

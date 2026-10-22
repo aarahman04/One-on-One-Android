@@ -43,10 +43,11 @@ class InternetTransport @Inject constructor(
         require(event in MatchCodec.events)
         return objectOf(realtime.emitWithAck(event, JSONObject(payload.toString()))) ?: buildJsonObject { put("ok", false) }
     }
-    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) {
+    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean, touch: Pair<Float, Float>?) {
         realtime.emit("match:paddle", JSONObject().put("matchId", matchId).put("x", x.toDouble()).apply {
             if (y != null) put("y", y.toDouble())
             if (released) put("released", true)
+            if (touch != null) put("touch", org.json.JSONArray().put(touch.first.toDouble()).put(touch.second.toDouble()))
         })
     }
     override val incoming = realtime.events("message:new").decodeEvents<ChatMessage>(json)

@@ -1,35 +1,35 @@
 ﻿# Native Android release checklist
 
-Updated 2026-10-19 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **12** /
-versionName **2.0.5**; the Gradle fallback stays 5 / 2.0.0-dev. This work does not upload to Play.
+Updated 2026-10-22 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **18** /
+versionName **2.0.11**; the Gradle fallback stays 5 / 2.0.0-dev. The workflow builds artifacts; it does not upload to Play.
 
 ## Release history
 
-Previous verified signed build: **2.0.4 / versionCode 11** (2026-10-14, workflow run
-[38551746052](https://github.com/aarahman04/One-on-One-Android/actions/runs/38551746052)).
-Current candidate: **2.0.5 / versionCode 12**, branch `fix/owner-feedback-1019`,
-[PR #27](https://github.com/aarahman04/One-on-One-Android/pull/27) (merged).
-The live-presence follow-up keeps **12 / 2.0.5** by owner request; use its fresh
-`android-release/app-release.aab`, not an earlier workflow artifact. If code 12
-has already been uploaded to any Play track, Play requires a higher code.
-Version name/code are `android-build` inputs (defaults 12 / 2.0.5).
-The upload after code 12 must use **13 or higher**. Build history is not confirmation
-of Play uploads; check Console before uploading. Full table: `docs/PROGRESS.md` → Releases.
+Previous verified signed build: **2.0.10 / versionCode 17** (2026-10-22,
+[39706094512](https://github.com/aarahman04/One-on-One-Android/actions/runs/39706094512)).
+Prepared release: **2.0.11 / versionCode 18**. Manual release workflow dispatch is deferred at the owner's request; no new signed build is claimed. Paired Ping Pong changes in Android
+[#50](https://github.com/aarahman04/One-on-One-Android/pull/50) and backend
+[#127](https://github.com/aarahman04/One-on-One/pull/127).
+Run `android-build` from merged `main` with inputs `versionCode=18`,
+`versionName=2.0.11`; use the fresh `android-release/app-release.aab` for Play and
+`app-release.apk` for sideload checks. Preserve its `mapping.txt` for retrace.
+The next upload after code 18 must use **19 or higher**. Build history does not
+confirm Play uploads. Release notes and Xiaomi checks: `docs/PROGRESS.md`.
 
 A4 (alarm, PR #8), A5 (calls, PR #9) and the S1–S5 restyle (PRs #10–#14) are now
 merged; the A7-era notes below that call them pending are historical. Owner Xiaomi
 QA and authenticated minified-device QA are still required before a rollout.
 
-## Status and gates
+## Current verification and historical notes
 
-A1/A2/A3/A6 are merged. A7 adds R8/resource shrinking, minified build checks,
-native-library geometry/ZIP checks and this runbook. **The app is not yet ready
-for a Play rollout:** Claude's A4 alarm and A5 call implementations, owner Xiaomi
-QA, production signing/configuration and authenticated minified-device QA remain
-required. Placeholder alarm/call seams must not be marketed as working features.
+For 2.0.11, debug build/lint and 276 Android tests passed; the paired backend passed
+130 tests and TypeScript checking. The debug APK was installed and launched on
+`PongRemake_Check`. Device feel and authenticated two-phone latency still need
+the checks in `docs/PROGRESS.md`. No database migration is required.
 
-No upload keystore or Actions secrets were available in this Android repo at A7
-preparation. Local release artifacts are unsigned. Any explicitly labelled
+The signed workflow restores and verifies the existing upload key and production
+configuration. Historical A7 notes below describe initial release preparation,
+not the current implementation status. Any explicitly labelled
 `release-smoke-debug-signed.apk` is a throwaway copy signed with the existing debug
 key for emulator evaluation, never a Play artifact or replacement upload key.
 

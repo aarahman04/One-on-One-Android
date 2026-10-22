@@ -1,5 +1,53 @@
 # Native Android architecture
 
+## Ping Pong reference remake (2026-10-22)
+
+This supersedes the older Ping Pong mechanics below. The server owns hits,
+bounces, scores and curve clocks. Raw finger targets travel beside eased racket
+coordinates through the existing authenticated transport, so display following
+does not prolong a stopped finger's stroke. `PongClient` rotates seat two,
+compensates excess packet delay and evaluates native cubic flights per display
+frame. Painted-outline collision geometry is shared by Android drawing and local
+contact detection; backend and debug simulator mirror it. Swept input records
+one impact and strength at the painted rim; the bat continues to follow its
+finger. The next physics tick consumes that impact even if more paddle packets
+arrive first. The last hitter cannot recapture an outgoing flight.
+`PongClient` shows one fixed pending impact for at most 150 ms, then uses the
+confirmed server flight without circular ball-to-bat display corrections. It
+never awards a local score or hit. Strength controls duration from 1.15 s for a
+neutral/light touch to .7 s at maximum power, separately from the recovered
+aiming/spin parameters. See [reference remake](games/PONG-REFERENCE-REMAKE.md).
+
+```mermaid
+flowchart LR
+    Touch[Held finger] --> UI[PongUi: time-based racket following]
+    UI --> VM[GameViewModel]
+    VM --> Session[MatchSession: rotate and coalesce racket plus touch]
+    Session --> Service[GameService and InternetTransport]
+    Service --> Server[PongSim: stroke samples and outline contacts]
+    Server --> Impact[Capture one contact and strength]
+    Impact --> Frame[Authoritative cubic, drift and timestamp]
+    Frame --> Client[PongClient: fixed pending impact, then confirmed flight]
+    Client --> Canvas[Canvas: court, outlined rackets, ball and trail]
+    Demo[Debug DemoPong] -. matching frame .-> Client
+```
+
+```mermaid
+sequenceDiagram
+    participant UI as Finger / PongUi
+    participant Session as MatchSession
+    participant Sim as Backend PongSim / debug DemoPong
+    participant View as PongClient
+    UI->>Session: eased bat + raw touch target
+    Session->>Sim: match:paddle (release flushes pending held input)
+    Sim->>Sim: eligible swept contact: capture rim position + strength once
+    Note over Sim: Later packets keep moving the bat, not the impact
+    Sim->>Sim: physics tick consumes captured impact
+    Sim-->>View: match:pong with authoritative hit and cubic
+    View->>View: clear fixed contact preview; draw server flight
+    Note over Sim,View: Outgoing bat overlap cannot restart or drag the flight
+```
+
 ## Natural voice and dictation (2026-10-19)
 
 `SpeechViewModel` owns both speech sessions and scopes delivered text to the

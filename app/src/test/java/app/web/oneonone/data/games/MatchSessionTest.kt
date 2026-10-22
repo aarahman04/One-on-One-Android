@@ -16,9 +16,12 @@ private class FakeChannel : MatchChannel {
     val paddles = mutableListOf<Float>()
     val releases = mutableListOf<Boolean>()
     val paddleY = mutableListOf<Float?>()
+    val touches = mutableListOf<Pair<Float, Float>?>()
     var reply: suspend (String, JsonObject) -> JsonObject = { _, _ -> buildJsonObject { put("ok", true) } }
     override suspend fun call(event: String, payload: JsonObject): JsonObject { calls += event to payload; return reply(event, payload) }
-    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean) { paddles += x; paddleY += y; releases += released }
+    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean, touch: Pair<Float, Float>?) {
+        paddles += x; paddleY += y; releases += released; touches += touch
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -159,8 +162,9 @@ class MatchSessionTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
         assertNotNull(s.pong)
-        s.paddle(.3f, 1.9f); s.paddle(.4f, 1.9f); s.paddle(.5f, 1.9f); runCurrent()
+        s.paddle(.3f, 1.9f); s.paddle(.4f, 1.9f); s.paddle(.5f, 1.9f, touch = .8f to 1.7f); runCurrent()
         assertEquals(listOf(.5f), ch.paddles) // a burst collapses to the latest position
+        assertEquals(listOf(.8f to 1.7f), ch.touches)
         s.paddle(.6f, 2f); s.paddle(.7f, 2.1f); runCurrent()
         assertEquals(listOf(.5f), ch.paddles) // within the interval: held
         advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
@@ -197,17 +201,17 @@ class MatchSessionTest {
         assertNull(ch.calls.last().second["clock"]) // no limit: no clock sent
     }
 
-    @Test fun releaseUsesTheSameThrottleAndTheLatestPosition() = runTest {
+    @Test fun releaseFlushesTheHeldSegmentAndFinalMovementBeforeANewGesture() = runTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
         s.paddle(.3f, 1.9f); runCurrent()
         s.paddle(.6f, 1.9f)
-        s.paddle(.6f, 1.9f, released = true); runCurrent()
-        assertEquals(listOf(.3f), ch.paddles)
+        s.paddle(.8f, 1.5f, released = true); runCurrent()
+        assertEquals(listOf(.3f, .6f, .8f), ch.paddles)
+        assertEquals(listOf(false, false, true), ch.releases)
         advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
-        assertEquals(listOf(.3f, .6f), ch.paddles)
-        assertEquals(listOf(false, true), ch.releases)
-        // A new gesture supersedes a release still waiting for its interval.
+        assertEquals(listOf(.3f, .6f, .8f), ch.paddles)
+        // A new gesture cannot erase the release boundary.
         s.paddle(.6f, 1.9f, released = true)
         s.paddle(.7f, 1.9f)
         advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
@@ -224,7 +228,7 @@ class MatchSessionTest {
             val (s, ch) = session()
             ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
             s.paddle(.3f, 1.9f); runCurrent()
-            s.paddle(.6f, 1.9f, released = true)
+            s.paddle(.6f, 1.9f)
             ch.states.emit(next); runCurrent()
             advanceTimeBy(100); runCurrent()
             assertEquals(listOf(.3f), ch.paddles)
@@ -232,7 +236,7 @@ class MatchSessionTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
         s.paddle(.3f, 1.9f); runCurrent()
-        s.paddle(.6f, 1.9f, released = true); s.reset("me")
+        s.paddle(.6f, 1.9f); s.reset("me")
         advanceTimeBy(100); runCurrent()
         assertEquals(listOf(.3f), ch.paddles)
     }
