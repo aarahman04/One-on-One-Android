@@ -223,12 +223,12 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
 
 private fun DrawScope.drawRacket(center: Offset, color: Color, u: Float, up: Boolean) {
     val r = PongClient.HeadR * u
-    val handleWidth = .065f * u
-    val handleY = if (up) center.y - r - .12f * u else center.y + r * .55f
-    val handle = Rect(Offset(center.x - handleWidth / 2, handleY), Size(handleWidth, r * .45f + .12f * u))
+    val handleWidth = PongClient.HandleWidth * u
+    val handleY = if (up) center.y - r - PongClient.HandleLength * u else center.y + r * .55f
+    val handle = Rect(Offset(center.x - handleWidth / 2, handleY), Size(handleWidth, r * .45f + PongClient.HandleLength * u))
     drawCircle(Ink.copy(alpha = .2f), r, center + Offset(.05f * u, .01f * u))
     drawRect(color, handle.topLeft, handle.size)
-    drawRect(Ink, handle.topLeft, handle.size, style = Stroke(.023f * u))
+    drawRect(Ink, handle.topLeft, handle.size, style = Stroke(PongClient.HandleOutline * u))
     drawCircle(color, r, center)
     drawCircle(Ink, r, center, style = Stroke(PongClient.HeadOutline * u))
     val bandY = center.y + (if (up) -.65f else .65f) * r

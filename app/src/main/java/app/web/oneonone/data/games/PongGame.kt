@@ -175,8 +175,27 @@ class PongClient(val seat: Int) {
     }
 
     internal fun visibleBallPosition(): Pair<Float, Float> {
-        // A pending impact has one fixed position; after confirmation only the server flight positions the ball.
-        return localContact ?: (ballX to ballY)
+        // Local follow-through and delayed snapshots must not draw the ball inside the painted racket.
+        val position = localContact ?: (ballX to ballY)
+        var x = position.first; var y = position.second
+        val dx = x - myX; val dy = y - myY
+        val distance = hypot(dx, dy)
+        val radius = contactRadius(height)
+        if (distance < radius) {
+            if (distance > 1e-6f) { x = myX + dx * radius / distance; y = myY + dy * radius / distance }
+            else { x = myX; y = myY - radius }
+        }
+        val ballRadius = ballRadius(height) * 1.35f
+        val halfHandle = (HandleWidth + HandleOutline) / 2
+        val handleBottom = HeadR + HandleLength + HandleOutline / 2
+        val across = x - myX; val behind = y - myY
+        // The head covers the handle's upper edge; its sides and bottom also need ball clearance.
+        if (behind > 0 && hypot(max(0f, abs(across) - halfHandle), max(0f, behind - handleBottom)) < ballRadius) {
+            if (halfHandle + ballRadius - abs(across) < handleBottom + ballRadius - behind)
+                x = myX + (if (across < 0) -1 else 1) * (halfHandle + ballRadius)
+            else y = myY + handleBottom + ballRadius
+        }
+        return x to y
     }
 
     companion object {
@@ -184,6 +203,9 @@ class PongClient(val seat: Int) {
         const val HeadR = .137f
         const val BallR = .033f
         const val HeadOutline = .025f
+        const val HandleWidth = .065f
+        const val HandleLength = .12f
+        const val HandleOutline = .023f
         const val RacketMin = -.26f
         const val RacketMax = 1.26f
         const val RacketNear = 1.3f
