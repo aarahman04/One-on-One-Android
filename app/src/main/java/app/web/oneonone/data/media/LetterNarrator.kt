@@ -24,8 +24,6 @@ interface NarrationAudio {
     fun abandonFocus()
     suspend fun prepare(file: File, completed: () -> Unit, failed: () -> Unit): NarrationPlayer
     suspend fun deviceVoice(text: String, completed: () -> Unit, failed: () -> Unit): NarrationPlayer
-    /** Starts the device voice engine ahead of [deviceVoice]; main thread, never blocks. */
-    fun prewarm()
 }
 
 /** One letter session, at most two prepared players: the current part and its prefetched successor. */

@@ -96,20 +96,20 @@ import kotlin.math.*
 
 @Composable
 fun FeatureComposer(type: String, connection: CurrentConnection, vm: FeatureViewModel, reply: String?, close: () -> Unit,
-    letterMic: (@Composable (body: String, set: (String) -> Unit) -> Unit)? = null,
-    speech: SpeechViewModel? = null, dictating: Boolean = false) {
+    letterMic: (@Composable (append: (String) -> Unit) -> Unit)? = null,
+    speech: SpeechViewModel? = null) {
     val signature by vm.signature.collectAsState()
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
     FeatureComposerContent(type, connection, signature, busy, error, reply,
-        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close, letterMic, speech, dictating)
+        onSend = { t, body, payload, r, done -> vm.send(t, body, payload, r, done) }, close, letterMic, speech)
 }
 
 @Composable
 internal fun FeatureComposerContent(type: String, connection: CurrentConnection, signature: String, busy: Boolean, error: String?, reply: String?,
     onSend: (String, String, JsonObject, String?, () -> Unit) -> Unit, close: () -> Unit,
-    letterMic: (@Composable (body: String, set: (String) -> Unit) -> Unit)? = null,
-    speech: SpeechViewModel? = null, dictating: Boolean = false) {
+    letterMic: (@Composable (append: (String) -> Unit) -> Unit)? = null,
+    speech: SpeechViewModel? = null) {
     var first by rememberSaveable(type) { mutableStateOf("") }
     var second by rememberSaveable(type) { mutableStateOf("") }
     var third by rememberSaveable(type) { mutableStateOf("") }
@@ -125,7 +125,6 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
     val narration = speech?.narration?.collectAsState()?.value?.takeIf { it.key == previewKey } ?: NarrationState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(preview, speech, lifecycle) {
-        if (preview) speech?.prewarmVoice()
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) speech?.stopNarration(previewKey) }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer); speech?.stopNarration(previewKey) }
@@ -141,7 +140,7 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
         }
     }
     val valid = runCatching { validateFeaturePayload(connection.id, type, payload); require(type != "letter" || third.isNotBlank()) }.isSuccess
-    FeatureModal(onDismissRequest = { if (!busy && !dictating) dismiss() }, title = {
+    FeatureModal(onDismissRequest = { if (!busy) dismiss() }, title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (preview) "Preview letter" else CommandTitles[type] ?: type, Modifier.weight(1f))
             if (preview && speech != null) LetterSpeaker(narration,
@@ -159,8 +158,8 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
                     // Every letter renders as one white handwritten page; the contract still needs an appearance, so it stays "dawn".
                     Field("From", from, 40) { from = it; fromEdited = true }; Field("To", to, 40) { to = it }
                     Field("Your letter", third, 4_000, trailing = letterMic?.let { mic -> {
-                        mic(third) { words -> third = words.take(4_000) }
-                    } }, enabled = !dictating) { third = it }
+                        mic { words -> third = listOf(third.trimEnd(), words.trim()).filter { it.isNotEmpty() }.joinToString(" ").take(4_000) }
+                    } }) { third = it }
                 }
                 "ask" -> { Field("Question", first, 300) { first = it }; Field("Your answer (sealed until they answer)", second, 500) { second = it } }
                 "thisorthat" -> {
@@ -183,11 +182,11 @@ internal fun FeatureComposerContent(type: String, connection: CurrentConnection,
             }
             error?.let { Text(it, style = OneTextStyles.cardHint, color = OneTheme.colors.danger) }
         } },
-        confirmButton = { PrimaryButton(if (type == "letter" && !preview) "Preview" else "Send", enabled = valid && !busy && !dictating, onClick = {
+        confirmButton = { PrimaryButton(if (type == "letter" && !preview) "Preview" else "Send", enabled = valid && !busy, onClick = {
             if (type == "letter" && !preview) preview = true
             else { speech?.stopNarration(previewKey); onSend(type, if (type == "letter") third.trim() else "", payload, reply, dismiss) }
         }) },
-        dismissButton = { SecondaryButton(if (preview) "Edit" else "Cancel", enabled = !busy && !dictating, onClick = {
+        dismissButton = { SecondaryButton(if (preview) "Edit" else "Cancel", enabled = !busy, onClick = {
             speech?.stopNarration(previewKey); if (preview) preview = false else dismiss()
         }) })
 }
@@ -725,7 +724,6 @@ internal fun LetterViewer(message: ChatMessage, download: () -> Unit, close: () 
     val activity = LocalActivity.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(key, speech, lifecycle) {
-        speech?.prewarmVoice()
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP && activity?.isChangingConfigurations != true) speech?.stopNarration(key)
         }

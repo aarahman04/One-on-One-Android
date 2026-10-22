@@ -181,9 +181,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         val result = dictated ?: return@LaunchedEffect
         if (command == "letter") return@LaunchedEffect // the open letter takes it (LetterDictation)
         if (result.owner.ownerId == connection.myUserId && result.owner.connectionId == connection.id) {
-            vm.draft(result.text) // the whole draft: what was there before plus every dictated word so far
+            vm.appendDictation(result.text)
             speech.consumeText(result.id)
-            if (!result.final) return@LaunchedEffect
             withFrameNanos { }
             if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                 runCatching { composerFocus.requestFocus(); keyboard?.show() }
@@ -313,7 +312,7 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
     val beginDictation = rememberDictation(speech, { features.recording.value }, features::stopPlayback)
     // Picking a command consumes the "/" draft, which also closes the slash menu.
     val runCommand = { name: String -> features.clearError(); vm.draft(""); when (name) {
-        "audio" -> { if (!recording) beginDictation("") }
+        "audio" -> { if (!recording) beginDictation() }
         "games" -> { keyboard?.hide(); games.hub() }
         "alarm" -> alarm = true
         else -> command = name
@@ -538,12 +537,10 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
             val original = messages.find { it.id == id }
             ReplyBar(authorOf(original, connection).ifEmpty { "Earlier message" }, original?.let(::messageSummary) ?: "earlier message") { vm.reply(null) }
         } }
-        val dictating = dictation.active && command != "letter"
-        if (dictating) DictationBar(dictation, dictationHint, onStop = speech::stopDictation)
-        ChatComposer(
+        if (dictation.active && command != "letter") DictationBar(dictation, dictationHint, onStop = speech::stopDictation, onCancel = speech::cancelDictation)
+        else ChatComposer(
             draft = draft, onDraft = vm::draft,
-            // Text is queued instantly; an uploading voice note or sticker must not block it. Dictation owns the draft until Stop.
-            canSend = !busy && !dictating, readOnly = dictating,
+            canSend = !busy, // Text is queued instantly; an uploading voice note or sticker must not block it.
             recording = recording,
             onAttach = { more = false; attachmentOpen = !attachmentOpen },
             onEmoji = { attachmentOpen = false; stickers.clearError(); features.clearError(); composerEmoji = true },
@@ -576,8 +573,8 @@ fun ChatScreen(connection: CurrentConnection, vm: ChatViewModel, features: Featu
         val close = { command = null; vm.draft(""); vm.reply(null) }
         if (type == "location") LocationConfirmation(connection, features, replyTo, close)
         else FeatureComposer(type, connection, features, replyTo, close,
-            letterMic = if (type == "letter") { body, set -> LetterDictation(speech, connection, body, beginDictation, set) } else null,
-            speech = speech, dictating = dictation.active)
+            letterMic = if (type == "letter") { append -> LetterDictation(speech, connection, beginDictation, append) } else null,
+            speech = speech)
     }
     reactingTo?.let { id ->
         EmojiPickerSheet(onDismiss = { reactingTo = null }, onPick = { emoji ->
