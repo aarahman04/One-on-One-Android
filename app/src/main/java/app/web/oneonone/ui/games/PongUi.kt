@@ -32,6 +32,7 @@ import app.web.oneonone.data.games.PongClient
 import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.coroutines.isActive
 import kotlin.math.ceil
+import kotlin.math.sqrt
 
 private const val MarginX = .28f
 private const val MarginTop = .5f
@@ -41,12 +42,6 @@ private val TableGreen = Color(0xFF76B536)
 private val Ink = Color(0xFF10140D)
 private val YourRacket = Color(0xFFFF6B55)
 private val OtherRacket = Color(0xFF00B9ED)
-
-private class PongTouch {
-    var x = .5f
-    var y = 1.88f
-    var held = false
-}
 
 private class PongHud {
     var mine by mutableIntStateOf(0)
@@ -71,9 +66,11 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
         var hits = game.hits
         var bounce = game.bounceAt
         var lastFrame = 0L
+        var round = game.round
         while (isActive) {
             withFrameNanos {
-                if (currentPaused) touch.held = false
+                if (currentPaused || round != game.round) touch.cancel()
+                round = game.round
                 if (touch.held && !currentPaused) {
                     val dt = if (lastFrame == 0L) 1f / 60 else (it - lastFrame) / 1e9f
                     val follow = PongClient.racketFollow(dt)
@@ -95,10 +92,7 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().background(Arena, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
             val unit = minOf(maxWidth / (1 + 2 * MarginX), maxHeight / (PongClient.CourtH + MarginTop + MarginBottom))
             Box(Modifier.size(unit * (1 + 2 * MarginX), unit * (PongClient.CourtH + MarginTop + MarginBottom))) {
-                PongTable(game, { frame }, enabled = !paused) { x, y, released ->
-                    touch.x = x; touch.y = y; touch.held = !released
-                    if (released) vm.paddle(x, y, true)
-                }
+                PongTable(game, touch, { frame }, enabled = !paused) { x, y -> vm.paddle(x, y, true) }
                 when {
                     paused -> CourtNotice("Waiting for ${vm.nickname}…", Modifier.align(Alignment.Center))
                     hud.countdown > 0 -> Surface(Modifier.align(Alignment.Center).size(68.dp),
@@ -145,17 +139,17 @@ private fun PongScoreboard(mine: Int, theirs: Int, nickname: String, target: Int
 }
 
 @Composable
-private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onPaddle: (Float, Float, Boolean) -> Unit) {
+private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, enabled: Boolean, onRelease: (Float, Float) -> Unit) {
     val currentEnabled by rememberUpdatedState(enabled)
-    Canvas(Modifier.fillMaxSize().pointerInput(game) {
+    Canvas(Modifier.fillMaxSize().pointerInput(game, enabled) {
         awaitEachGesture {
             val down = awaitFirstDown(); down.consume()
+            if (!currentEnabled || !touch.begin(down.id.value, game.myX, game.myY)) return@awaitEachGesture
             val unit = size.width / (1 + 2 * MarginX)
             // Relative drag: the racket moves with the finger from wherever it touches, so it never jumps (a jump
             // would read as a violent stroke) and the finger can steer from below without hiding the racket.
             var anchorFinger = down.position
             var anchorX = game.myX; var anchorY = game.myY
-            if (currentEnabled) onPaddle(game.myX, game.myY, false)
             fun move(position: Offset) {
                 if (!currentEnabled) return
                 val x = anchorX + (position.x - anchorFinger.x) / unit
@@ -164,27 +158,29 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
                 val cx = x.coerceIn(PongClient.RacketMin, PongClient.RacketMax)
                 val cy = y.coerceIn(PongClient.RacketNear, PongClient.RacketFar)
                 if (cx != x || cy != y) { anchorX = cx - (position.x - anchorFinger.x) / unit; anchorY = cy - (position.y - anchorFinger.y) / unit }
-                onPaddle(cx, cy, false)
+                touch.move(down.id.value, cx, cy)
             }
+            var completed = false
             try {
                 while (true) {
                     val event = awaitPointerEvent()
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (change.isConsumed) break
                     change.consume()
-                    if (!change.pressed) break
                     move(change.position)
+                    if (!change.pressed) { completed = true; break }
                 }
             } finally {
-                if (currentEnabled) onPaddle(game.myX, game.myY, true)
+                touch.end(down.id.value, !completed, game.myX, game.myY)?.let { onRelease(it.first, it.second) }
             }
         }
     }.semantics {
-        contentDescription = "Ping Pong. Move your racket around your half and swipe through the ball. A sideways brush adds spin."
+        contentDescription = "Ping Pong. Move your racket around your half and swipe through the ball. Swipe direction aims the shot."
         customActions = listOf(
-            CustomAccessibilityAction("Move racket left") { if (currentEnabled) onPaddle(game.myX - .1f, game.myY, true); currentEnabled },
-            CustomAccessibilityAction("Move racket right") { if (currentEnabled) onPaddle(game.myX + .1f, game.myY, true); currentEnabled },
-            CustomAccessibilityAction("Move racket forward") { if (currentEnabled) onPaddle(game.myX, game.myY - .1f, true); currentEnabled },
-            CustomAccessibilityAction("Move racket back") { if (currentEnabled) onPaddle(game.myX, game.myY + .1f, true); currentEnabled })
+            CustomAccessibilityAction("Move racket left") { if (currentEnabled) onRelease(game.myX - .1f, game.myY); currentEnabled },
+            CustomAccessibilityAction("Move racket right") { if (currentEnabled) onRelease(game.myX + .1f, game.myY); currentEnabled },
+            CustomAccessibilityAction("Move racket forward") { if (currentEnabled) onRelease(game.myX, game.myY - .1f); currentEnabled },
+            CustomAccessibilityAction("Move racket back") { if (currentEnabled) onRelease(game.myX, game.myY + .1f); currentEnabled })
     }) {
         val now = frame()
         val u = size.width / (1 + 2 * MarginX)
@@ -208,19 +204,20 @@ private fun PongTable(game: PongClient, frame: () -> Long, enabled: Boolean, onP
         }
         for (index in 1 until game.trail.size) {
             val previous = game.trail[index - 1]; val point = game.trail[index]
-            val k = index.toFloat() / game.trail.size
+            val k = (1 - (now - point.atNanos) / 300_000_000f).coerceIn(0f, 1f)
             if (point.height >= 0 || point.x !in 0f..1f || point.y !in 0f..PongClient.CourtH)
-                drawLine(Color.White.copy(alpha = .7f * k), at(previous.x, previous.y), at(point.x, point.y),
-                    .06f * u * k, cap = StrokeCap.Round)
+                drawLine(Color.White.copy(alpha = .95f * k), at(previous.x, previous.y), at(point.x, point.y),
+                    .09f * u * sqrt(k), cap = StrokeCap.Round)
         }
-        drawRacket(at(game.theirX, game.theirY), OtherRacket, u, up = true)
-        drawRacket(at(game.myX, game.myY), YourRacket, u, up = false)
         if (game.live && (game.height >= 0 || game.ballX !in 0f..1f || game.ballY !in 0f..PongClient.CourtH)) {
-            val ball = at(game.ballX, game.ballY)
+            val position = game.visibleBallPosition()
+            val ball = at(position.first, position.second)
             val r = PongClient.ballRadius(game.height) * u
             drawCircle(Ink, r * 1.35f, ball)
             drawCircle(Color.White, r, ball)
         }
+        drawRacket(at(game.theirX, game.theirY), OtherRacket, u, up = true)
+        drawRacket(at(game.myX, game.myY), YourRacket, u, up = false)
     }
 }
 

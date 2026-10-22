@@ -1,5 +1,6 @@
 package app.web.oneonone
 
+import app.web.oneonone.data.games.PongPhysics
 import kotlinx.serialization.json.*
 import kotlin.math.*
 
@@ -23,7 +24,8 @@ internal class DemoPong(private val target: Int = 7) {
     private var clock = 0.0
     private val moved = doubleArrayOf(-1.0, -1.0)
     private val modern = booleanArrayOf(false, false)
-    private val strokes = Array(2) { DoubleArray(3) }
+    private val strokes = Array(2) { DoubleArray(4) }
+    private val contactStrokes = arrayOfNulls<DoubleArray>(2)
     private var server = 2
     private data class Flight(val points: Array<DoubleArray>, var elapsed: Double, val duration: Double)
     private var flight: Flight? = null
@@ -32,49 +34,58 @@ internal class DemoPong(private val target: Int = 7) {
     private val spin get() = if (lastHit == 0) 0.0 else strokes[lastHit - 1][0]
     private val samples = Array(2) { ArrayDeque<DoubleArray>() }
 
-    fun serving(seat: Int) = flight == null && server == seat
+    @Synchronized fun serving(seat: Int) = flight == null && server == seat
     private fun serveY() = if (server == 1) courtH - .24 else .24
 
-    fun paddle(seat: Int, px: Double, py: Double? = null, released: Boolean = false, touch: Pair<Double, Double>? = null) {
+    @Synchronized fun paddle(seat: Int, px: Double, py: Double? = null, released: Boolean = false, touch: Pair<Double, Double>? = null) {
+        if (outcome != null || !px.isFinite() || py != null && !py.isFinite()) return
         val i = seat - 1
+        val oldX = paddles[i]; val oldY = paddleY[i]
         val nextX = px.coerceIn(-.26, 1.26)
-        var nextY = if (py == null) paddleY[i] else if (seat == 1) py.coerceIn(1.3, 2.5) else courtH - (courtH - py).coerceIn(1.3, 2.5)
-        val inputY = nextY
+        val nextY = if (py == null) paddleY[i] else if (seat == 1) py.coerceIn(1.3, 2.5) else courtH - (courtH - py).coerceIn(1.3, 2.5)
+        val inputX = nextX; val inputY = nextY
         val forward = if (seat == 1) -1 else 1
-        val ready = if (flight != null) landed && lastHit == 3 - seat else server == seat && countdown == 0.0
         val radius = contactRadius()
-        val across = nextX - x
-        if (ready && z >= -.033 && abs(across) < radius) {
-            val front = y - forward * sqrt(radius * radius - across * across)
-            if ((paddleY[i] - front) * forward <= 0 && (nextY - front) * forward > 0) nextY = front
+        val ready = if (flight != null) landed && lastHit == 3 - seat else server == seat && countdown == 0.0
+        var contacted = false
+        if (ready && contactStrokes[i] == null && z >= -.033) {
+            val contact = PongPhysics.sweepContact(x, y, x, y, oldX, oldY, nextX, nextY, radius, forward.toDouble())
+            if (contact != null && contact.ny * forward >= -1e-6 &&
+                (nextX - oldX) * contact.nx + (nextY - oldY) * contact.ny > 1e-6) {
+                val rim = PongPhysics.rimPosition(contact, nextX, nextY, radius)
+                x = rim.first; y = rim.second
+                contacted = ready
+            }
         }
         if (py != null) modern[i] = true
-        val sampleX = touch?.first?.coerceIn(-.26, 1.26) ?: nextX
+        val sampleX = touch?.first?.coerceIn(-.26, 1.26) ?: inputX
         val sampleY = touch?.second?.let { if (seat == 1) it.coerceIn(1.3, 2.5) else courtH - (courtH - it).coerceIn(1.3, 2.5) } ?: inputY
         // Mirrors the backend's ~50 ms stroke window.
         val window = samples[i]
         val previous = window.lastOrNull()
         val still = hypot(sampleX - (previous?.get(1) ?: paddles[i]), sampleY - (previous?.get(2) ?: paddleY[i])) < 1e-5
-        if (released) window.clear() else {
-            window.addLast(doubleArrayOf(clock, sampleX, sampleY))
-            while (window.size > 2 && window[1][0] <= clock - 50) window.removeFirst()
-            while (window.size > 2 && window[0][0] < clock - 100) window.removeFirst()
-        }
+        window.addLast(doubleArrayOf(clock, sampleX, sampleY))
+        while (window.size > 2 && window[1][0] <= clock - 50) window.removeFirst()
+        while (window.size > 2 && window[0][0] < clock - 100) window.removeFirst()
         val ref = window.firstOrNull()
         val dx = if (ref == null) 0.0 else sampleX - ref[1]; val dy = if (ref == null) 0.0 else sampleY - ref[2]
         val dt = if (ref == null) 0.0 else (clock - ref[0]) / 1000
-        if (released || still || hypot(dx, dy) < 1e-5) strokes[i].fill(0.0)
+        if (still || hypot(dx, dy) < 1e-5) strokes[i].fill(0.0)
         else if (dt > 0) {
             val sx = dx / max(dt, 1.0 / 60); val sy = dy / max(dt, 1.0 / 60)
             strokes[i][0] = (sx * StrokeGain).coerceIn(-1.0, 1.0)
             strokes[i][1] = (sy * (if (seat == 1) -1 else 1) * StrokeGain).coerceIn(-.5, 1.0)
             strokes[i][2] = if (py == null) (sx * StrokeGain).coerceIn(-1.0, 1.0) else dx / hypot(dx, dy)
+            strokes[i][3] = (sy * forward / 10).coerceIn(0.0, 1.0) // Power is separate from recovered aiming and spin.
         }
+        // Release stops live spin without erasing impact strength.
+        if (contacted && contactStrokes[i] == null) contactStrokes[i] = strokes[i].copyOf()
+        if (released) { window.clear(); strokes[i].fill(0.0) }
         paddles[i] = nextX; paddleY[i] = nextY; moved[i] = if (released) -1.0 else clock
     }
 
-    fun step(ms: Double) {
-        if (outcome != null || ms <= 0) return
+    @Synchronized fun step(ms: Double) {
+        if (outcome != null || !ms.isFinite() || ms <= 0) return
         clock += ms
         for (i in 0..1) if (clock - moved[i] > 120) strokes[i].fill(0.0)
         if (countdown > 0) {
@@ -82,8 +93,8 @@ internal class DemoPong(private val target: Int = 7) {
             if (countdown == 0.0 && !modern[server - 1]) strike(server)
             return
         }
-        if (flight == null) { if (touches(server)) strike(server); return }
-        if (landed && lastHit != 0 && touches(3 - lastHit)) strike(3 - lastHit)
+        if (flight == null) { if (contactStrokes[server - 1] != null || touches(server)) strike(server); return }
+        if (landed && lastHit != 0 && (contactStrokes[2 - lastHit] != null || touches(3 - lastHit))) strike(3 - lastHit)
         var left = ms / 1000
         while (left > 1e-8 && flight != null && outcome == null) { advance(min(left, .008)); left -= .008 }
     }
@@ -96,10 +107,11 @@ internal class DemoPong(private val target: Int = 7) {
             doubleArrayOf(target[0], target[1], ArcH), target), 0.0, duration)
     }
     private fun strike(seat: Int) {
-        val stroke = strokes[seat - 1]
+        val stroke = contactStrokes[seat - 1] ?: strokes[seat - 1]
+        contactStrokes[seat - 1] = null
         val target = doubleArrayOf(.5 + stroke[2] * (8 / 12.16) * (.7 + .3 * stroke[1]),
             courtH / 2 + (if (seat == 1) -1 else 1) * (5 + 7 * stroke[1]) / 12.16, -ArcH)
-        curve(target, .9 - .2 * stroke[1])
+        curve(target, 1.15 - .45 * stroke[3])
         lastHit = seat; landed = false
         hits++
     }
@@ -139,10 +151,10 @@ internal class DemoPong(private val target: Int = 7) {
         if (score.sum() % 2 == 0) server = 3 - server
         flight = null; lastHit = 0; landed = false
         x = .5; y = serveY(); z = 2 / 12.16; vx = 0.0; vy = 0.0; vz = 0.0
-        strokes.forEach { it.fill(0.0) }; moved.fill(-1.0); samples.forEach { it.clear() }
+        strokes.forEach { it.fill(0.0) }; contactStrokes.fill(null); moved.fill(-1.0); samples.forEach { it.clear() }
         if (score[seat - 1] >= target) outcome = seat else countdown = 1000.0
     }
-    fun frame(id: String) = buildJsonObject {
+    @Synchronized fun frame(id: String) = buildJsonObject {
         fun array(name: String, values: Iterable<Number>) { putJsonArray(name) { values.forEach { add(round(it.toDouble() * 10000) / 10000) } } }
         put("id", id); put("t", System.currentTimeMillis())
         array("b", listOf(x, y, vx, vy)); array("p", paddles.asIterable())

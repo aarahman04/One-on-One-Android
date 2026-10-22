@@ -148,9 +148,17 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
         val m = match.value ?: return
         val client = pong ?: return
         if (m.status != MatchStatus.Playing || m.paused) return
+        if (!viewX.isFinite() || !viewY.isFinite() || touch?.let { !it.first.isFinite() || !it.second.isFinite() } == true) return
         val (x, y) = client.paddle(viewX, viewY)
         val serverTouch = touch?.let { if (client.seat == 1) it else 1 - it.first to PongClient.CourtH - it.second }
-        pendingPaddle = PaddleInput(x, y, released, serverTouch)
+        if (released) {
+            // Preserve the last held segment before release; otherwise coalescing can erase a whole swipe.
+            pendingPaddle?.let { channel.paddle(m.id, it.x, it.y, it.released, it.touch) }
+            pendingPaddle = null
+            channel.paddle(m.id, x, y, true, serverTouch)
+            return
+        }
+        pendingPaddle = PaddleInput(x, y, false, serverTouch)
         if (paddleJob?.isActive == true) return
         paddleJob = scope.launch {
             while (true) {

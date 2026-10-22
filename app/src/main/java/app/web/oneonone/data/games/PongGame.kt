@@ -22,6 +22,7 @@ class PongClient(val seat: Int) {
     var myServe = false; private set
     var hits = 0; private set
     var live = false; private set
+    var round = 0; private set
     var spin = 0f; private set
     var bounceX = 0f; private set
     var bounceY = 0f; private set
@@ -42,6 +43,9 @@ class PongClient(val seat: Int) {
     private var lastTrail = 0L
     private var bounces = 0
     private var returnReady = false
+    private var localContact: Pair<Float, Float>? = null
+    private var localContactAt = 0L
+    private var localContactUsed = false
 
     private fun viewX(x: Float) = if (seat == 1) x else 1 - x
     private fun viewY(y: Float) = if (seat == 1) y else CourtH - y
@@ -76,12 +80,19 @@ class PongClient(val seat: Int) {
             require(countdown >= 0 && hitCount >= 0 && serving in 0..2 && bounceCount >= 0)
 
             val newHit = hitCount != hits
+            val reset = !live || s[seat - 1] != myScore || s[2 - seat] != theirScore ||
+                serving != 0 && (!waitingServe || countdown > frameCountdown + 100)
             frame = floatArrayOf(viewX(b[0]), viewY(b[1]), if (seat == 1) b[2] else -b[2], if (seat == 1) b[3] else -b[3])
             arc = curve?.also { for (i in 0..3) { it[i * 3] = viewX(it[i * 3]); it[i * 3 + 1] = viewY(it[i * 3 + 1]) } }
             frameHeight = z[0]
             val nextTheirX = viewX(p[2 - seat]); val nextTheirY = viewY(r[2 - seat])
             frameTheirX = nextTheirX; frameTheirY = nextTheirY
             frameCountdown = countdown
+            if (reset) {
+                myX = viewX(p[seat - 1]); myY = viewY(r[seat - 1]); round++
+                trailPoints.clear(); lastTrail = 0L
+            }
+            if (reset || newHit) { localContact = null; localContactUsed = false }
             myScore = s[seat - 1]; theirScore = s[2 - seat]
             spin = if (seat == 1) incomingSpin else -incomingSpin
             frameDrift = incomingDrift?.let { if (seat == 1) it else -it }
@@ -111,6 +122,7 @@ class PongClient(val seat: Int) {
         if (!live) return
         val dt = if (lastAdvance == 0L) 0f else ((nowNanos - lastAdvance) / 1e9f).coerceIn(0f, .1f)
         lastAdvance = nowNanos
+        if (nowNanos - localContactAt > 150_000_000L) localContact = null
         val age = ((nowNanos - frameAt) / 1e9f).coerceIn(0f, .15f)
         countdownMs = (frameCountdown - (age * 1000).toInt()).coerceAtLeast(0)
         val curve = arc
@@ -131,26 +143,40 @@ class PongClient(val seat: Int) {
         height += (target[2] - height) * k
         val follow = 1 - exp(-35f * dt)
         theirX += (frameTheirX - theirX) * follow; theirY += (frameTheirY - theirY) * follow
-        if (curve != null && nowNanos - lastTrail >= 12_000_000L) {
+        while (trailPoints.isNotEmpty() && nowNanos - trailPoints.first().atNanos >= 300_000_000L) trailPoints.removeFirst()
+        val previous = trailPoints.lastOrNull()
+        if (curve != null && age < .15f && nowNanos - lastTrail >= 12_000_000L &&
+            (previous == null || hypot(ballX - previous.x, ballY - previous.y) > .001f)) {
             trailPoints.addLast(PongTrail(ballX, ballY, height, nowNanos))
-            while (trailPoints.size > 1 && nowNanos - trailPoints.first().atNanos > 300_000_000L) trailPoints.removeFirst()
             lastTrail = nowNanos
         }
     }
 
     /** Returns the two server coordinates after rotating seat two's view. */
     fun paddle(x: Float, y: Float): Pair<Float, Float> {
+        if (!x.isFinite() || !y.isFinite()) return viewX(myX) to viewY(myY)
         val nextX = x.coerceIn(RacketMin, RacketMax)
-        var nextY = y.coerceIn(RacketNear, RacketFar)
-        val incoming = frame[3] > 0 && returnReady || waitingServe && myServe && countdownMs == 0
-        val radius = contactRadius(height)
-        if (incoming && nextY < myY && myY >= ballY && abs(nextX - ballX) < radius) {
-            // Meet the incoming ball with the front face before the finger can push the head through it.
-            val contactY = ballY + sqrt(radius * radius - (nextX - ballX).pow(2))
-            if (myY >= contactY && nextY < contactY) nextY = contactY.coerceIn(RacketNear, RacketFar)
+        val nextY = y.coerceIn(RacketNear, RacketFar)
+        val ready = frame[3] > 0 && returnReady || waitingServe && myServe && countdownMs == 0
+        if (ready && !localContactUsed && height >= -BallR) {
+            val radius = contactRadius(height).toDouble()
+            val contact = PongPhysics.sweepContact(ballX.toDouble(), ballY.toDouble(), ballX.toDouble(), ballY.toDouble(),
+                myX.toDouble(), myY.toDouble(), nextX.toDouble(), nextY.toDouble(), radius, -1.0)
+            if (contact != null && contact.ny <= 1e-6 &&
+                (nextX - myX) * contact.nx + (nextY - myY) * contact.ny > 1e-6) {
+                val rim = PongPhysics.rimPosition(contact, nextX.toDouble(), nextY.toDouble(), radius)
+                localContact = rim.first.toFloat() to rim.second.toFloat()
+                localContactAt = lastAdvance
+                localContactUsed = true
+            }
         }
         myX = nextX; myY = nextY
         return viewX(myX) to viewY(myY)
+    }
+
+    internal fun visibleBallPosition(): Pair<Float, Float> {
+        // A pending impact has one fixed position; after confirmation only the server flight positions the ball.
+        return localContact ?: (ballX to ballY)
     }
 
     companion object {

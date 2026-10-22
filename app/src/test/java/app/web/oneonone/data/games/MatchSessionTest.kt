@@ -201,17 +201,17 @@ class MatchSessionTest {
         assertNull(ch.calls.last().second["clock"]) // no limit: no clock sent
     }
 
-    @Test fun releaseUsesTheSameThrottleAndTheLatestPosition() = runTest {
+    @Test fun releaseFlushesTheHeldSegmentAndFinalMovementBeforeANewGesture() = runTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
         s.paddle(.3f, 1.9f); runCurrent()
         s.paddle(.6f, 1.9f)
-        s.paddle(.6f, 1.9f, released = true); runCurrent()
-        assertEquals(listOf(.3f), ch.paddles)
+        s.paddle(.8f, 1.5f, released = true); runCurrent()
+        assertEquals(listOf(.3f, .6f, .8f), ch.paddles)
+        assertEquals(listOf(false, false, true), ch.releases)
         advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
-        assertEquals(listOf(.3f, .6f), ch.paddles)
-        assertEquals(listOf(false, true), ch.releases)
-        // A new gesture supersedes a release still waiting for its interval.
+        assertEquals(listOf(.3f, .6f, .8f), ch.paddles)
+        // A new gesture cannot erase the release boundary.
         s.paddle(.6f, 1.9f, released = true)
         s.paddle(.7f, 1.9f)
         advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
@@ -228,7 +228,7 @@ class MatchSessionTest {
             val (s, ch) = session()
             ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
             s.paddle(.3f, 1.9f); runCurrent()
-            s.paddle(.6f, 1.9f, released = true)
+            s.paddle(.6f, 1.9f)
             ch.states.emit(next); runCurrent()
             advanceTimeBy(100); runCurrent()
             assertEquals(listOf(.3f), ch.paddles)
@@ -236,7 +236,7 @@ class MatchSessionTest {
         val (s, ch) = session()
         ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
         s.paddle(.3f, 1.9f); runCurrent()
-        s.paddle(.6f, 1.9f, released = true); s.reset("me")
+        s.paddle(.6f, 1.9f); s.reset("me")
         advanceTimeBy(100); runCurrent()
         assertEquals(listOf(.3f), ch.paddles)
     }
