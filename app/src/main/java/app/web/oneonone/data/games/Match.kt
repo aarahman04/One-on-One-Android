@@ -64,9 +64,16 @@ data class Match(
     val clock: MatchClock? = null,
     /** Ping Pong's target score (7 by default). */
     val points: Int? = null,
+    val receivedAtNanos: Long = 0,
 ) {
     /** 1 or 2 for a player (chess: 1 = white), 0 otherwise. */
     fun seat(user: String) = players.indexOf(user) + 1
+
+    fun clockLeft(nowNanos: Long): List<Long>? = clock?.left?.mapIndexed { i, ms ->
+        if (status == MatchStatus.Playing && players[i] == turn)
+            (ms - ((nowNanos - receivedAtNanos).coerceAtLeast(0) / 1_000_000)).coerceAtLeast(0)
+        else ms
+    }
 }
 
 class MatchException(val code: String) : Exception(code)

@@ -196,6 +196,7 @@ internal fun ChessBoard(matchId: String, view: ChessView, seat: Int, enabled: Bo
     }) {
         val tile = maxWidth / 8
         val tilePx = with(LocalDensity.current) { tile.toPx() }
+        if (tilePx <= 0f) return@BoxWithConstraints
         val hover = dragPos?.let { p ->
             val col = (p.x / tilePx).toInt(); val row = (p.y / tilePx).toInt()
             if (col in 0..7 && row in 0..7) squareAt(row * 8 + col, white) else -1
@@ -376,7 +377,7 @@ internal fun ChessContent(vm: GameViewModel, state: GameUi, photo: Any?, modifie
         ChessMoveList(view?.history.orEmpty())
         // Bar, board, bar stay together as one block, centred in the space left over.
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            val side = minOf(maxWidth, maxHeight - BarHeight * 2)
+            val side = minOf(maxWidth, (maxHeight - BarHeight * 2).coerceAtLeast(0.dp))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.width(side)) {
                     ChessPlayerBar(vm.nickname, photo, !white, view, active = playing && !myTurn, status = when {

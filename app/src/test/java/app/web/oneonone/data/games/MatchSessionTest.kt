@@ -80,6 +80,24 @@ class MatchSessionTest {
         assertEquals("m2", s.match.value!!.id)
     }
 
+    @Test fun clockUsesSnapshotReceiptIncludingSameVersionSyncAndScreenReentry() = runTest {
+        val (s, ch) = session()
+        fun timed(left: Long) = JsonObject(matchJson() + buildJsonObject {
+            putJsonObject("clock") { put("base", 60_000); put("inc", 0); putJsonArray("left") { add(left); add(60_000) } }
+        })
+        ch.states.emit(timed(60_000)); runCurrent()
+        advanceTimeBy(5_000)
+        assertEquals(listOf(55_000L, 60_000L), s.match.value!!.clockLeft(testScheduler.currentTime * 1_000_000))
+        ch.states.emit(timed(55_000)); runCurrent()
+        assertEquals(listOf(55_000L, 60_000L), s.match.value!!.clockLeft(testScheduler.currentTime * 1_000_000))
+        advanceTimeBy(2_000)
+        val m = s.match.value!!
+        assertEquals(listOf(53_000L, 60_000L), m.clockLeft(testScheduler.currentTime * 1_000_000))
+        assertEquals(listOf(55_000L, 60_000L), m.clockLeft(m.receivedAtNanos - 1))
+        assertEquals(listOf(55_000L, 60_000L), m.copy(status = MatchStatus.Over).clockLeft(Long.MAX_VALUE))
+        assertEquals(listOf(0L, 60_000L), m.clockLeft(Long.MAX_VALUE))
+    }
+
     @Test fun backgroundSyncFailuresStayQuietButActionsReportThem() = runTest {
         val (s, ch) = session()
         val errors = mutableListOf<String>()
@@ -167,10 +185,14 @@ class MatchSessionTest {
 
     @Test fun inviteCarriesTheChosenClockOrTargetScore() = runTest {
         val (s, ch) = session()
-        s.invite(GameKind.Chess, MatchOptions(clock = 180_000L to 2_000L)); runCurrent()
-        assertEquals(buildJsonObject { put("base", 180_000L); put("inc", 2_000L) }, ch.calls.last().second["clock"])
+        for (kind in listOf(GameKind.Chess, GameKind.TicTacToe, GameKind.Connect4, GameKind.Reversi)) {
+            s.invite(kind, MatchOptions(clock = 180_000L to 2_000L)); runCurrent()
+            assertEquals(kind.wire, ch.calls.last().second["game"]!!.jsonPrimitive.content)
+            assertEquals(buildJsonObject { put("base", 180_000L); put("inc", 2_000L) }, ch.calls.last().second["clock"])
+        }
         s.invite(GameKind.Pong, MatchOptions(points = 21)); runCurrent()
         assertEquals(21, ch.calls.last().second["points"]!!.jsonPrimitive.int)
+        assertNull(ch.calls.last().second["clock"])
         s.invite(GameKind.TicTacToe); runCurrent()
         assertNull(ch.calls.last().second["clock"]) // no limit: no clock sent
     }

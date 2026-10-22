@@ -66,7 +66,7 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
         }
         if (next.game == GameKind.Pong && (current?.id != next.id || pong == null)) pong = PongClient(next.seat(me))
         if (next.game != GameKind.Pong) pong = null
-        mutableMatch.value = next
+        mutableMatch.value = next.copy(receivedAtNanos = clock())
     }
 
     private suspend fun ack(event: String, payload: JsonObject): JsonObject? = try {

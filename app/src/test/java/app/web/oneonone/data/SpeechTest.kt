@@ -10,6 +10,7 @@ import java.io.IOException
 
 private class FakeSpeech : SpeechGateway {
     val requests = mutableListOf<Int>()
+    val previews = mutableListOf<LetterDraft>()
     val files = mutableListOf<File>()
     var total = 3
     var fetch: suspend (Int) -> Unit = {}
@@ -21,6 +22,10 @@ private class FakeSpeech : SpeechGateway {
         return NarrationPart(File.createTempFile("narration-test", ".ogg").also { files += it }, part, total)
     }
     override suspend fun transcribe(file: File): Transcription { uploads++; return upload(file) }
+    override suspend fun previewNarration(connection: String, draft: LetterDraft, part: Int): NarrationPart {
+        previews += draft
+        return narration(connection, "letter", part)
+    }
 }
 
 private class FakePlayer(val completed: () -> Unit) : NarrationPlayer {
@@ -312,16 +317,38 @@ class SpeechTest {
         val narrator = LetterNarrator(api, audio, backgroundScope, StandardTestDispatcher(testScheduler), server = false)
         narrator.toggle("c", "m", "Dear you."); advanceUntilIdle()
         assertTrue(narrator.state.value.device)
+        val draft = LetterDraft("you", "Hello!", "me")
+        narrator.toggle("c", "preview", draft.spokenText(), draft = draft); runCurrent()
+        assertTrue(narrator.state.value.device)
+        assertTrue(api.previews.isEmpty())
+        assertEquals(draft.spokenText(), audio.deviceText)
+        narrator.stop()
     }
 
-    @Test fun previewUsesDeviceVoiceEvenInServerBuildAndStopsOnRelease() = runTest {
+    @Test fun previewUsesTheSentLetterPipelineAndStopsOnRelease() = runTest {
         val api = FakeSpeech(); val audio = FakeAudio()
         val narrator = LetterNarrator(api, audio, backgroundScope, StandardTestDispatcher(testScheduler), server = true)
-        narrator.toggle("connection", "preview", "Dear you. A comma, stays. With love, me.", device = true); runCurrent()
-        assertTrue(api.requests.isEmpty())
-        assertEquals("Dear you. A comma, stays. With love, me.", audio.deviceText)
+        val draft = LetterDraft("you", "A comma, stays.\n\nA second paragraph!", "me")
+        assertEquals("Dear you.\n\nA comma, stays.\n\nA second paragraph!\n\nWith love, me.", draft.spokenText())
+        narrator.toggle("connection", "preview", draft.spokenText(), draft = draft); runCurrent()
+        assertEquals(listOf(0, 1), api.requests)
+        assertEquals(listOf(draft, draft), api.previews)
+        assertFalse(narrator.state.value.device)
+        assertNull(audio.deviceText)
         narrator.stop(); runCurrent()
-        assertTrue(audio.players.single().released)
+        assertTrue(audio.players.all { it.released })
+        assertTrue(api.files.none { it.exists() })
+    }
+
+    @Test fun previewUsesTheSameDeviceFallbackWhenNaturalVoiceFails() = runTest {
+        val api = FakeSpeech().apply { fetch = { throw SpeechFailure(503, "speech_unavailable") } }
+        val audio = FakeAudio()
+        val narrator = LetterNarrator(api, audio, backgroundScope, StandardTestDispatcher(testScheduler))
+        val draft = LetterDraft("you", "Hello!", "me")
+        narrator.toggle("connection", "preview", draft.spokenText(), draft = draft); runCurrent()
+        assertTrue(narrator.state.value.device)
+        assertEquals(draft.spokenText(), audio.deviceText)
+        narrator.stop()
     }
 
     @Test fun synchronousDeviceVoiceFailureDoesNotLeaveAPlayingState() = runTest {

@@ -231,7 +231,7 @@ internal fun CallContent(current: CallUi, route: AudioRoute, status: String, ani
                     // Same photo as the chat header (your private one for them → theirs); the initial stays underneath.
                     if (avatar != null) {
                         val context = LocalContext.current
-                        val request = remember(avatar.second) {
+                        val request = remember(avatar.first, avatar.second) {
                             ImageRequest.Builder(context).data(avatar.first).memoryCacheKey(avatar.second).diskCacheKey(avatar.second)
                                 .diskCachePolicy(if (avatar.first is File) CachePolicy.DISABLED else CachePolicy.ENABLED).build()
                         }

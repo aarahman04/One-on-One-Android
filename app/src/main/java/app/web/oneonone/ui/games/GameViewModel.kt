@@ -41,7 +41,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
     var nickname = "Your One on One"; private set
     private var noticeTimer: Job? = null
     private var foreground = true
-    private val online get() = service.connection.value == ConnectionState.Connected && service.presence.value?.online == true
+    private val connected get() = service.connection.value == ConnectionState.Connected
     private val scoped get() = service.active.value?.let { it.ownerId == session.me && it.connectionId == connectionId } == true
 
     init {
@@ -59,6 +59,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         viewModelScope.launch {
             var previous: Match? = null
             session.match.collect { match ->
+                if (previous?.id != match?.id) mutableReactions.value = emptyList()
                 val ending = match?.outcome?.reason
                 if (match != null && previous?.id == match.id && previous?.status == MatchStatus.Invited && MatchCodec.quietEnding(ending)) {
                     val mine = match.inviter == session.me
@@ -98,7 +99,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
 
     fun hub() {
         mutableError.value = null
-        if (!online || !scoped) { offlineNotice(); return }
+        if (!connected || !scoped) { offlineNotice(); return }
         if (ui.value.stage in setOf(GameStage.Idle, GameStage.Result)) {
             if (ui.value.stage == GameStage.Result) session.leave() // tells the partner we left the results
             dismissed.value = ui.value.match?.id; hub.value = true
@@ -106,7 +107,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
     }
     fun dismissHub() { hub.value = false }
     fun invite(kind: GameKind, options: MatchOptions = MatchOptions()) {
-        if (!online || !scoped) { offlineNotice(); return }
+        if (!connected || !scoped) { offlineNotice(); return }
         if (ui.value.stage !in setOf(GameStage.Idle, GameStage.Hub, GameStage.Result)) return
         dismissed.value = null; hub.value = false
         session.invite(kind, options)
@@ -126,7 +127,10 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         dismissed.value = match.id; hub.value = false
     }
     fun move(data: JsonObject) = session.move(data)
-    fun react(text: String) { if (!online || !scoped) offlineNotice() else session.react(text) }
+    fun react(text: String) {
+        if (!connected || !scoped) offlineNotice()
+        else session.react(text)
+    }
     fun paddle(viewX: Float, viewY: Float, released: Boolean = false) = session.paddle(viewX, viewY, released)
 
     private fun message(code: String) = when (code) {
@@ -149,7 +153,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         // A stale or rejected action: fetch the authoritative state again.
         if (scoped && service.connection.value == ConnectionState.Connected && text.startsWith("The game moved on")) session.sync()
     }
-    private fun offlineNotice() { notice("Games need $nickname to be online.") }
+    private fun offlineNotice() { notice("Couldn't reach the game. Check your connection.") }
 
     companion object {
         const val ReactionShowMs = 3_500L

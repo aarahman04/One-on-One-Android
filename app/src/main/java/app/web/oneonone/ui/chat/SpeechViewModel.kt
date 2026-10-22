@@ -48,12 +48,13 @@ class SpeechViewModel @Inject constructor(api: SpeechGateway, audio: NarrationAu
     fun readLetter(connection: String, message: ChatMessage, voiceRecording: Boolean = false) {
         if (dictation.value.active || voiceRecording) { showNotice("Stop recording before reading a letter aloud."); return }
         if (messages.active.value?.connectionId != connection) { showNotice("This letter can't be read aloud"); return }
-        narrator.toggle(connection, message.id, "Dear ${message.payload.text("to")}. ${message.content}. With love, ${message.payload.text("from")}.")
+        narrator.toggle(connection, message.id, LetterDraft(message.payload.text("to"), message.content, message.payload.text("from")).spokenText())
     }
-    /** An unsent letter is read by the device voice only: server narration reads saved letters and unsent text stays on the phone. */
     fun readPreview(connection: String, to: String, body: String, from: String, voiceRecording: Boolean = false) {
         if (dictation.value.active || voiceRecording) { showNotice("Stop recording before reading a letter aloud."); return }
-        narrator.toggle(connection, PREVIEW, "Dear $to. $body. With love, $from.", device = true)
+        if (messages.active.value?.connectionId != connection) { showNotice("This letter can't be read aloud"); return }
+        val draft = LetterDraft(to, body, from)
+        narrator.toggle(connection, PREVIEW, draft.spokenText(), draft = draft)
     }
     fun stopNarration(key: String? = null) { if (key == null || narration.value.key == key) narrator.stop() }
     fun startDictation(voiceRecording: Boolean) {

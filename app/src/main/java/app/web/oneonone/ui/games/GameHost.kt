@@ -113,8 +113,20 @@ fun GameInviteBanner(vm: GameViewModel) {
     val s = OneTheme.spacing
     val match = state.match ?: return
     val vector = remember(match.game, c.accentYou) { gameVector(match.game.wire, c.accentYou) }
-    // A centred invitation card; closing it (X, back, outside) is the same as "Not now".
-    OneModal(onDismiss = vm::decline) {
+    var expanded by rememberSaveable(match.id) { mutableStateOf(true) }
+    if (!expanded) {
+        Surface(onClick = { expanded = true }, color = c.bgRaised, contentColor = c.text) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = s.md12, vertical = s.sm8),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
+                Text("${vm.nickname} invites you to play ${match.game.title}", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                TextLink("Play", vm::accept)
+                TextLink("Not now", vm::decline)
+            }
+        }
+        return
+    }
+    OneModal(onDismiss = { expanded = false }) {
         Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(s.md12)) {
             Box(Modifier.size(88.dp).clip(CircleShape).background(c.accentYou.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
@@ -332,14 +344,15 @@ private fun GameActionBar(vm: GameViewModel, state: GameUi, mine: GameReaction?,
 private fun GameAction(icon: Int, label: String, modifier: Modifier, enabled: Boolean = true, highlight: Boolean = false, onClick: () -> Unit) {
     val c = OneTheme.colors
     val tint = when { !enabled -> c.muted; highlight -> c.accentYou; else -> c.text }
-    Row(modifier.height(OneTheme.sizes.send48).clip(RoundedCornerShape(OneTheme.radii.md10))
+    Row(modifier.heightIn(min = OneTheme.sizes.send48).clip(RoundedCornerShape(OneTheme.radii.md10))
         .background(if (highlight) c.accentYou.copy(alpha = .12f) else c.bgRaised)
         .border(1.dp, if (highlight) c.accentYou.copy(alpha = .5f) else c.border, RoundedCornerShape(OneTheme.radii.md10))
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         Icon(painterResource(icon), null, Modifier.size(18.dp), tint = tint)
         Spacer(Modifier.width(OneTheme.spacing.sm8))
-        Text(label, color = tint, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        Text(label, Modifier.weight(1f, fill = false).padding(vertical = OneTheme.spacing.xs4), color = tint,
+            style = MaterialTheme.typography.labelLarge, maxLines = 2, textAlign = TextAlign.Center)
     }
 }
 

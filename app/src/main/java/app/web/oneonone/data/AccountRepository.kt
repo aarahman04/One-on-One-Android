@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import retrofit2.HttpException
 
 @Singleton
 class AccountMutationLock @Inject constructor() { val mutex = Mutex() }
@@ -39,7 +40,6 @@ class AccountRepository @Inject constructor(
         val missingAge = local.ageVerified && !age
         val missingTerms = local.termsAccepted && !terms
         if ((missingAge || missingTerms) && gatesPushed != owner to local) {
-            gatesPushed = owner to local
             try {
                 val saved = api.gates(buildJsonObject {
                     if (missingAge) put("ageVerified", true)
@@ -47,8 +47,11 @@ class AccountRepository @Inject constructor(
                 })
                 age = age || saved.ageVerifiedAt != null
                 terms = terms || saved.termsAcceptedAt != null
+                gatesPushed = owner to local
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { /* Older backend (404) or offline: the cached answer for this account still counts. */ }
+            catch (error: Exception) {
+                if (error is HttpException && error.code() == 404) gatesPushed = owner to local
+            }
         }
         if (age && !local.ageVerified) preferences.verifyAge(owner)
         if (terms && !local.termsAccepted) preferences.acceptTerms(owner)

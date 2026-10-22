@@ -113,6 +113,41 @@ class FakeTransport : Transport {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MessageServiceTest {
+    @Test fun delayedAcknowledgementsAndHistoryCannotUndoEditsOrResurrectDeletedMessages() {
+        val original = ChatMessage("message", "me", "Original", "2026-10-22T00:00:00Z", tempId = "send-id")
+        val deleted = original.copy(content = "", deletedAt = "2026-10-22T00:02:00Z")
+        for (delayed in listOf(original, original.copy(tempId = null))) {
+            val saved = reconcileStored(deleted, delayed)
+            assertEquals("", saved.content)
+            assertEquals(deleted.deletedAt, saved.deletedAt)
+            assertEquals("send-id", saved.tempId)
+        }
+        val edited = original.copy(content = "Edited", editedAt = "2026-10-22T00:01:00Z")
+        assertEquals("Edited", reconcileStored(edited, original).content)
+        assertEquals(edited.editedAt, reconcileStored(edited, original.copy(tempId = null)).editedAt)
+        val newer = edited.copy(content = "Newer edit", editedAt = "2026-10-22T00:01:30Z", tempId = null)
+        assertEquals("Newer edit", reconcileStored(edited, newer).content)
+        assertEquals("Newer edit", reconcileStored(newer, edited.copy(tempId = null)).content)
+        assertEquals(deleted.deletedAt, reconcileStored(newer, deleted).deletedAt)
+    }
+
+    @Test fun aFailedMessageWriteDoesNotStopLaterLiveMessages() = runTest {
+        val transport = FakeTransport()
+        val store = MemoryMessageStore()
+        val failing = object : MessageStore by store {
+            override suspend fun reconcile(owner: String, connection: String, message: ChatMessage) {
+                if (message.content == "bad") throw IOException("Temporary write failure")
+                store.reconcile(owner, connection, message)
+            }
+        }
+        val service = MessageService(transport, failing, FakeSession(), testJson, backgroundScope)
+        service.activate(connection("active", true)); runCurrent()
+        transport.incoming.emit(ChatMessage("bad", "other", "bad", "2026-10-22T00:00:00Z")); runCurrent()
+        transport.incoming.emit(ChatMessage("good", "other", "good", "2026-10-22T00:00:01Z")); runCurrent()
+        assertEquals(listOf("good"), store.observe("me", "connection").first().map { it.id })
+        service.deactivate()
+    }
+
     @Test fun reconnectPresenceDoesNotWaitForHistoryToFinish() = runTest {
         val transport = FakeTransport().apply { history = { _, _ -> awaitCancellation() } }
         val service = MessageService(transport, MemoryMessageStore(), FakeSession(), testJson, backgroundScope)

@@ -42,10 +42,11 @@ class LetterNarrator(private val api: SpeechGateway, private val audio: Narratio
     private var connection = ""
     private var message = ""
     private var text = ""
+    private var draft: LetterDraft? = null
 
-    fun toggle(connection: String, message: String?, localText: String, device: Boolean = !server) {
+    fun toggle(connection: String, message: String?, localText: String, device: Boolean = !server, draft: LetterDraft? = null) {
         val key = "$connection/$message"
-        if (state.value.key == key && state.value.phase != NarrationPhase.Idle) {
+        if (state.value.key == key && this.draft == draft && state.value.phase != NarrationPhase.Idle) {
             try { when (state.value.phase) {
                 NarrationPhase.Playing -> { wanted = false; current?.player?.pause(); next?.player?.pause(); update(NarrationPhase.Paused) }
                 NarrationPhase.Paused -> { wanted = true; current?.player?.start(); update(NarrationPhase.Playing) }
@@ -57,6 +58,7 @@ class LetterNarrator(private val api: SpeechGateway, private val audio: Narratio
         mutableState.value = NarrationState(key = key)
         if (message == null) { notice("This letter can't be read aloud"); return }
         this.connection = connection; this.message = message; text = localText
+        this.draft = draft
         begin(device)
     }
 
@@ -95,7 +97,7 @@ class LetterNarrator(private val api: SpeechGateway, private val audio: Narratio
         var player: NarrationPlayer? = null
         var owned = false
         try {
-            part = api.narration(connection, message, index)
+            part = draft?.let { api.previewNarration(connection, it, index) } ?: api.narration(connection, message, index)
             if (part.index != index || part.total <= index || (index > 0 && part.total != state.value.total)) throw IOException("Invalid narration sequence.")
             player = audio.prepare(part.file, { completed(token, index, work) }, { failed(token, IOException("Narration playback failed.")) })
             currentCoroutineContext().ensureActive()
