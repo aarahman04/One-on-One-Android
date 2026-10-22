@@ -1921,3 +1921,20 @@ Verification: Android `assembleDebug lintDebug testDebugUnitTest` **247 tests / 
 - [ ] Offer a draw in chess, a grid game and Ping Pong; decline once (offerer sees "declined"), accept once (both see "Draw by agreement", a game card is written).
 - [ ] Invite from phone A: phone B shows the centred pop-up; Play starts, Not now/X declines and A is told.
 - [ ] Reaction pills on chat messages look smaller but still readable.
+
+## Revert live dictation and shared TTS (2026-10-22, 2.0.10, versionCode 17)
+
+Owner report: dictation (`/audio`, letter mic) and letter read-aloud stopped working after the 2026-10-21 "see what's being written" change; restore the previous behaviour.
+
+- Root cause: the batch made `SpeechTranscriber` use the device recognizer whenever one existed (`!server || device.available`), so release builds never used the speech service's server models; it also forced `createOnDeviceSpeechRecognizer` and restarted segments continuously.
+- Reverted to the pre-batch (`2fd1848`) `SpeechTranscriber`, `AndroidDeviceSpeech`, `AndroidNarrationAudio` (per-play TTS engine, no singleton/prewarm), the composer/letter dictation wiring (append on Stop, Cancel button, composer hidden while listening) and their tests.
+- Kept: unsent letter preview read-aloud (device voice; the server can only narrate saved letters), From nickname default, label-aligned letter mic, 118 s cap.
+- Release defaults bumped to **17 / 2.0.10**.
+
+Verification: `assembleDebug lintDebug testDebugUnitTest` PASS: **242 tests, 0 failures**, lint clean. Build-verified only; not device-tested. Server dictation/narration also needs the Railway speech service running.
+
+### Xiaomi checklist (dictation revert)
+- [ ] Release build: `/audio`, speak, Stop: "Transcribing…" then punctuated text appended to the draft.
+- [ ] Letter mic: speak, Stop: words appended to the letter body; closing the letter mid-dictation cancels.
+- [ ] Cancel (X) in the dictation bar discards the recording.
+- [ ] Open a sent letter, tap speaker: natural server voice; preview speaker reads with the phone voice; Edit/Send/close stops it.

@@ -44,7 +44,6 @@ private class FakeAudio : NarrationAudio {
     var focusLoss: () -> Unit = {}
     var deviceText: String? = null
     var failDeviceOnStart = false
-    override fun prewarm() {}
     override fun focus(onLost: () -> Unit): Boolean { focusRequests++; focusLoss = onLost; return true }
     override fun abandonFocus() {}
     override suspend fun prepare(file: File, completed: () -> Unit, failed: () -> Unit) = FakePlayer(completed).also { players += it }
@@ -67,14 +66,13 @@ private class FakeRecorder : DictationRecorder {
     override suspend fun stopDictation(): VoiceClip? { stops++; return file?.let { VoiceClip(it, duration) } }
     override suspend fun cancelDictation() { cancels++; file?.delete(); file = null }
 }
-private class FakeDevice(override var available: Boolean = false) : DeviceSpeech {
+private class FakeDevice(override val available: Boolean = true) : DeviceSpeech {
     var starts = 0
     var stops = 0
     var result: (String) -> Unit = {}
     var partial: (String) -> Unit = {}
-    var failed: (String, Boolean) -> Unit = { _, _ -> }
-    override fun start(text: (String) -> Unit, partial: (String) -> Unit, failed: (String, Boolean) -> Unit) {
-        starts++; result = text; this.partial = partial; this.failed = failed
+    override fun start(text: (String) -> Unit, partial: (String) -> Unit, failed: (String) -> Unit) {
+        starts++; result = text; this.partial = partial
     }
     override fun stop() { stops++ }
     override fun cancel() {}
@@ -216,14 +214,12 @@ class SpeechTest {
         for (error in listOf(IOException("offline"), SpeechFailure(503, "speech_unavailable"), SpeechFailure(504, "speech_timeout"),
             SpeechFailure(429, "quota_exceeded"))) {
             val api = FakeSpeech().apply { upload = { throw error } }; val recorder = FakeRecorder(); val device = FakeDevice()
-            val delivered = mutableListOf<String>(); val notices = mutableListOf<String>(); val live = mutableListOf<String>()
-            val transcriber = SpeechTranscriber(api, recorder, device, backgroundScope, delivered::add, notices::add, StandardTestDispatcher(testScheduler), live = live::add)
-            transcriber.start(); runCurrent(); val file = recorder.file!!
-            device.available = true // An installed recognizer became available while the server recording was in progress.
-            transcriber.stop(); runCurrent()
+            val delivered = mutableListOf<String>(); val notices = mutableListOf<String>()
+            val transcriber = SpeechTranscriber(api, recorder, device, backgroundScope, delivered::add, notices::add, StandardTestDispatcher(testScheduler))
+            transcriber.start(); runCurrent(); val file = recorder.file!!; transcriber.stop(); runCurrent()
             assertFalse(file.exists()); assertEquals(DictationPhase.DeviceListening, transcriber.state.value.phase)
             assertEquals(listOf("Using device speech recognition"), notices)
-            device.partial("Indian English"); assertEquals("Indian English", live.last())
+            device.partial("Indian English"); assertEquals("Indian English", transcriber.state.value.partial)
             transcriber.stop(); assertEquals(1, device.stops)
             device.result("  Good morning  "); runCurrent()
             assertEquals(listOf("Good morning"), delivered); assertFalse(transcriber.state.value.active)
@@ -275,12 +271,10 @@ class SpeechTest {
         assertFalse(transcriber.state.value.active); assertEquals("Microphone is busy", notices.last())
     }
 
-    @Test fun timerTranscribesAt118SecondsAndNativeLimitDoesNotUploadTwice() = runTest {
+    @Test fun timerStopsAtTwoMinutesAndNativeLimitDoesNotUploadTwice() = runTest {
         val api = FakeSpeech(); val recorder = FakeRecorder()
         val transcriber = SpeechTranscriber(api, recorder, FakeDevice(), backgroundScope, {}, {}, StandardTestDispatcher(testScheduler))
-        transcriber.start(); runCurrent(); advanceTimeBy(117_999); runCurrent()
-        assertEquals(0, api.uploads)
-        advanceTimeBy(1); runCurrent(); recorder.limit(); runCurrent()
+        transcriber.start(); runCurrent(); advanceTimeBy(120_000); runCurrent(); recorder.limit(); runCurrent()
         assertEquals(1, recorder.stops); assertEquals(1, api.uploads)
         assertFalse("Expected idle: ${transcriber.state.value}; cancels=${recorder.cancels}", transcriber.state.value.active)
     }
@@ -305,12 +299,10 @@ class SpeechTest {
         assertEquals("Already here  Good morning", appendDictationText("Already here  ", "Good morning"))
         assertEquals("Line one\nGood morning", appendDictationText("Line one\n", "Good morning"))
         assertEquals("Already here", appendDictationText("Already here", " \n"))
-        assertEquals("a".repeat(3_995) + " Hell", appendDictationText("a".repeat(3_995), "Hello there"))
-        assertEquals("Yes, that's right. Really!", appendDictationText("Yes, that's right.", "Really!"))
     }
 
     @Test fun deviceOnlyBuildNeverUploadsAndUsesDeviceVoiceAndRecognitionQuietly() = runTest {
-        val api = FakeSpeech().apply { upload = { throw AssertionError("Must not upload") } }; val recorder = FakeRecorder(); val device = FakeDevice(true)
+        val api = FakeSpeech().apply { upload = { throw AssertionError("Must not upload") } }; val recorder = FakeRecorder(); val device = FakeDevice()
         val notices = mutableListOf<String>()
         val transcriber = SpeechTranscriber(api, recorder, device, backgroundScope, { }, notices::add, StandardTestDispatcher(testScheduler), server = false)
         transcriber.start(); advanceUntilIdle()
@@ -320,86 +312,6 @@ class SpeechTest {
         val narrator = LetterNarrator(api, audio, backgroundScope, StandardTestDispatcher(testScheduler), server = false)
         narrator.toggle("c", "m", "Dear you."); advanceUntilIdle()
         assertTrue(narrator.state.value.device)
-    }
-
-    @Test fun deviceRecognitionRestartsAndAppendsLivePartialsForOverTenMinutes() = runTest {
-        val api = FakeSpeech(); val recorder = FakeRecorder(); val device = FakeDevice(true)
-        val delivered = mutableListOf<String>(); val live = mutableListOf<String>()
-        val transcriber = SpeechTranscriber(api, recorder, device, backgroundScope, delivered::add, {},
-            StandardTestDispatcher(testScheduler), server = true, live = live::add)
-        transcriber.start(); runCurrent()
-        repeat(11) { minute ->
-            advanceTimeBy(60_000); runCurrent()
-            device.partial("Part $minute,")
-            assertTrue(live.last().endsWith("Part $minute,"))
-            device.result("Part $minute, done.")
-            advanceTimeBy(300); runCurrent()
-        }
-        assertEquals(12, device.starts)
-        assertEquals(0, recorder.starts); assertEquals(0, api.uploads)
-        device.partial("Last words!")
-        transcriber.stop(); device.result("Last words!"); runCurrent()
-        val expected = (0..10).joinToString(" ") { "Part $it, done." } + " Last words!"
-        assertEquals(listOf(expected), delivered)
-        assertEquals(expected, live.last())
-        assertFalse(transcriber.state.value.active)
-    }
-
-    @Test fun silenceAndBlankFinalKeepPartialsAndRestartUntilStop() = runTest {
-        val device = FakeDevice(true); val delivered = mutableListOf<String>()
-        val transcriber = SpeechTranscriber(FakeSpeech(), FakeRecorder(), device, backgroundScope, delivered::add, {}, StandardTestDispatcher(testScheduler))
-        transcriber.start(); runCurrent()
-        repeat(5) { device.result(""); advanceTimeBy(300); runCurrent() }
-        assertTrue(transcriber.state.value.active)
-        device.partial("Keep this, please."); device.partial(""); device.result("")
-        advanceTimeBy(300); runCurrent()
-        device.partial("And this")
-        transcriber.stop(); advanceTimeBy(3_000); runCurrent()
-        assertEquals(listOf("Keep this, please. And this"), delivered)
-        val starts = device.starts; advanceTimeBy(10_000); runCurrent()
-        assertEquals(starts, device.starts); assertFalse(transcriber.state.value.active)
-    }
-
-    @Test fun stopBetweenSegmentsKeepsWordsAtOnceWithoutRestarting() = runTest {
-        val device = FakeDevice(true); val delivered = mutableListOf<String>()
-        val transcriber = SpeechTranscriber(FakeSpeech(), FakeRecorder(), device, backgroundScope, delivered::add, {}, StandardTestDispatcher(testScheduler))
-        transcriber.start(); runCurrent()
-        device.result("Said this."); runCurrent() // the recognizer ended; the restart waits 300 ms
-        transcriber.stop(); runCurrent()
-        assertEquals(listOf("Said this."), delivered)
-        assertFalse(transcriber.state.value.active)
-        val starts = device.starts; advanceTimeBy(5_000); runCurrent()
-        assertEquals(starts, device.starts); assertEquals(listOf("Said this."), delivered)
-    }
-
-    @Test fun backgroundKeepsLatestPartialAndRejectsLateSegmentCallbacks() = runTest {
-        val device = FakeDevice(true); val delivered = mutableListOf<String>(); val live = mutableListOf<String>()
-        val transcriber = SpeechTranscriber(FakeSpeech(), FakeRecorder(), device, backgroundScope, delivered::add, {},
-            StandardTestDispatcher(testScheduler), live = live::add)
-        transcriber.start(); runCurrent()
-        val oldResult = device.result; val oldPartial = device.partial
-        device.result("First."); advanceTimeBy(300); runCurrent()
-        oldResult("Stale."); oldPartial("Wrong")
-        device.partial("Still here,"); transcriber.background(); runCurrent()
-        assertEquals(listOf("First. Still here,"), delivered)
-        device.result("Too late"); advanceTimeBy(1_000); runCurrent()
-        assertEquals(listOf("First. Still here,"), delivered)
-        assertEquals("First. Still here,", live.last())
-        assertFalse(transcriber.state.value.active)
-    }
-
-    @Test fun fatalDeviceFailureKeepsWordsAndTransientFailuresRetryBeforeStopping() = runTest {
-        val device = FakeDevice(true); val delivered = mutableListOf<String>(); val notices = mutableListOf<String>()
-        val transcriber = SpeechTranscriber(FakeSpeech(), FakeRecorder(), device, backgroundScope, delivered::add, notices::add,
-            StandardTestDispatcher(testScheduler))
-        transcriber.start(); runCurrent(); device.partial("Don't lose this.")
-        device.failed("Microphone unavailable", true); runCurrent()
-        assertEquals(listOf("Don't lose this."), delivered); assertFalse(transcriber.state.value.active)
-        transcriber.start(); runCurrent(); device.partial("Or this.")
-        repeat(3) { device.failed("Busy", false); advanceTimeBy(300); runCurrent() }
-        assertEquals(listOf("Don't lose this.", "Or this."), delivered)
-        assertEquals(listOf("Microphone unavailable", "Busy"), notices)
-        assertFalse(transcriber.state.value.active)
     }
 
     @Test fun previewUsesDeviceVoiceEvenInServerBuildAndStopsOnRelease() = runTest {

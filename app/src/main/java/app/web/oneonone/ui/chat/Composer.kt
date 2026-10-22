@@ -183,7 +183,6 @@ internal fun ChatComposer(
     focusRequester: FocusRequester = remember { FocusRequester() },
     onEmoji: () -> Unit = {},
     onCamera: () -> Unit = {},
-    readOnly: Boolean = false,
 ) {
     val c = OneTheme.colors
     val pillShape = RoundedCornerShape(OneTheme.radii.pill22)
@@ -229,7 +228,6 @@ internal fun ChatComposer(
                 value = draft,
                 onValueChange = onDraft,
                 modifier = Modifier.weight(1f).heightIn(min = ComposerHeight, max = 120.dp).focusRequester(focusRequester),
-                readOnly = readOnly,
                 textStyle = textStyle,
                 cursorBrush = SolidColor(c.accentYou),
                 interactionSource = source,

@@ -1229,3 +1229,20 @@ sequenceDiagram
     B->>S: match:draw decline
     S-->>A: match:state drawOffer=null ("declined your draw offer")
 ```
+
+## Dictation and narration revert (2026-10-22)
+
+Owner request: the live-dictation rework of the 2026-10-21 batch is reverted. This section supersedes the dictation and shared-TTS parts of "Dictation, letters, media and call repair" above; the earlier server-first notes apply again.
+
+```mermaid
+flowchart TD
+    Mic[/audio or letter mic] --> VM[SpeechViewModel]
+    VM --> Server{SERVER_SPEECH build?}
+    Server -->|yes| Clip[AAC clip, cap 118 s] --> Whisper[Speech service transcribe] -->|Stop: append once| Field[Composer draft or letter body]
+    Whisper -->|unavailable| Device[Platform recognizer, one utterance, partial in bar]
+    Server -->|no| Device --> Field
+    Viewer[Sent letter] --> Natural[LetterNarrator: server narration parts] -->|unavailable| TTS[Per-play device TextToSpeech]
+    Preview[Unsent letter preview] --> TTS
+```
+
+Text appears after Stop, not live; the dictation bar has Cancel again and the composer is hidden while listening. The device recognizer is the default platform one (no on-device-only recognizer, no formatting extra). Each play creates and shuts down its own TextToSpeech engine. Kept from the batch: letter preview read-aloud (device voice), 118 s clip cap, 4000-character append cap, label-aligned letter mic.

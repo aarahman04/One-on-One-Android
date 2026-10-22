@@ -5,7 +5,6 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
-import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
@@ -46,18 +45,14 @@ import app.web.oneonone.ui.components.OneIconButton
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 
-/**
- * Permission and external Activity launching stay in Compose; recording/recognition live behind the ViewModel.
- * The returned starter takes the field's current text: dictated words are added after it.
- */
+/** Permission and external Activity launching stay in Compose; recording/recognition live behind the ViewModel. */
 @Composable
-internal fun rememberDictation(vm: SpeechViewModel, voiceRecording: () -> Boolean, onBegin: () -> Unit): (field: String) -> Unit {
+internal fun rememberDictation(vm: SpeechViewModel, voiceRecording: () -> Boolean, onBegin: () -> Unit): () -> Unit {
     val context = LocalContext.current
     val recording by rememberUpdatedState(voiceRecording)
     val beforeStart by rememberUpdatedState(onBegin)
     val state by vm.dictation.collectAsState()
     var launchedToken by rememberSaveable { mutableLongStateOf(0L) }
-    var field by rememberSaveable { mutableStateOf("") }
     val fallback = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         vm.deviceResult(launchedToken, result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull())
     }
@@ -73,13 +68,12 @@ internal fun rememberDictation(vm: SpeechViewModel, voiceRecording: () -> Boolea
     }
     val begin = {
         if (recording()) vm.showNotice("Stop your voice note before using /audio.")
-        else { beforeStart(); vm.startDictation(voiceRecording = false, field = field) }
+        else { beforeStart(); vm.startDictation(voiceRecording = false) }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         if (allowed) begin() else vm.showNotice("Microphone access was denied. Allow it in App info → Permissions to dictate.")
     }
-    return { text ->
-        field = text
+    return {
         when {
             recording() -> vm.showNotice("Stop your voice note before using /audio.")
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> begin()
@@ -88,55 +82,52 @@ internal fun rememberDictation(vm: SpeechViewModel, voiceRecording: () -> Boolea
     }
 }
 
-/** Status and Stop above the composer; the words appear live in the composer itself. Nothing dictated is ever discarded. */
+/** Retains the listening bar's cancel / status / stop layout; the recording is never a voice-note draft. */
 @Composable
-internal fun DictationBar(state: DictationState, hint: Boolean, onStop: () -> Unit) {
+internal fun DictationBar(state: DictationState, hint: Boolean, onStop: () -> Unit, onCancel: () -> Unit) {
     val c = OneTheme.colors
     val s = OneTheme.spacing
     val busy = state.phase == DictationPhase.Starting || state.phase == DictationPhase.Transcribing
     val pulse by rememberInfiniteTransition(label = "dictation-dot").animateFloat(1f, .3f,
         infiniteRepeatable(tween(OneTheme.motion.slow320 * 2, easing = OneTheme.motion.standard), RepeatMode.Reverse), label = "alpha")
-    Column(Modifier.fillMaxWidth().background(c.bg)) {
-        if (hint && state.phase == DictationPhase.Recording) Text("Works best in English.", Modifier.padding(horizontal = s.lg16, vertical = s.xs4),
+    Column(Modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))) {
+        if (hint) Text("Works best in English.", Modifier.padding(horizontal = s.lg16, vertical = s.xs4),
             color = c.textDim, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Row(Modifier.fillMaxWidth().padding(start = s.lg16, end = s.sm8, top = s.xs4), verticalAlignment = Alignment.CenterVertically,
+        Row(Modifier.fillMaxWidth().padding(horizontal = s.sm8, vertical = s.xs4), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(s.sm8)) {
+            OneIconButton(R.drawable.ic_x, "Cancel", onCancel, Modifier.size(OneTheme.sizes.send48))
             Row(Modifier.weight(1f).height(OneTheme.sizes.send48), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(s.md12)) {
                 if (busy) CircularProgressIndicator(Modifier.size(s.lg16), color = c.accentYou, strokeWidth = s.xxs2)
                 else Box(Modifier.size(s.sm8).alpha(pulse).clip(CircleShape).background(c.danger))
                 Text(when (state.phase) {
-                    DictationPhase.Transcribing -> "Adding your words…"
+                    DictationPhase.Transcribing -> "Transcribing…"
                     DictationPhase.Starting -> "Starting…"
                     DictationPhase.Recording -> "Listening… ${state.seconds / 60}:${(state.seconds % 60).toString().padStart(2, '0')}"
-                    else -> "Listening…"
-                }, color = if (busy) c.textDim else c.text, style = OneTextStyles.menuItem, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    else -> state.partial.ifBlank { "Listening…" }
+                }, color = if (busy) c.textDim else c.text, style = OneTextStyles.menuItem, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { if (busy) liveRegion = LiveRegionMode.Polite })
             }
-            if (!busy) OneIconButton(R.drawable.ic_stop, "Stop dictation", onStop,
+            if (!busy) OneIconButton(R.drawable.ic_stop, "Stop and transcribe", onStop,
                 Modifier.size(OneTheme.sizes.send48).clip(CircleShape).background(c.sendBg), tint = c.sendFg)
         }
     }
 }
 
-/**
- * Mic beside the "Your letter" label: the /audio pipeline, but the words land live in the letter body ([set] receives the
- * whole body), not the composer.
- */
+/** Mic beside the "Your letter" label: the /audio pipeline, but the words land in the letter, not the composer. */
 @Composable
-internal fun LetterDictation(vm: SpeechViewModel, connection: CurrentConnection, body: String, begin: (String) -> Unit, set: (String) -> Unit) {
+internal fun LetterDictation(vm: SpeechViewModel, connection: CurrentConnection, begin: () -> Unit, append: (String) -> Unit) {
     val c = OneTheme.colors
     val state by vm.dictation.collectAsState()
     val dictated by vm.text.collectAsState()
-    val apply by rememberUpdatedState(set)
+    val add by rememberUpdatedState(append)
     LaunchedEffect(dictated?.id) {
         val result = dictated ?: return@LaunchedEffect
-        if (result.owner.ownerId == connection.myUserId && result.owner.connectionId == connection.id) apply(result.text)
+        if (result.owner.ownerId == connection.myUserId && result.owner.connectionId == connection.id) add(result.text)
         vm.consumeText(result.id)
     }
-    // Closing the letter turns the mic off; words already in the letter stay. Rotation keeps listening.
-    val activity = LocalActivity.current
-    DisposableEffect(vm) { onDispose { if (vm.dictation.value.active && activity?.isChangingConfigurations != true) vm.background() } }
+    // Closing the letter mid-dictation drops the recording rather than leaving the mic on.
+    DisposableEffect(vm) { onDispose { if (vm.dictation.value.active) vm.cancelDictation() } }
     val busy = state.phase == DictationPhase.Starting || state.phase == DictationPhase.Transcribing
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(OneTheme.spacing.sm8)) {
         if (state.active) Text(when (state.phase) {
@@ -150,8 +141,8 @@ internal fun LetterDictation(vm: SpeechViewModel, connection: CurrentConnection,
             busy -> LabelIcon(null, null) {
                 CircularProgressIndicator(Modifier.size(LabelIconSize), color = c.accentYou, strokeWidth = OneTheme.spacing.xxs2)
             }
-            state.active -> LabelIcon("Stop and keep your words", vm::stopDictation) { LabelGlyph(R.drawable.ic_stop, c.danger) }
-            else -> LabelIcon("Speak your letter", { begin(body) }) { LabelGlyph(R.drawable.ic_mic, c.accentYou) }
+            state.active -> LabelIcon("Stop and add to your letter", vm::stopDictation) { LabelGlyph(R.drawable.ic_stop, c.danger) }
+            else -> LabelIcon("Speak your letter", begin) { LabelGlyph(R.drawable.ic_mic, c.accentYou) }
         }
     }
 }
