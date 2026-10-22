@@ -3,6 +3,26 @@
 Current Ping Pong work: [reference remake](games/PONG-REFERENCE-REMAKE.md)
 (2026-10-22). The 2026-10-21 handoff describes the earlier implementation.
 
+## Release 2.0.11 (2026-10-22, versionCode 18)
+
+- Workflow dispatch defaults bumped from 17 / 2.0.10 to **18 / 2.0.11**. Gradle's unsigned/development fallback remains 5 / 2.0.0-dev. The owner requested merging the paired Ping Pong PRs. Manual release workflow dispatch is deferred at the owner's request; no new signed release has been built. Normal PR/main checks still run automatically.
+- Final contact handling supersedes the racket-stopping guard below. Swept contact catches fast and diagonal swipes at the painted rim, captures strength once, and allows the bat to follow through. Only the serving player or the receiver after a table bounce can register the next hit. Queued input cannot move the impact a second time or erase its strength on release; an outgoing ball cannot be grabbed again by the last hitter.
+- Light hits use a longer flight than hard hits: speed power is forward finger speed / 10, clamped to 0..1, and duration is 1.15 - .45 * power seconds. Existing aiming, live sideways drift, cubic height/easing, bounce, scoring and first-to-7/custom targets remain.
+- Android predicts one fixed pending contact position for at most 150 ms and clears it on authority confirmation or round reset. It does not attach the ball to a moving bat or project an outgoing ball around either bat. Bat following stays continuous; the ball/trail are drawn before the bats. One finger owns a gesture; final lift movement is kept, cancellation releases the actual bat position, and paused/new rounds cancel held input. The white trail tapers and fades by age.
+- Verification: debug build, lint and **276 Android tests** passed; backend **130 tests** and TypeScript checking passed. Regressions cover both seats, hard/slow corner follow-through against an untouched control flight, multiple packets before a tick, strength on release, no bat pause/backtracking, pointer lifecycle and trail expiry. The latest debug APK was installed and launched on `PongRemake_Check`; physical Xiaomi feel and live two-account latency remain owner checks.
+- Delivery: Android [#50](https://github.com/aarahman04/One-on-One-Android/pull/50), backend [#127](https://github.com/aarahman04/One-on-One/pull/127). No database migration, dependency, application ID, signing-key or website-client change.
+
+### Xiaomi checklist for 2.0.11
+
+- [ ] Pull the red bat back, then swing hard through a resting or incoming ball: continuous follow-through, one hit, no ball recapture or reversal.
+- [ ] Repeat slow and fast hits at both sides of each bat; compare a light push with a hard hit.
+- [ ] Lift during contact, reverse the finger, cancel/background and resume; verify no held bat or repeated launch.
+- [ ] Test both seats on two accounts, including delayed network, points/serves, pause/resume and rematch.
+
+## Release 2.0.10 (2026-10-22, versionCode 17)
+
+- Previous signed build: [39706094512](https://github.com/aarahman04/One-on-One-Android/actions/runs/39706094512). Its signing/identity log verifies `app.web.oneonone`, versionCode 17 and versionName 2.0.10. A successful build does not confirm a Play upload.
+
 ## Ping Pong reference remake and red-racket contact (2026-10-22)
 
 - Rebuilt the existing game from recovered flight/stroke constants and the owner's video: live finger-controlled endpoint drift, native cubic/easing, elapsed-time racket following, green court, upright red/cyan rackets and a short white trail.
