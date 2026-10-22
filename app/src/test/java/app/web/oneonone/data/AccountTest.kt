@@ -21,6 +21,7 @@ import java.util.UUID
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.LocalDate
+import okhttp3.ResponseBody.Companion.toResponseBody
 
 class FakeSession : AccountSession {
     override val signedIn = MutableStateFlow(true)
@@ -88,7 +89,8 @@ open class FakeAccountApi(val session: FakeSession) : AccountApi {
     override suspend fun me() = Me("me", "ABCDEFGH", serverGates.ageVerifiedAt, serverGates.termsAcceptedAt)
     override suspend fun gates(body: JsonObject): GatesResult {
         gatePosts += body
-        check(!gatesFail) { "404" }
+        if (gatesFail) throw retrofit2.HttpException(retrofit2.Response.error<GatesResult>(404,
+            "Not found".toResponseBody()))
         serverGates = GatesResult(serverGates.ageVerifiedAt ?: body["ageVerified"]?.let { "2026-10-19T00:00:00Z" },
             serverGates.termsAcceptedAt ?: body["termsAccepted"]?.let { "2026-10-19T00:00:00Z" })
         return serverGates
@@ -278,6 +280,28 @@ class AccountTest {
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class GatesTest {
+    @Test fun temporarilyFailedGateSyncRetriesWhenTheNetworkRecovers() = runTest {
+        var attempts = 0
+        val session = FakeSession()
+        val api = object : FakeAccountApi(session) {
+            override suspend fun gates(body: JsonObject): GatesResult {
+                attempts++
+                if (attempts == 1) throw java.io.IOException("Offline")
+                return super.gates(body)
+            }
+        }
+        val preferences = FakeDeviceStore()
+        val repository = AccountRepository(api, session, preferences, stickers = testStickerLibrary())
+        assertEquals(Gates(true, true), repository.syncGates("owner", api.me()))
+        assertNull(api.serverGates.ageVerifiedAt)
+        repository.syncGates("owner", api.me())
+        assertEquals(2, attempts)
+        assertNotNull(api.serverGates.ageVerifiedAt)
+        assertNotNull(api.serverGates.termsAcceptedAt)
+        repository.syncGates("owner", api.me())
+        assertEquals(2, attempts)
+    }
+
     private fun jwt(sub: String) = "h." + java.util.Base64.getUrlEncoder().withoutPadding()
         .encodeToString("{\"sub\":\"$sub\"}".toByteArray()) + ".s"
 

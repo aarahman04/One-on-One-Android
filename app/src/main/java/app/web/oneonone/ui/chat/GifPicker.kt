@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import app.web.oneonone.data.media.GifPage
 import app.web.oneonone.data.media.GifResult
 import app.web.oneonone.ui.components.OneTextField
+import app.web.oneonone.ui.components.SecondaryButton
 import app.web.oneonone.ui.theme.OneTextStyles
 import app.web.oneonone.ui.theme.OneTheme
 import coil3.compose.AsyncImage
@@ -93,6 +94,7 @@ private fun GifGrid(search: suspend (String, Int) -> GifPage, onGif: (GifResult)
     var next by remember { mutableStateOf<Int?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
     val load by rememberUpdatedState(search)
     suspend fun fetch(offset: Int) {
         loading = true; error = null
@@ -104,11 +106,13 @@ private fun GifGrid(search: suspend (String, Int) -> GifPage, onGif: (GifResult)
         catch (failure: Exception) { error = "Couldn't load GIFs. Check your connection and try again." }
         finally { loading = false }
     }
-    LaunchedEffect(query) { delay(if (query.isBlank()) 0 else 350); fetch(0) }
     val grid = rememberLazyGridState()
     val nearEnd by remember { derivedStateOf { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= results.size - 6 } == true } }
-    LaunchedEffect(grid) {
-        snapshotFlow { nearEnd }.collect { if (it && !loading) next?.let { offset -> fetch(offset) } }
+    LaunchedEffect(query, grid, retry) {
+        results = emptyList(); next = null
+        delay(if (query.isBlank()) 0 else 350)
+        fetch(0)
+        snapshotFlow { nearEnd to next }.collect { (near, offset) -> if (near && !loading && error == null && offset != null) fetch(offset) }
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OneTextField(query, { query = it.take(50) }, Modifier.fillMaxWidth().semantics { contentDescription = "Search GIFs" }, placeholder = "Search GIPHY")
@@ -128,6 +132,7 @@ private fun GifGrid(search: suspend (String, Int) -> GifPage, onGif: (GifResult)
                 }
             }
         }
+        if (error != null) SecondaryButton("Retry", { retry++ }, Modifier.align(Alignment.CenterHorizontally))
         // GIPHY's terms require visible attribution in the picker.
         Text("Powered by GIPHY", Modifier.align(Alignment.End).padding(bottom = 8.dp), color = c.muted, style = OneTextStyles.bubbleMeta)
     }

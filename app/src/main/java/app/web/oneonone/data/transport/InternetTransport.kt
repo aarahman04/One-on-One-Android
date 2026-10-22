@@ -5,11 +5,13 @@ import app.web.oneonone.data.realtime.ConnectionState
 import app.web.oneonone.data.realtime.RealtimeSocket
 import app.web.oneonone.data.games.MatchCodec
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import java.io.IOException
+import java.time.Instant
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -47,14 +49,14 @@ class InternetTransport @Inject constructor(
             if (released) put("released", true)
         })
     }
-    override val incoming = realtime.events("message:new").map { json.decodeFromString<ChatMessage>(it.toString()) }
-    override val receipts = realtime.events("receipt:update").map { json.decodeFromString<ReceiptUpdate>(it.toString()) }
-    override val reactions = realtime.events("reaction:update").map { json.decodeFromString<ReactionUpdate>(it.toString()) }
+    override val incoming = realtime.events("message:new").decodeEvents<ChatMessage>(json)
+    override val receipts = realtime.events("receipt:update").decodeEvents<ReceiptUpdate>(json)
+    override val reactions = realtime.events("reaction:update").decodeEvents<ReactionUpdate>(json)
     override val ended = realtime.events("connection:ended").map { Unit }
-    override val updates = realtime.events("message:update").map { json.decodeFromString<ChatMessage>(it.toString()) }
-    override val typing = realtime.events("typing").map { json.decodeFromString<TypingUpdate>(it.toString()) }
-    override val presence = realtime.events("presence").map { json.decodeFromString<PresenceUpdate>(it.toString()) }
-    override val pins = realtime.events("pin:update").map { json.decodeFromString<PinState>(it.toString()) }
+    override val updates = realtime.events("message:update").decodeEvents<ChatMessage>(json)
+    override val typing = realtime.events("typing").decodeEvents<TypingUpdate>(json)
+    override val presence = realtime.events("presence").decodeEvents<PresenceUpdate>(json)
+    override val pins = realtime.events("pin:update").decodeEvents<PinState>(json)
     override suspend fun edit(messageId: String, content: String) = messageAck(
         realtime.emitWithAck("message:edit", JSONObject().put("messageId", messageId).put("content", content)))
     override suspend fun delete(messageId: String) = messageAck(realtime.emitWithAck("message:delete", JSONObject().put("messageId", messageId)))
@@ -96,6 +98,24 @@ class InternetTransport @Inject constructor(
             JSONObject().put("messageId", messageId).put("emoji", emoji))
         check(!ack.has("error") && ack.optBoolean("ok")) { ack.optString("error", "Reaction failed.") }
     }
+}
+
+internal inline fun <reified T> Flow<JSONObject>.decodeEvents(json: Json): Flow<T> = mapNotNull { raw ->
+    runCatching {
+        json.decodeFromString<T>(raw.toString()).also { value ->
+            val dates = when (value) {
+                is ChatMessage -> {
+                    require(!value.id.isNullOrBlank() && value.senderId.isNotBlank())
+                    listOf(value.createdAt, value.editedAt, value.deletedAt)
+                }
+                is ReceiptUpdate -> listOf(value.lastReadAt, value.lastDeliveredAt)
+                is PresenceUpdate -> listOf(value.lastSeenAt)
+                is PinState -> listOf(value.pinnedAt)
+                else -> emptyList()
+            }
+            dates.filterNotNull().forEach { Instant.parse(it) }
+        }
+    }.getOrNull()
 }
 
 internal fun decodeSendAck(value: String, json: Json): ChatMessage {

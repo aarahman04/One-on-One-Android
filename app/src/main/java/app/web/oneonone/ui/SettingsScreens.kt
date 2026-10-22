@@ -105,7 +105,7 @@ private fun YourPhotoRow(photo: YourPhoto) {
                 Icon(painterResource(R.drawable.ic_user), null, tint = c.accentYou, modifier = Modifier.size(26.dp))
                 if (photo.url != null) {
                     val context = LocalContext.current
-                    val request = remember(photo.key) {
+                    val request = remember(photo.url, photo.key) {
                         ImageRequest.Builder(context).data(photo.url).memoryCacheKey(photo.key).diskCacheKey(photo.key).build()
                     }
                     AsyncImage(request, "Your photo", Modifier.matchParentSize(), contentScale = ContentScale.Crop)

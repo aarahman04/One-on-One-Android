@@ -93,24 +93,24 @@ class MessageService @Inject constructor(
         val job = SupervisorJob(scope.coroutineContext[Job])
         conversationJob = job
         val conversation = CoroutineScope(scope.coroutineContext + job)
-        conversation.launch { guarded {
-            transport.incoming.collect { message ->
+        conversation.launch {
+            transport.incoming.collect { message -> guarded {
                 store.reconcile(session.ownerId, session.connectionId, message)
                 if (message.senderId != session.ownerId) mutableTyping.value = false
                 if (chatResumed && message.senderId != session.ownerId) markRead()
-            }
-        } }
-        conversation.launch { guarded { transport.updates.collect { store.reconcile(session.ownerId, session.connectionId, it) } } }
+            } }
+        }
+        conversation.launch { transport.updates.collect { guarded { store.reconcile(session.ownerId, session.connectionId, it) } } }
         conversation.launch { transport.typing.collectLatest { update ->
             if (update.userId == session.ownerId) return@collectLatest
             mutableTyping.value = update.typing
             if (update.typing) { delay(6_000); mutableTyping.value = false }
         } }
         conversation.launch { transport.pins.collect { lastPinEvent = System.currentTimeMillis(); mutablePin.value = it } }
-        conversation.launch { guarded { transport.reactions.collect {
+        conversation.launch { transport.reactions.collect { guarded {
             store.reaction(session.ownerId, session.connectionId, it)
         } } }
-        conversation.launch { guarded { transport.receipts.collect { receipt ->
+        conversation.launch { transport.receipts.collect { receipt -> guarded {
             if (receipt.userId != session.ownerId) mutableReceipts.update { previous ->
                 receipt.copy(lastReadAt = newerTime(previous?.lastReadAt, receipt.lastReadAt),
                     lastDeliveredAt = newerTime(previous?.lastDeliveredAt, receipt.lastDeliveredAt))

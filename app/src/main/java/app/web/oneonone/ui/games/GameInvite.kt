@@ -1,6 +1,5 @@
 package app.web.oneonone.ui.games
 
-import android.os.SystemClock
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -142,15 +141,13 @@ internal fun optionsLabel(match: Match): String? = when {
  */
 @Composable
 internal fun rememberClockLeft(match: Match): List<Long>? {
-    val clock = match.clock ?: return null
-    val received = remember(match.id, match.version) { SystemClock.elapsedRealtime() }
-    var now by remember { mutableLongStateOf(received) }
+    if (match.clock == null) return null
+    var now by remember(match.id, match.receivedAtNanos) { mutableLongStateOf(System.nanoTime()) }
     val running = match.status == MatchStatus.Playing
-    LaunchedEffect(match.id, match.version, running) {
-        while (running) { now = SystemClock.elapsedRealtime(); delay(100) }
+    LaunchedEffect(match.id, match.receivedAtNanos, running) {
+        while (running) { now = System.nanoTime(); delay(100) }
     }
-    val turnSeat = if (running) match.turn?.let { match.players.indexOf(it) } ?: -1 else -1
-    return clock.left.mapIndexed { i, ms -> if (i == turnSeat) (ms - (now - received)).coerceAtLeast(0) else ms }
+    return match.clockLeft(now)
 }
 
 /** A chess-style clock face; highlighted while running, red under ten seconds. */

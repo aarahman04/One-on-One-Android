@@ -22,6 +22,12 @@ const val DICTATION_MAX_MS = 118_000
 const val DICTATION_MAX_BYTES = 3_000_000L
 
 @Serializable data class Transcription(val text: String, val language: String, val durationMs: Long)
+@Serializable data class LetterDraft(val to: String, val body: String, val from: String) {
+    fun spokenText(): String {
+        val paragraphs = body.split('\n').map { it.replace(Regex("\\s+"), " ").trim() }.filter { it.isNotEmpty() }
+        return (listOf("Dear ${to.trim()}.") + paragraphs + "With love, ${from.trim()}.").joinToString("\n\n")
+    }
+}
 data class NarrationPart(val file: File, val index: Int, val total: Int)
 class SpeechFailure(val status: Int, val code: String) : IOException(code)
 
@@ -33,6 +39,9 @@ internal fun canUseDeviceSpeech(error: Exception) = when (error) {
 }
 
 interface SpeechApi {
+    @Streaming @POST("api/connections/{connectionId}/narration-preview")
+    suspend fun previewNarration(@Path("connectionId") connection: String, @Body draft: LetterDraft,
+                               @Query("part") part: Int): Response<ResponseBody>
     @Streaming @GET("api/connections/{connectionId}/messages/{messageId}/narration")
     suspend fun narration(@Path("connectionId") connection: String, @Path("messageId") message: String,
                           @Query("part") part: Int): Response<ResponseBody>
@@ -40,15 +49,24 @@ interface SpeechApi {
 }
 
 interface SpeechGateway {
+    suspend fun previewNarration(connection: String, draft: LetterDraft, part: Int): NarrationPart
     suspend fun narration(connection: String, message: String, part: Int): NarrationPart
     suspend fun transcribe(file: File): Transcription
 }
 
-/** Uses the authenticated Retrofit client. Letter text never leaves the device in a narration request. */
+/** Saved letters use IDs; unsent previews send the draft to the same authenticated voice service. */
 class SpeechRepository @Inject constructor(@ApplicationContext private val context: Context, private val api: SpeechApi) : SpeechGateway {
+    override suspend fun previewNarration(connection: String, draft: LetterDraft, part: Int): NarrationPart {
+        require(part >= 0)
+        return download(api.previewNarration(connection, draft, part), part)
+    }
+
     override suspend fun narration(connection: String, message: String, part: Int): NarrationPart {
         require(part >= 0)
-        val response = api.narration(connection, message, part)
+        return download(api.narration(connection, message, part), part)
+    }
+
+    private suspend fun download(response: Response<ResponseBody>, part: Int): NarrationPart {
         if (!response.isSuccessful) throw failure(response)
         val body = response.body() ?: throw IOException("Empty narration.")
         var file: File? = null

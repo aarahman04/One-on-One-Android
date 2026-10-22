@@ -73,9 +73,17 @@ interface MessageStore {
 internal fun resolvedPendingKey(owner: String, message: ChatMessage): String? =
     message.tempId?.takeIf { message.senderId == owner }?.let { "pending:$it" }
 
-internal fun reconcileStored(existing: ChatMessage?, message: ChatMessage): ChatMessage =
-    (if (message.tempId != null && existing != null) message.copy(reactions = existing.reactions) else message)
-        .copy(tempId = message.tempId ?: existing?.tempId, deliveryState = "sent", error = null)
+internal fun reconcileStored(existing: ChatMessage?, message: ChatMessage): ChatMessage {
+    val current = when {
+        existing?.deletedAt != null -> existing
+        message.deletedAt != null -> message
+        existing?.editedAt != null && (message.editedAt == null || Instant.parse(existing.editedAt).isAfter(Instant.parse(message.editedAt))) ->
+            message.copy(content = existing.content, payload = existing.payload, editedAt = existing.editedAt)
+        else -> message
+    }
+    return current.copy(tempId = message.tempId ?: existing?.tempId, deliveryState = "sent", error = null,
+        reactions = if (message.tempId != null && existing != null) existing.reactions else current.reactions)
+}
 
 private fun sortableTime(value: String): String = DateTimeFormatterBuilder().appendInstant(9)
     .toFormatter().format(Instant.parse(value))

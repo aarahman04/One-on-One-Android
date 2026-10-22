@@ -1919,7 +1919,7 @@ Verification: Android `assembleDebug lintDebug testDebugUnitTest` **247 tests / 
 ### Xiaomi / two-phone checklist (game reactions and draws)
 - [ ] During each game send an emoji, a quick line and a typed comment from both phones; each shows under the sender's name on the other phone, above the buttons on the sender's, and covers nothing. Counter stops at 60.
 - [ ] Offer a draw in chess, a grid game and Ping Pong; decline once (offerer sees "declined"), accept once (both see "Draw by agreement", a game card is written).
-- [ ] Invite from phone A: phone B shows the centred pop-up; Play starts, Not now/X declines and A is told.
+- [ ] Invite from phone A: phone B shows the centred pop-up; Play starts, Not now declines, and X/Back/outside preserves the invitation in the chat banner (updated by the 2026-10-22 review).
 - [ ] Reaction pills on chat messages look smaller but still readable.
 
 ## Revert live dictation and shared TTS (2026-10-22, 2.0.10, versionCode 17)
@@ -1938,3 +1938,20 @@ Verification: `assembleDebug lintDebug testDebugUnitTest` PASS: **242 tests, 0 f
 - [ ] Letter mic: speak, Stop: words appended to the letter body; closing the letter mid-dictation cancels.
 - [ ] Cancel (X) in the dictation bar discards the recording.
 - [ ] Open a sent letter, tap speaker: natural server voice; preview speaker reads with the phone voice; Edit/Send/close stops it.
+
+
+## 2026-10-22 ? Games timer/comments and letter preview recitation
+
+Fixed countdown receipt anchoring: MatchSession timestamps accepted snapshots, including same-version sync responses. Clock UI uses that timestamp instead of resetting at composition or reusing an older version timestamp, clamps at zero, and stops at the server result. Comments now require the connected game transport and current account/connection, rather than blocking on stale partner presence. Regression tests cover same-version sync, screen re-entry, stopped/expired clocks, stale presence, reaction delivery and disconnected sends.
+
+Letter previews now select the same narration path as sent letters. SERVER_SPEECH=true uses a new authenticated draft POST in ../One-on-One/backend, reusing saved-letter voice/speed/splitting and the existing Android part playback/prefetch/fallback. Device-only builds keep both paths local. Both paths share spoken paragraph formatting. Drafts are not saved or sent as messages. Tests verify identical server synthesis input/voice, API authentication/payload, preview cleanup and device fallback.
+
+Validation: testDebugUnitTest (246 tests, zero failures/errors/skips), assembleDebug and lintDebug passed. Backend npm test (121/121) and npx tsc --noEmit passed. No physical-device check, install, release or deployment performed. Natural preview requires the companion backend update before use with SERVER_SPEECH=true; the website's preview is unchanged.
+
+## 2026-10-22 - App review, invitations and game verification
+
+Incoming invite dismissal now keeps the invite pending and exposes Play/Not now in a chat banner, allowing typing to continue. Android/web no longer block invitations on partner presence; the backend creates pending invites for offline recipients and attempts the existing native push. Membership, busy checks and the 30-second expiry remain. Four turn-game clock tests cover synchronization, increments, reconnect, draw offers, timeout, late moves, rematches and no-limit play. Ping Pong remains score-based per owner instruction.
+
+Also fixed a reproduced Chess zero-size/NaN crash during keyboard/window resizing, short-screen comment tray scrolling, game action wrapping, old-match reaction leakage, malformed live-event stream termination, per-message cache error isolation, stale history undoing edits/deletions, retry after transient preference-sync failure, expired photo URL reuse and GIF search pagination/retry. See QUALITY-REVIEW-2026-10-22.md for the scope and remaining checks.
+
+Validation: latest Android JVM results are 251 tests across 40 suites, zero failures/errors; final Kotlin compilation and assembleDebug completed. Backend 126/126 tests and TypeScript passed. Web 48/48 tests, strict lint/TypeScript, production build and full browser fixtures at 1280px/360px passed. Earlier narration/timer lint passed; final broad-review lint and remaining emulator checks were stopped at the owner's request to update docs and push without further build work. Emulator reproduced the original Chess crash but ANRs prevented completing post-fix native interactions. No physical-device or live FCM/two-device-call check, release or production deployment performed. Companion backend changes must be deployed for offline invitation delivery and server preview narration.

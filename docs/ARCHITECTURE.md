@@ -1246,3 +1246,29 @@ flowchart TD
 ```
 
 Text appears after Stop, not live; the dictation bar has Cancel again and the composer is hidden while listening. The device recognizer is the default platform one (no on-device-only recognizer, no formatting extra). Each play creates and shuts down its own TextToSpeech engine. Kept from the batch: letter preview read-aloud (device voice), 118 s clip cap, 4000-character append cap, label-aligned letter mic.
+
+
+## Game clocks, comments and matching letter preview (2026-10-22)
+
+MatchSession timestamps every accepted snapshot with its monotonic clock. The UI subtracts elapsed time from that receipt, including a same-version sync and a reopened screen; only the side to move counts down. The server still decides timeout outcomes. Game comments require a connected transport and the current account/connection, while partner presence is used only to start games.
+
+```mermaid
+flowchart LR
+    Preview[Unsent letter preview] --> Draft[Authenticated draft narration POST]
+    Sent[Sent letter] --> Saved[Authenticated message-ID narration GET]
+    Draft --> Pipeline[Same paragraph splitting, Kokoro voice and speed]
+    Saved --> Pipeline
+    Pipeline --> Player[LetterNarrator parts and prefetch]
+    Player -->|service unavailable| Device[Device voice with the same spoken paragraphs]
+```
+
+This supersedes the device-only preview rule above. SERVER_SPEECH=false keeps both preview and sent-letter playback on device voice. With server speech enabled, tapping Read on a preview sends its draft to the backend without saving or sending a chat message. The backend update in ../One-on-One is required before using natural preview narration; no deployment was performed.
+
+
+## Review follow-up: invitations, live events and reconciliation (2026-10-22)
+
+An incoming invite's modal may be dismissed without a match action. A compact banner keeps Play/Not now available while the recipient types. Explicit Not now alone sends match:decline. The sender only needs their own connected transport and active account/connection; the backend creates invites for offline recipients and attempts native push. The existing 30-second expiry and server authorization remain.
+
+Socket JSON is decoded per event with date checks before presentation. Failed event/cache work is caught inside each collector so a single failure cannot stop later messages. Reconciliation retains deletion tombstones and newer edits over stale history or delayed acknowledgements. Account preference synchronization retries transient failures; a true legacy 404 retains the one-attempt compatibility behavior. GIF search and pagination share a query-scoped coroutine, with explicit retry after failure.
+
+Chess skips zero-size board rendering during keyboard/resize transitions; game action buttons wrap labels and comment trays scroll when height is limited. Settings/call photo requests include their current signed URL in remember keys.

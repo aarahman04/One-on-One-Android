@@ -2,6 +2,7 @@ package app.web.oneonone.data
 
 import app.web.oneonone.data.api.BearerInterceptor
 import app.web.oneonone.data.media.SpeechApi
+import app.web.oneonone.data.media.LetterDraft
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -17,6 +18,26 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 class SpeechApiTest {
+    @Test fun previewPostsDraftWithTheSamePartProtocolAndAuthentication() = runBlocking {
+        val draft = LetterDraft("you", "Hello, world!", "me")
+        val client = OkHttpClient.Builder().addInterceptor(BearerInterceptor(FakeSession())).addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals("POST", request.method)
+            assertEquals("Bearer old", request.header("Authorization"))
+            assertEquals("/api/connections/connection/narration-preview?part=2", request.url.encodedPath + "?" + request.url.encodedQuery)
+            val body = Buffer(); request.body!!.writeTo(body)
+            assertEquals(Json.encodeToString(LetterDraft.serializer(), draft), body.readUtf8())
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .header("X-Narration-Part", "2").header("X-Narration-Parts", "3")
+                .body(byteArrayOf(1, 2).toResponseBody("audio/ogg".toMediaType())).build()
+        }.build()
+        val api = Retrofit.Builder().baseUrl("https://example.test/").client(client)
+            .addConverterFactory(Json.asConverterFactory("application/json".toMediaType())).build().create(SpeechApi::class.java)
+        val response = api.previewNarration("connection", draft, 2)
+        assertEquals("2", response.headers()["X-Narration-Part"])
+        response.body()!!.close()
+    }
+
     @Test fun narrationUsesAuthenticatedGetWithIdsAndPartOnly() = runBlocking {
         val client = OkHttpClient.Builder().addInterceptor(BearerInterceptor(FakeSession())).addInterceptor { chain ->
             val request = chain.request()

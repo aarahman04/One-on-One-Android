@@ -23,6 +23,7 @@ import org.junit.Assert.*
 private class MatchTransport(val chat: FakeTransport = FakeTransport()) : Transport by chat {
     override val matchStates = MutableSharedFlow<JsonObject>(extraBufferCapacity = 64)
     override val pongFrames = MutableSharedFlow<JsonObject>(extraBufferCapacity = 64)
+    override val matchReactions = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
     val calls = mutableListOf<Pair<String, JsonObject>>()
     var reply: (String, JsonObject) -> JsonObject = { _, _ -> buildJsonObject { put("ok", true) } }
     override suspend fun match(event: String, payload: JsonObject): JsonObject { calls += event to payload; return reply(event, payload) }
@@ -62,16 +63,17 @@ class GameViewModelTest {
         assertEquals(1, vm.ui.value.seat)
     }
 
-    @Test fun hubNeedsThePartnerOnline() = runTest {
+    @Test fun offlinePartnerCanBeInvitedButOurOwnConnectionIsRequired() = runTest {
         val (vm, transport) = fixture(online = false)
-        vm.hub(); assertEquals("Games need Alex to be online.", vm.error.value)
-        assertEquals(GameStage.Idle, vm.ui.value.stage)
-        transport.chat.presence.emit(PresenceUpdate("other", true)); runCurrent()
         vm.hub(); runCurrent()
         assertEquals(GameStage.Hub, vm.ui.value.stage)
+        assertNull(vm.error.value)
+        vm.invite(GameKind.Chess); runCurrent()
+        assertEquals("match:invite", transport.calls.last().first)
         transport.chat.state.value = ConnectionState.Offline; runCurrent()
         vm.dismissHub(); vm.hub(); runCurrent()
         assertEquals(GameStage.Idle, vm.ui.value.stage)
+        assertEquals("Couldn't reach the game. Check your connection.", vm.error.value)
     }
 
     @Test fun incomingInviteAcceptAndDecline() = runTest {
@@ -111,5 +113,24 @@ class GameViewModelTest {
         assertEquals(true, transport.calls.last().second["away"]!!.jsonPrimitive.boolean)
         vm.foreground(true); runCurrent()
         assertEquals(false, transport.calls.last().second["away"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test fun commentsUseTheGameConnectionEvenWhenPartnerPresenceIsStale() = runTest {
+        val (vm, transport) = fixture(online = false)
+        transport.matchStates.emit(snapshot("playing", "me")); runCurrent()
+        vm.react("Nice move!"); runCurrent()
+        assertEquals("match:react", transport.calls.last().first)
+        assertEquals("Nice move!", transport.calls.last().second["text"]!!.jsonPrimitive.content)
+        transport.matchReactions.emit(buildJsonObject {
+            put("id", "reaction1"); put("matchId", "m1"); put("from", "other"); put("text", "Good game!")
+        }); runCurrent()
+        assertEquals(listOf(GameReaction("reaction1", "other", "Good game!")), vm.reactions.value)
+        transport.matchStates.emit(JsonObject(snapshot("playing", "me") + ("id" to JsonPrimitive("m2")))); runCurrent()
+        assertTrue(vm.reactions.value.isEmpty())
+        transport.chat.state.value = ConnectionState.Offline; runCurrent()
+        val count = transport.calls.size
+        vm.react("Again"); runCurrent()
+        assertEquals(count, transport.calls.size)
+        assertEquals("Couldn't reach the game. Check your connection.", vm.error.value)
     }
 }

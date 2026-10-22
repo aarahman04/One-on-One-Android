@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -67,7 +68,7 @@ internal fun ReactionTray(visible: Boolean, onSend: (String) -> Unit, onClose: (
         val send = { if (draft.isNotBlank()) { onSend(draft); draft = ""; onClose() } }
         Surface(Modifier.fillMaxWidth().padding(horizontal = s.md12, vertical = s.sm8), shape = RoundedCornerShape(OneTheme.radii.lg16),
             color = c.bgRaised, border = BorderStroke(1.dp, c.border), shadowElevation = 6.dp) {
-            Column(Modifier.padding(s.md12), verticalArrangement = Arrangement.spacedBy(s.sm8)) {
+            Column(Modifier.padding(s.md12).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(s.sm8)) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(s.xs4)) {
                     QuickEmoji.forEach { emoji ->
                         Box(Modifier.size(OneTheme.sizes.send48).clip(CircleShape).clickable(role = Role.Button) { onSend(emoji); onClose() }
