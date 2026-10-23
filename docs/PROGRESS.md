@@ -1989,3 +1989,23 @@ Incoming invite dismissal now keeps the invite pending and exposes Play/Not now 
 Also fixed a reproduced Chess zero-size/NaN crash during keyboard/window resizing, short-screen comment tray scrolling, game action wrapping, old-match reaction leakage, malformed live-event stream termination, per-message cache error isolation, stale history undoing edits/deletions, retry after transient preference-sync failure, expired photo URL reuse and GIF search pagination/retry. See QUALITY-REVIEW-2026-10-22.md for the scope and remaining checks.
 
 Validation: latest Android JVM results are 251 tests across 40 suites, zero failures/errors; final Kotlin compilation and assembleDebug completed. Backend 126/126 tests and TypeScript passed. Web 48/48 tests, strict lint/TypeScript, production build and full browser fixtures at 1280px/360px passed. Earlier narration/timer lint passed; final broad-review lint and remaining emulator checks were stopped at the owner's request to update docs and push without further build work. Emulator reproduced the original Chess crash but ANRs prevented completing post-fix native interactions. No physical-device or live FCM/two-device-call check, release or production deployment performed. Companion backend changes must be deployed for offline invitation delivery and server preview narration.
+
+## 2026-10-23 - Ping Pong red-racket outline boundary
+
+The owner rejected the experimental physics rebuild and requested the original ball sizes and shot physics back. That rebuild was reverted. The retained fix (`cfc8434`, branch `fix/pingpong-physics-rules`) is an Android presentation boundary for the local red racket; the blue racket's settings, height-dependent ball size, server flight, spin, scoring and network protocol remain unchanged. The sibling web/backend repository has no net change from this work.
+
+`PongClient.visibleBallPosition()` now keeps the entire painted ball outside the red racket's black head outline and handle. It checks the current racket position on every render, regardless of direction, speed, return eligibility or pending-hit state. This prevents a moving racket from covering a fixed pending contact or an overlapping snapshot. Exact-centre contact has a finite forward fallback. The guard uses the existing head/outline radii and shares the existing handle dimensions with the renderer; it never writes the authoritative `ballX`/`ballY`, changes shot velocity or interrupts racket movement. A clear ball keeps its original displayed position. This is a display-boundary fix, not a replacement collision simulation.
+
+Verification for `cfc8434`: `gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --console=plain` passed, **279 tests, zero failures/errors**, debug APK and lint successful. The new all-side and pending-follow-through regression tests failed before the guard and passed afterwards. `PongClientTest` covers both seats, twelve approach directions, three ball heights, the head and handle, exact-centre overlap, pending-contact expiry, snapshots, unchanged authoritative flight and continuous racket movement. Existing physics/demo/scoring tests remain intact.
+
+The APK was reinstalled without clearing data on `PongRemake_Check` (`emulator-5580`). The real in-chat `/game` route opened Ping Pong; six native forward/back/side/diagonal swipe gestures completed with the game still open and no AndroidRuntime fatal exception. A later relaunch found no emulator process or ADB device: the emulator itself was cold-booted visibly, then the app and a fresh Ping Pong session were opened and the game screen inspected. This establishes launch recovery, not the cause of every reported game stall. Emulator screenshots/logs are local temporary evidence, not repository assets.
+
+Xiaomi / physical-device checks remain:
+
+- [ ] Swipe fast and slowly through an arriving ball; confirm the whole ball stays outside the red racket's black outline.
+- [ ] Repeat diagonal, sideways and backward contact, including the handle and each side of the head.
+- [ ] Follow through and wiggle the racket after a hit; confirm the original shot feel, ball size and blue-racket behavior.
+- [ ] Check both players' views over a real two-phone connection, including delayed packets and a new point.
+- [ ] If the game stalls again, capture the screen and logs before restarting; the underlying stall has not been diagnosed.
+
+No release version/signing change, Play upload, merge, production deployment or database migration is part of this follow-up.

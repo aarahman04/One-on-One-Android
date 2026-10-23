@@ -1320,3 +1320,21 @@ An incoming invite's modal may be dismissed without a match action. A compact ba
 Socket JSON is decoded per event with date checks before presentation. Failed event/cache work is caught inside each collector so a single failure cannot stop later messages. Reconciliation retains deletion tombstones and newer edits over stale history or delayed acknowledgements. Account preference synchronization retries transient failures; a true legacy 404 retains the one-attempt compatibility behavior. GIF search and pagination share a query-scoped coroutine, with explicit retry after failure.
 
 Chess skips zero-size board rendering during keyboard/resize transitions; game action buttons wrap labels and comment trays scroll when height is limited. Settings/call photo requests include their current signed URL in remember keys.
+
+## Ping Pong local painted-racket clearance (2026-10-23)
+
+The original flight/height model and server authority remain. The experimental physics rewrite was reverted at the owner's request. The local red racket has an extra presentation step because its immediate motion can cover a pending contact or a delayed ball snapshot; the blue racket's behavior and dimensions are unchanged.
+
+```mermaid
+flowchart LR
+    Server[Authoritative server or debug-demo flight] --> State[PongClient ballX / ballY / height]
+    State --> Candidate[Pending local contact or flight position]
+    Touch[Existing local racket input] --> Red[Current red-racket position]
+    Candidate --> Guard[visibleBallPosition: painted head and handle clearance]
+    Red --> Guard
+    Dimensions[Existing radii and shared handle dimensions] --> Guard
+    Guard --> Canvas[PongUi draws the ball outside the black outline]
+    Remote[Existing remote-racket interpolation] --> Blue[Unchanged blue-racket rendering]
+```
+
+The guard projects an overlapping displayed ball outside the outlined head, then clears the exposed handle sides/bottom. It accounts for the ball's complete black outer circle and retains height-dependent sizing. At coincident centres it chooses a finite forward position. It runs for every displayed ball without contact-eligibility or direction gates, so pending follow-through, side/back contact and snapshot overlap cannot hide the ball under the red racket. When already clear, the original position is returned. The projection never modifies authoritative ball state, velocity, spin, score, the local racket or the wire format; it must not be treated as authoritative collision physics. Geometry tests cover both seats and the existing head/handle drawing dimensions.
