@@ -6,16 +6,6 @@ import org.junit.Test
 
 class PongClientTest {
     private val ms = 1_000_000L
-    private fun assertOutsideRedRim(p: PongClient) {
-        val visible = p.visibleBallPosition()
-        assertTrue("ball=$visible, bat=${p.myX},${p.myY}, height=${p.height}",
-            kotlin.math.hypot(visible.first - p.myX, visible.second - p.myY) >= PongClient.contactRadius(p.height) - 1e-6f)
-        val dx = kotlin.math.max(0f, kotlin.math.abs(visible.first - p.myX) - (PongClient.HandleWidth + PongClient.HandleOutline) / 2)
-        val top = p.myY + PongClient.HeadR * .55f - PongClient.HandleOutline / 2
-        val bottom = p.myY + PongClient.HeadR + PongClient.HandleLength + PongClient.HandleOutline / 2
-        val dy = maxOf(0f, top - visible.second, visible.second - bottom)
-        assertTrue("ball=$visible intersects handle", kotlin.math.hypot(dx, dy) >= PongClient.ballRadius(p.height) * 1.35f - 1e-6f)
-    }
     private fun frame(
         b: List<Float> = listOf(.2f, .3f, 0f, 0f),
         extra: JsonObjectBuilder.() -> Unit = {},
@@ -113,7 +103,7 @@ class PongClientTest {
         assertEquals(PongClient.contactRadius(p.height), kotlin.math.hypot(p.myX - firstContact.first, p.myY - firstContact.second), 1e-4f)
         p.receive(frame(listOf(1.03f, 1.4f, 0f, -1f)) { put("h", 2); put("l", false) }, "m", 20 * ms)
         p.paddle(1.03f, 1.3f)
-        assertOutsideRedRim(p)
+        assertEquals(p.ballX to p.ballY, p.visibleBallPosition())
         assertEquals(1.03f to 1.4f, p.ballX to p.ballY)
     }
 
@@ -225,7 +215,7 @@ class PongClientTest {
         assertEquals(1, p.hits)
     }
 
-    @Test fun followThroughKeepsTheOutgoingFlightAndClearsTheVisibleRedRimAtAnyShotSpeed() {
+    @Test fun followThroughKeepsTheDisplayedOutgoingFlightAtAnyShotSpeed() {
         for (speed in listOf(.15f, 1f, 4f)) for (seat in 1..2) {
             val p = PongClient(seat)
             val b = if (seat == 1) listOf(.5f, 1.5f, 0f, -speed) else listOf(.5f, .3f, 0f, speed)
@@ -233,11 +223,11 @@ class PongClientTest {
             val before = p.ballX to p.ballY
             p.paddle(.5f, 1.3f)
             assertEquals(before, p.ballX to p.ballY)
-            assertOutsideRedRim(p)
+            assertEquals(before, p.visibleBallPosition())
             repeat(8) { i ->
                 p.advance((2 + i * 10) * ms)
                 p.paddle(.5f, 1.3f)
-                assertOutsideRedRim(p)
+                assertEquals(p.ballX to p.ballY, p.visibleBallPosition())
                 assertEquals(before.first, p.ballX, 1e-6f)
                 assertEquals(before.second - speed * (1 + i * 10) / 1000, p.ballY, 1e-6f)
             }
@@ -257,6 +247,27 @@ class PongClientTest {
         }
     }
 
+    @Test fun sideAndBackFollowThroughKeepTheSameFlightInRedAndBlueViews() {
+        for (seat in 1..2) for (speed in listOf(.15f, 4f))
+            for (swipe in listOf(.005f, .15f)) for (side in listOf(-1f, 1f)) {
+                val red = PongClient(seat); val blue = PongClient(3 - seat)
+                val b = if (seat == 1) listOf(.5f, 1.7f, .2f, -speed) else listOf(.5f, .1f, -.2f, speed)
+                val snapshot = frame(b) { put("drift", 0f) }
+                for (p in listOf(red, blue)) assertTrue(p.receive(snapshot, "m", ms))
+                repeat(8) { i ->
+                    val now = (1 + i * 16) * ms
+                    red.advance(now); blue.advance(now)
+                    red.paddle(red.ballX + side * (.12f - swipe * i), red.ballY - .08f)
+                    val shown = red.visibleBallPosition(); val other = blue.visibleBallPosition()
+                    assertEquals(red.ballX to red.ballY, shown)
+                    assertEquals(1 - other.first, shown.first, 1e-5f)
+                    assertEquals(PongClient.CourtH - other.second, shown.second, 1e-5f)
+                    assertEquals(1, red.hits)
+                    assertEquals(if (seat == 1) 4 else 2, red.myScore)
+                }
+            }
+    }
+
     @Test fun ballSnapshotsCannotPushTheLocalBatBackAgainstAForwardSwipe() {
         val p = PongClient(1)
         p.receive(frame(listOf(.5f, 1.5f, 0f, -1f)) { put("drift", 0f) }, "m", ms)
@@ -267,7 +278,7 @@ class PongClientTest {
             p.advance((3 + i * 20) * ms)
             p.paddle(.5f, 1.3f)
             assertTrue("frame=$i moved backwards", p.myY <= previousY + 1e-5f)
-            assertOutsideRedRim(p)
+            assertEquals(p.ballX to p.ballY, p.visibleBallPosition())
             previousY = p.myY
         }
     }
@@ -278,41 +289,44 @@ class PongClientTest {
             val b = if (seat == 1) listOf(.5f, 1.6f, 0f, 1f) else listOf(.5f, .2f, 0f, -1f)
             p.receive(frame(b) { put("l", true); put("drift", 0f) }, "m", ms)
             p.paddle(.5f, 2.4f)
+            var contact: Pair<Float, Float>? = null
             for ((i, y) in listOf(2f, 1.7f, 1.4f, 1.3f).withIndex()) {
                 p.paddle(.5f, y)
                 p.advance((2 + i * 16) * ms)
                 assertEquals("frame=$i, seat=$seat", y, p.myY, 1e-6f)
-                assertOutsideRedRim(p)
+                if (i == 1) contact = p.visibleBallPosition()
+                if (i >= 1) assertEquals(contact, p.visibleBallPosition())
             }
             assertEquals(1, p.hits)
         }
     }
 
-    @Test fun aPendingCornerContactClearsTheCurrentRimAndConfirmationReleasesIt() {
+    @Test fun aPendingCornerContactStaysFixedAndConfirmationReleasesIt() {
         for (side in listOf(-1f, 1f)) {
             val p = PongClient(1)
             p.receive(frame(listOf(.5f, 1.6f, 0f, 1f)) { put("l", true); put("drift", 0f) }, "m", ms)
             p.paddle(.5f + side * .12f, 2f)
             p.paddle(.5f + side * .12f, 1.6f)
-            assertOutsideRedRim(p)
+            val contact = p.visibleBallPosition()
+            assertEquals(PongClient.contactRadius(p.height), kotlin.math.hypot(contact.first - p.myX, contact.second - p.myY), 1e-5f)
             p.paddle(.5f - side * .15f, 1.3f)
-            assertOutsideRedRim(p)
+            assertEquals(contact, p.visibleBallPosition())
             assertEquals(1.3f, p.myY, 1e-6f)
             p.receive(frame(listOf(.5f, 1.4f, 0f, -1f)) { put("h", 2); put("drift", 0f) }, "m", 20 * ms)
             p.paddle(.65f, 1.3f)
             p.advance(30 * ms)
             val flight = p.ballX to p.ballY
-            assertOutsideRedRim(p)
+            assertEquals(flight, p.visibleBallPosition())
             p.paddle(.35f, 1.3f)
             assertEquals(flight, p.ballX to p.ballY)
-            assertOutsideRedRim(p)
+            assertEquals(flight, p.visibleBallPosition())
             p.paddle(1.2f, 1.3f)
             assertEquals(flight, p.visibleBallPosition())
             assertTrue(p.ballY < 1.4f)
         }
     }
 
-    @Test fun redBatKeepsTheWholeBallOutsideItsBlackOutlineFromEverySide() {
+    @Test fun movingTheRedBatAroundTheBallCannotOrbitItsDisplayedFlight() {
         for (seat in 1..2) for (height in listOf(0f, .16f, PongClient.ArcH)) for (angle in 0 until 360 step 30) {
             val p = PongClient(seat)
             val b = if (seat == 1) listOf(.5f, 1.7f, 0f, 0f) else listOf(.5f, .1f, 0f, 0f)
@@ -322,31 +336,33 @@ class PongClientTest {
             val y = 1.7f + .05f * kotlin.math.sin(radians).toFloat()
             val flight = p.ballX to p.ballY
             p.paddle(x, y)
-            assertOutsideRedRim(p)
+            assertEquals("seat=$seat, height=$height, angle=$angle", flight, p.visibleBallPosition())
             assertEquals(x to y, p.myX to p.myY)
             assertEquals(flight, p.ballX to p.ballY)
         }
     }
 
-    @Test fun redRimAlsoProtectsPendingFollowThroughExpiryAndOverlappingSnapshots() {
+    @Test fun pendingContactExpiryAndOverlappingSnapshotsReturnToTheFlight() {
         val p = PongClient(1)
         p.receive(frame(listOf(.5f, 1.6f, 0f, 1f)) { put("l", true); put("drift", 0f) }, "m", ms)
         p.paddle(.5f, 2.4f)
+        var contact: Pair<Float, Float>? = null
         for ((i, y) in listOf(2f, 1.7f, 1.6f, 1.5f, 1.3f).withIndex()) {
             p.paddle(.5f, y)
             p.advance((2 + i * 16) * ms)
-            assertOutsideRedRim(p)
+            if (i == 1) contact = p.visibleBallPosition()
+            if (i >= 1) assertEquals(contact, p.visibleBallPosition())
             assertEquals(y, p.myY, 1e-6f)
         }
         p.advance(200 * ms)
-        assertOutsideRedRim(p)
+        assertEquals(p.ballX to p.ballY, p.visibleBallPosition())
         p.receive(frame(listOf(.5f, 1.3f, 0f, -1f)) { put("h", 2); put("drift", 0f) }, "m", 201 * ms)
-        assertOutsideRedRim(p) // Exact centre contact must have a finite outward fallback.
+        assertEquals(.5f to 1.3f, p.visibleBallPosition())
         assertEquals(.5f to 1.3f, p.ballX to p.ballY)
         assertEquals(2, p.hits)
     }
 
-    @Test fun redHandleCannotCoverAnOutgoingBallBehindTheHead() {
+    @Test fun redHandleCannotDisplaceAnOutgoingBallBehindTheHead() {
         for (height in listOf(0f, .16f, PongClient.ArcH)) for (dx in listOf(0f, .05f, .08f))
             for (dy in listOf(.18f, .25f, .3f)) {
                 val p = PongClient(1)
@@ -354,9 +370,27 @@ class PongClientTest {
                     putJsonArray("z") { add(height); add(0f) }
                 }, "m", ms)
                 p.paddle(.5f, 1.4f)
-                assertOutsideRedRim(p)
+                assertEquals(p.ballX to p.ballY, p.visibleBallPosition())
                 assertEquals(.5f + dx to 1.4f + dy, p.ballX to p.ballY)
             }
+    }
+
+    @Test fun aDelayedSnapshotCannotMoveAPendingContactAroundTheRedBat() {
+        val p = PongClient(1)
+        val incoming = frame(listOf(.5f, 1.6f, 0f, 1f)) { put("l", true); put("drift", 0f) }
+        p.receive(incoming, "m", ms); p.advance(ms)
+        p.paddle(.5f, 2f); p.paddle(.5f, 1.6f)
+        val contact = p.visibleBallPosition()
+        assertTrue(contact.second < p.ballY)
+        p.paddle(contact.first, contact.second)
+        assertTrue(p.receive(incoming, "m", 33 * ms))
+        p.advance(33 * ms)
+        assertEquals(contact, p.visibleBallPosition())
+        p.advance(152 * ms)
+        assertEquals(p.ballX to p.ballY, p.visibleBallPosition())
+        p.paddle(.55f, 1.3f)
+        assertEquals(p.ballX to p.ballY, p.visibleBallPosition())
+        assertEquals(1, p.hits)
     }
 
 }

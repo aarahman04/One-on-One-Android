@@ -1338,3 +1338,18 @@ flowchart LR
 ```
 
 The guard projects an overlapping displayed ball outside the outlined head, then clears the exposed handle sides/bottom. It accounts for the ball's complete black outer circle and retains height-dependent sizing. At coincident centres it chooses a finite forward position. It runs for every displayed ball without contact-eligibility or direction gates, so pending follow-through, side/back contact and snapshot overlap cannot hide the ball under the red racket. When already clear, the original position is returned. The projection never modifies authoritative ball state, velocity, spin, score, the local racket or the wire format; it must not be treated as authoritative collision physics. Geometry tests cover both seats and the existing head/handle drawing dimensions.
+
+## Ping Pong red-racket side/back display correction (2026-10-23)
+
+This supersedes the clearance guard above. Repeatedly projecting the displayed ball out of the moving red head/handle made it slide around the curve, below the bat and back toward the front. `visibleBallPosition()` now returns the existing fixed pending contact, or the current flight position after confirmation/expiry. Later bat movement cannot relocate either position. The original swept-contact preview, hit detection, ball height/size, flight, spin, bounce, scores and blue-racket interpolation remain unchanged. Both bats retain their existing drawing order, so contact can briefly occlude the ball instead of inventing a detour.
+
+```mermaid
+flowchart LR
+    Input[Local bat movement] --> Contact[Existing eligible swept contact, once per return]
+    Contact --> Pending[Fixed pending position, at most 150 ms]
+    Server[Server hit or round reset] --> Clear[Clear pending position]
+    Flight[Existing ball flight] --> Visible[Pending position or flight position]
+    Pending --> Visible
+    Clear --> Visible
+    Visible --> Canvas[Existing ball/trail and bat drawing order]
+```

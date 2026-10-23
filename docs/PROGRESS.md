@@ -3,6 +3,24 @@
 Current Ping Pong work: [reference remake](games/PONG-REFERENCE-REMAKE.md)
 (2026-10-22). The 2026-10-21 handoff describes the earlier implementation.
 
+## Ping Pong red-racket side/back display correction (2026-10-23)
+
+The outline-clearance guard added in #51 caused the reported detour: moving the red bat repeatedly pushed the displayed ball around its curved head and handle, despite an unchanged underlying flight. Removed that extra projection. The existing fixed pending contact remains until server confirmation, reset or its 150 ms expiry; subsequent bat movement cannot drag it around. Confirmed flight uses its actual position, including side/back overlap. The existing ball size, shot physics, contact detection, blue bat and drawing order remain.
+
+Regression checks cover both seats, side/back/head-centre overlap at three heights, light/fast outgoing flights, fixed pending contact through follow-through, delayed snapshots, expiry and confirmation. Tests compare displayed positions as well as underlying ball state.
+
+Validation: the side/head and back/handle regressions both failed with the old guard. After the fix, `gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --console=plain` passed: **281 tests, zero failures/errors/skips**, debug APK built and lint successful.
+
+At the owner's request, the updated APK was reinstalled with `adb install -r` on `PongRemake_Check` (`emulator-5580`), preserving app data. `.DemoChatActivity` opened the real in-chat games route and Ping Pong was left running against the debug bot; the game screen and moving ball were visually confirmed. This was a launch smoke check, not a manual gameplay or two-account latency test. The fix itself is in production `app/src/main/java/app/web/oneonone/data/games/PongGame.kt`, called by the production `PongUi`/`MatchSession` path; no debug/demo physics file changed.
+
+Delivery instruction: the owner authorized a direct push to `main` and an `android-build` workflow dispatch using the existing **versionCode 18 / versionName 2.0.11**. Version defaults, app identity and signing configuration remain unchanged. The workflow builds signed APK/AAB artifacts; Play upload remains separate.
+
+### Xiaomi checklist
+
+- [ ] Swipe lightly and hard through both red-bat corners: no downward detour around the curved edge.
+- [ ] Move the head/back/handle across an outgoing ball: it continues its flight without sliding around the bat; brief occlusion at contact is expected.
+- [ ] Repeat as each player with delayed packets: one normal return, unchanged blue bat, speed, spin, bounce and scoring.
+
 ## Release 2.0.11 (2026-10-22, versionCode 18)
 
 - Workflow dispatch defaults bumped from 17 / 2.0.10 to **18 / 2.0.11**. Gradle's unsigned/development fallback remains 5 / 2.0.0-dev. The owner requested merging the paired Ping Pong PRs. Manual release workflow dispatch is deferred at the owner's request; no new signed release has been built. Normal PR/main checks still run automatically.
