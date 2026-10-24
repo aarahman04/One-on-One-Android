@@ -1409,3 +1409,8 @@ flowchart LR
 Local real-socket checks cover all turn-game clocks/increments/comments, timeout
 without another move and Pong 11/21/custom targets. Offline demo approval does
 not substitute for the signed two-account production checklist.
+
+
+The chat composer now requests `KeyboardCapitalization.Sentences` from the
+platform keyboard. Draft storage, slash parsing and the message transport retain
+the typed text; this does not add a text-transform layer.

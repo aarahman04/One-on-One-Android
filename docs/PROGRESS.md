@@ -2138,3 +2138,23 @@ Xiaomi / production checks on the new signed build and new backend:
 
 No Play upload is requested. Signed APK production-account testing and physical
 Xiaomi checks remain distinct from the successful local/demo checks.
+
+
+Same-release follow-up: the message composer requests Android sentence
+capitalization, so the keyboard starts a new message and sentences with a
+capital. This is an IME setting; users can still choose lowercase and pasted
+text/slash commands are not rewritten. Included in 2.0.12 / 19, with no second
+version increment.
+
+
+Production deployment gate completed: backend #128 merged as `30a7473`;
+Railway's automatic GitHub deploy is ACTIVE at deployment
+`591f5e01-d64b-4d67-a2b2-67eb2bf5bf4d`, with the #128 merge as source and
+production health returning status:ok. The old #121 deployment is replaced.
+New matches use the current verified contract. No live user game or chat message
+was created for the check.
+
+
+Capitalization was checked on the rebuilt emulator app: the focused composer
+reports inputType `0x2c001`, including Android's `TYPE_TEXT_FLAG_CAP_SENTENCES`
+(`0x4000`). No test message was sent.

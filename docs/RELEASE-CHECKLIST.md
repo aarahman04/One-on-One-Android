@@ -28,6 +28,12 @@ handler. This explains the production defaults despite newer Android builds.
 Railway's configured repo is One-on-One, root `backend`, branch `main`, auto
 deploy enabled, one replica. A merged PR alone is not proof of a live deployment.
 
+Deployment gate verified on 2026-10-24: backend #128 merged as `30a7473` and
+Railway automatically activated deployment `591f5e01-d64b-4d67-a2b2-67eb2bf5bf4d`
+with the #128 merge as source, replacing #121. Production `/health` returns
+`status:ok`. This verifies live source and availability; no authenticated
+production-account game was created. Existing in-memory games reset on rollout.
+
 1. Merge backend #128 after checks. Verify Railway's **active deployment source**
    includes the resulting main commit, rather than clicking Redeploy on the old
    #121 deployment. If the GitHub trigger does not create a deployment, use
