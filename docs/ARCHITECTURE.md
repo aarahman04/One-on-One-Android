@@ -16,8 +16,10 @@ arrive first. The last hitter cannot recapture an outgoing flight.
 confirmed server flight without circular ball-to-bat display corrections. It
 never awards a local score or hit. Strength controls duration from 1.35 s for a
 neutral/light touch to 1.0 s at maximum power, separately from the recovered
-aiming/spin parameters. The curve is fixed by the stroke captured at contact
-(bat movement afterwards never steers) and ends at the table landing; the bounce
+aiming/spin parameters. The sideways landing point and curve are fixed by the
+stroke captured at contact (soft-saturated inside the table; only fast
+near-sideways swipes overhit), bat movement afterwards never steers, and the
+curve ends at the table landing; the bounce
 is at most 45 degrees sideways and keeps .9 of the shot's own pace.
 See [reference remake](games/PONG-REFERENCE-REMAKE.md).
 

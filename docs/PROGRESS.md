@@ -2177,6 +2177,7 @@ device-tested.
 - [ ] A hard flick still feels quick but is visibly slower than 2.0.12 (about 1 s across).
 - [ ] After the table bounce hard shots stay lively, soft shots stay slow, and the ball never speeds up.
 - [ ] A diagonal swipe still curves the ball until it lands; moving the bat left/right after contact changes nothing.
+- [ ] Hard diagonal drives land on the table toward their side; only a very fast near-sideways flick goes off the side.
 - [ ] Short drops near the net and deep balls near the end line can be reached from the baseline.
 - [ ] Wide shots near the side still go out and score when not returned.
 - [ ] Own-hit prediction has no visible jump on confirmation against the new backend.

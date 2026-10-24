@@ -53,7 +53,7 @@ class PongClient(val seat: Int) {
     private var predictionGap = 0.0
     private var predictionViewAt = 0.0
     private var predictionDriftAt = 0L
-    private var predictionSide = 0.0 // contact stroke; later movement never steers
+    private var predictionDrift = 0f // fixed at contact; later movement never steers
     private var confirmationLog = false
     private var confirmationAccepted = false
     private var confirmationDelay = 0.0
@@ -77,7 +77,7 @@ class PongClient(val seat: Int) {
     private var reconcileViewAt = 0.0
     private var reconcileAt = 0L
     private var reconcileDriftAt = 0L
-    private var reconcileSide = 0.0
+    private var reconcileDrift = 0f
     private val blendSource = FloatArray(3)
     private var blendAt = 0L
     private var blendX = 0f
@@ -150,7 +150,7 @@ class PongClient(val seat: Int) {
                 if (prediction != null && !reset) {
                     reconcile = true
                     reconcileCurve = prediction; reconcileViewAt = predictionViewAt; reconcileAt = predictionAt
-                    reconcileDriftAt = predictionDriftAt; reconcileSide = predictionSide
+                    reconcileDriftAt = predictionDriftAt; reconcileDrift = predictionDrift
                     confirmationLog = true; confirmationAccepted = newHit
                     confirmationDelay = (nowNanos - predictionAt) / 1_000_000.0
                 }
@@ -241,17 +241,17 @@ class PongClient(val seat: Int) {
             advancePredictionDrift(nowNanos)
             val elapsed = if (predictionViewAt > 0) ((displayTimeMs - predictionViewAt) / 1000).toFloat()
                 else ((nowNanos - predictionAt) / 1e9).toFloat()
-            flightPositionInto(predicted, elapsed, predictionSide.toFloat(), 0f, target)
+            flightPositionInto(predicted, elapsed, 0f, 0f, target)
         }
         if (reconcile) {
             val source = reconcileCurve
             if (source == null) { blendSource[0] = ballX; blendSource[1] = ballY; blendSource[2] = height }
             else {
                 val seconds = ((nowNanos - reconcileDriftAt).coerceAtLeast(0) / 1e9).toFloat()
-                source[9] += (reconcileSide * (.3 / 12.16 / .02)).toFloat() * seconds
+                source[9] += reconcileDrift * seconds
                 reconcileDriftAt = nowNanos
                 val elapsed = if (reconcileViewAt > 0) ((displayTimeMs - reconcileViewAt) / 1000).toFloat() else ((nowNanos - reconcileAt) / 1e9).toFloat()
-                flightPositionInto(source, elapsed, reconcileSide.toFloat(), 0f, blendSource)
+                flightPositionInto(source, elapsed, 0f, 0f, blendSource)
             }
             // Dropped pre-bounce return frames must not reconcile against the old incoming flight.
             if (confirmationAccepted && shown != null && shown.hits < hits) {
@@ -321,8 +321,7 @@ class PongClient(val seat: Int) {
         val px = px0 + (px1 - px0) * contact.time; val py = py0 + (py1 - py0) * contact.time
         val rim = PongPhysics.rimPosition(contact, px, py, radius)
         val h = h0 + (h1 - h0) * contact.time
-        prediction = PongPhysics.launch(rim.first, rim.second, h, stroke.direction, stroke.forward, stroke.power)
-        predictionSide = stroke.side
+        prediction = PongPhysics.launch(rim.first, rim.second, h, stroke).also { predictionDrift = it[14] }
         predictionViewAt = if (previousBallTime > 0) previousBallTime + (displayTimeMs - previousBallTime) * contact.time else displayTimeMs
         predictionAt = now - ((displayTimeMs - predictionViewAt).coerceAtLeast(0.0) * 1_000_000).toLong()
         predictionHits = hits; predictionN = max(sampleN + if (nextSample) 1 else 0, acknowledged + 1)
@@ -338,7 +337,7 @@ class PongClient(val seat: Int) {
     private fun advancePredictionDrift(now: Long) {
         val curve = prediction ?: return
         val seconds = ((now - predictionDriftAt).coerceAtLeast(0) / 1e9).toFloat()
-        curve[9] += (predictionSide * (.3 / 12.16 / .02)).toFloat() * seconds
+        curve[9] += predictionDrift * seconds
         predictionDriftAt = max(predictionDriftAt, now)
         if (now - lastInputAt > 120_000_000) stroke.clear()
     }

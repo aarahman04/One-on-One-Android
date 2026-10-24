@@ -28,9 +28,10 @@ class PongPhysicsTest {
             listOf(window.side, window.forward, window.direction, window.power).forEachIndexed { i, value ->
                 assertEquals(c["expected"]!!.jsonArray[i].jsonPrimitive.double, value, 1e-8)
             }
-            val flight = PongPhysics.launch(.5, 1.6, .033, window.direction, window.forward, window.power)
-            for (i in 0..2) assertEquals(c["target"]!!.jsonArray[i].jsonPrimitive.float, flight[9 + i], 1e-6f)
-            assertEquals(c["duration"]!!.jsonPrimitive.float, flight[13], 1e-6f)
+            val flight = PongPhysics.launchArc(.5, 1.6, .033, window.direction, window.forward, window.power, window.vx, window.vy)
+            for (i in 0..2) assertEquals(c["target"]!!.jsonArray[i].jsonPrimitive.double, flight[9 + i], 1e-8)
+            assertEquals(c["duration"]!!.jsonPrimitive.double, flight[13], 1e-8)
+            assertEquals(c["drift"]!!.jsonPrimitive.double, flight[14], 1e-8)
             window.clear(); assertEquals(0.0, window.side, 0.0)
         }
     }

@@ -47,14 +47,14 @@ class DemoPongTest {
         p.paddle(2, .2, .21); p.step(16.0)
         p.paddle(2, .5, .24); p.step(8.0); p.step(64.0)
         // Same input sequence in backend PongSim, rounded by its wire encoder.
-        assertEquals(.5256, p.x, .0001); assertEquals(.3019, p.y, .0001)
+        assertEquals(.5208, p.x, .0001); assertEquals(.3019, p.y, .0001)
         assertEquals(.2265, p.z, .0001); assertEquals(1, p.hits)
         val client = PongClient(1)
         assertTrue(client.receive(p.frame("m"), "m", 1_000_000))
-        assertEquals(1f, client.spin, .0001f)
-        assertEquals(1.2336f, p.frame("m")["drift"]!!.jsonPrimitive.float, .0001f)
+        assertEquals(.6993f, client.spin, .0001f)
+        assertEquals(.8627f, p.frame("m")["drift"]!!.jsonPrimitive.float, .0001f)
         p.paddle(2, .5, .24, true)
-        assertEquals(1f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f) // the contact curve, not live input
+        assertEquals(.6993f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f) // the contact curve, not live input
     }
 
     @Test fun demoWaitsForServeAndScoresAnOpenSideMiss() {
@@ -77,9 +77,10 @@ class DemoPongTest {
         p.paddle(2, .2, .21, touch = .2 to .21); p.step(16.0)
         p.paddle(2, .35, .225, touch = .5 to .24); p.step(8.0)
         assertEquals(1, p.hits)
-        assertEquals(1f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f)
+        val spin = p.frame("m")["spin"]!!.jsonPrimitive.float
+        assertTrue(spin > 0f)
         p.paddle(2, .425, .2325, touch = .5 to .24)
-        assertEquals(1f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f) // the contact curve, not live input
+        assertEquals(spin, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f) // the contact curve, not live input
     }
     @Test fun fastDiagonalContactFollowsThroughAndLaunchesFromTheHistoricalRim() {
         val p = DemoPong()
