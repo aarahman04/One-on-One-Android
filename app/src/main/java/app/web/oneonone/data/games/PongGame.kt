@@ -68,7 +68,8 @@ class PongClient(val seat: Int) {
     private var offsetCount = 0
     private var offsetIndex = 0
     private data class DisplayFrame(val t: Long, val b: FloatArray, val arc: FloatArray?, val height: Float,
-                                    val spin: Float, val drift: Float?, val landed: Boolean, val serving: Int, val hits: Int)
+                                    val spin: Float, val drift: Float?, val landed: Boolean, val serving: Int, val hits: Int,
+                                    val theirX: Float, val theirY: Float)
     private val frames = ArrayDeque<DisplayFrame>()
     private var drawnFrame: DisplayFrame? = null
     private var reconcile = false
@@ -183,7 +184,7 @@ class PongClient(val seat: Int) {
                 sentAt + offset
             }
             if (compensated) {
-                frames.addLast(DisplayFrame(timestamp!!, frame, arc, frameHeight, spin, frameDrift, landed, serving, hitCount))
+                frames.addLast(DisplayFrame(timestamp!!, frame, arc, frameHeight, spin, frameDrift, landed, serving, hitCount, nextTheirX, nextTheirY))
                 if (reset) drawnFrame = frames.last()
                 while (frames.size > 32 || frames.size > 1 && timestamp - frames.first().t > 800) frames.removeFirst()
             }
@@ -278,7 +279,14 @@ class PongClient(val seat: Int) {
         ballY += (target[1] - ballY) * k
         height += (target[2] - height) * k
         val follow = 1 - exp(-35f * dt)
-        theirX += (frameTheirX - theirX) * follow; theirY += (frameTheirY - theirY) * follow
+        if (compensated && frames.isNotEmpty()) {
+            // Same buffered timeline as the ball, so the bat and ball stay in step and dropped frames are bridged.
+            var next = frames.size
+            for (i in 0 until frames.size) if (frames[i].t > displayTimeMs) { next = i; break }
+            val a = frames[maxOf(next - 1, 0)]; val b = frames[minOf(next, frames.size - 1)]
+            val f = if (b.t > a.t) ((displayTimeMs - a.t) / (b.t - a.t)).coerceIn(0.0, 1.0).toFloat() else 0f
+            theirX = a.theirX + (b.theirX - a.theirX) * f; theirY = a.theirY + (b.theirY - a.theirY) * f
+        } else { theirX += (frameTheirX - theirX) * follow; theirY += (frameTheirY - theirY) * follow }
         while (trailPoints.isNotEmpty() && nowNanos - trailPoints.first().atNanos >= 300_000_000L) trailPoints.removeFirst()
         val previous = trailPoints.lastOrNull()
         if (curve != null && age < .15f && nowNanos - lastTrail >= 12_000_000L &&

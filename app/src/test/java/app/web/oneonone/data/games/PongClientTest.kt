@@ -372,4 +372,28 @@ class PongClientTest {
         assertEquals(1, p.hits)
     }
 
+
+    private fun timed(t: Long, theirP: Float, theirR: Float) = frame { put("t", t); put("ack", buildJsonArray { add(0); add(0) })
+        put("p", buildJsonArray { add(.3f); add(theirP) }); put("r", buildJsonArray { add(1.9f); add(theirR) }) }
+
+    @Test fun opponentBatFollowsTheBufferedTimelineForBothSeats() {
+        for (seat in 1..2) {
+            val p = PongClient(seat); val sign = if (seat == 1) 1f else -1f
+            // Opponent is player 2 for seat 1 and player 1 for seat 2; build frames so view x goes .2 -> .6 over 100 ms.
+            fun f(t: Long, x: Float) = if (seat == 1) timed(t, x, 0f) else timed(t, 0f, 0f).let { j ->
+                buildJsonObject { j.forEach { (k, v) -> put(k, v) }; put("p", buildJsonArray { add(1 - x); add(.5f) }) } }
+            p.receive(f(1000, .2f), "m", ms); p.receive(f(1100, .6f), "m", 2 * ms)
+            // Skip a 1050 frame entirely; display time 1050 must sit midway.
+            p.advance(10 * ms); p.advance(11 * ms)
+            val mid = p.displayTimeMs
+            val a = .2f; val expect = a + (.6f - a) * ((mid - 1000) / 100).toFloat().coerceIn(0f, 1f)
+            assertEquals(expect, p.theirX, 1e-4f)
+            assertTrue(sign != 0f)
+        }
+    }
+
+    @Test fun shadowStaysNearTheBall() {
+        assertEquals(0f, app.web.oneonone.ui.games.shadowOffset(0f), 0f)
+        assertEquals(2 * PongClient.BallR, app.web.oneonone.ui.games.shadowOffset(.5f), 1e-6f)
+    }
 }

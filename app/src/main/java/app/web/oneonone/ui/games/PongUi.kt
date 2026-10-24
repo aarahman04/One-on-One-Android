@@ -35,8 +35,8 @@ import kotlin.math.ceil
 import kotlin.math.sqrt
 
 private const val MarginX = .28f
-private const val MarginTop = .5f
-private const val MarginBottom = .9f
+private const val MarginTop = .97f
+private const val MarginBottom = .97f
 private val Arena = Color(0xFFFFCF70)
 private val TableGreen = Color(0xFF76B536)
 private val Ink = Color(0xFF10140D)
@@ -203,8 +203,8 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
         drawLine(Color.White, at(.025f, PongClient.CourtH / 2), at(.975f, PongClient.CourtH / 2), .014f * u)
         if (game.live) {
             val h = game.height.coerceAtLeast(0f)
-            drawCircle(Ink.copy(alpha = .23f), PongClient.BallR * u * (1 - h * 1.216f).coerceAtLeast(.2f),
-                at(game.ballX + .8f * h, game.ballY))
+            if (ballShown(game)) drawCircle(Ink.copy(alpha = .14f), PongClient.BallR * u * (1 - h * 1.216f).coerceAtLeast(.2f),
+                at(game.ballX + shadowOffset(h), game.ballY))
             val since = (now - game.bounceAt) / 1e6f
             if (game.bounceAt > 0 && since in 0f..160f) {
                 val k = since / 160
@@ -219,7 +219,7 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
                 drawLine(Color.White.copy(alpha = .95f * k), at(previous.x, previous.y), at(point.x, point.y),
                     .09f * u * sqrt(k), cap = StrokeCap.Round)
         }
-        if (game.live && (game.height >= 0 || game.ballX !in 0f..1f || game.ballY !in 0f..PongClient.CourtH)) {
+        if (game.live && ballShown(game)) {
             val ball = at(game.ballX, game.ballY)
             val r = PongClient.ballRadius(game.height) * u
             drawCircle(Ink, r * (1 + app.web.oneonone.data.games.PongPhysics.BallEdge.toFloat()), ball)
@@ -229,6 +229,11 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
         drawRacket(at(game.myX, game.myY), YourRacket, u, up = false)
     }
 }
+
+private fun ballShown(g: PongClient) = g.height >= 0 || g.ballX !in 0f..1f || g.ballY !in 0f..PongClient.CourtH
+
+/** Shadow sits beside the ball, at most one ball diameter away. */
+internal fun shadowOffset(height: Float) = (.8f * height).coerceAtMost(2 * PongClient.BallR)
 
 private fun DrawScope.drawRacket(center: Offset, color: Color, u: Float, up: Boolean) {
     val r = PongClient.HeadR * u
