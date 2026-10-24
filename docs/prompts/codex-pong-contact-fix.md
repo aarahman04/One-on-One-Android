@@ -82,15 +82,18 @@ reconciles without a visible snap.**
 Add to `match:paddle` (document in `docs/API-CONTRACT.md` §12 and keep legacy behaviour when absent):
 - `ct`: client monotonic time of the sample, integer ms, strictly increasing per socket.
 - `v`: the **server time (the frame `t` axis) of the ball state the client was displaying** when the sample was made
-  (`v = frame.t + ageMs`). Server clamps it to `[now - MAX_COMP_MS, now]` with `MAX_COMP_MS = 250`; values outside
-  are clamped, never trusted.
+  (`v = frame.t + ageMs`). Server clamps it to `[now - cap, now]`, never trusting the client. `cap` is per seat:
+  `clamp(measuredRttMs + 100, 250, 500)`, with a hard maximum `MAX_COMP_MS = 500` (measure RTT server-side, e.g. from
+  the socket.io ping or a sync probe; do not take it from the client). The worst required profile (150 ms each way)
+  needs ≈ 400 ms (150 down + render delay + 150 up + 33 batching + 16 tick), so 250 ms is NOT enough. Beyond the cap
+  the hit is not rewound; report that as a known limit, do not raise it silently.
 - `n`: per-match increasing sequence number so reordered/duplicated packets are ignored and the server can detect gaps.
 The existing `x,y,released,touch` fields keep their meaning. `match:pong` frames already carry `t`; also add the
 server's current monotonic `t` precision needed for `v` (ms is enough) and the per-seat last processed `n` (`ack`)
 so the client can reconcile predictions.
 
 ### 3.2 Backend (`PongSim`)
-- Keep a ring buffer (≥ 400 ms) of **ball state per 8 ms sub-step**: `{t, x, y, z, landed, lastHit, hits,
+- Keep a ring buffer (≥ 700 ms, i.e. the hard cap plus margin) of **ball state per 8 ms sub-step**: `{t, x, y, z, landed, lastHit, hits,
   flightId}` and the previous packet per seat `{n, v, x, y}`. Reuse the existing 8 ms stepping so history is
   gap-free even when the 60 Hz timer jitters.
 - On each paddle packet for seat S with `v`: build the bat segment from S's previous accepted packet to this one,
@@ -167,7 +170,7 @@ predicted and authoritative launches are identical within rounding (`r4` roundin
   ≥ 95 % of hits at ≤ 80 ms latency.
 - `strokeMismatch` ≤ rounding for identical inputs; identical swipes with different jitter produce the same shot.
 - Back-half, side and front-rim contacts all hit and launch forward; no double hit from follow-through.
-- Anti-abuse: `v` outside `[now-250ms, now]` is clamped; packets with decreasing `n` ignored; a client claiming
+- Anti-abuse: `v` outside `[now-cap, now]` (cap ≤ 500 ms) is clamped; packets with decreasing `n` ignored; a client claiming
   `v` in the past cannot hit a ball that was not eligible then, and cannot hit after a point has been scored
   unless the history shows the ball was live and eligible at `v`.
 - Legacy path (no `v`/`ct`/`n`) still passes all existing backend and Android tests.
