@@ -192,7 +192,7 @@ private class DemoTransport(context: Context, private val json: Json, private va
     override val pongFrames get() = matches.frames
     override val matchReactions get() = matches.reactions
     override suspend fun match(event: String, payload: JsonObject) = matches.call(event, payload)
-    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean, touch: Pair<Float, Float>?) = matches.paddle(matchId, x, y, released, touch)
+    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean, touch: Pair<Float, Float>?, timing: app.web.oneonone.data.games.PaddleTiming?, samples: kotlinx.serialization.json.JsonArray?) = matches.paddle(matchId, x, y, released, touch)
     override val presence = kotlinx.coroutines.flow.flow { while (true) { emit(PresenceUpdate(ALEX, true)); kotlinx.coroutines.delay(2000) } }
     private val all = linkedMapOf<String, ChatMessage>()
     private var replies = 0

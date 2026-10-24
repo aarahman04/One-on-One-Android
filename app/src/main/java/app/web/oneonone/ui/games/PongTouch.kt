@@ -6,6 +6,13 @@ internal class PongTouch {
     var y = 1.88f; private set
     private var pointer: Long? = null
     val held get() = pointer != null
+    private var motionAt = 0L
+    fun elapsed(now: Long): Float {
+        if (now <= motionAt) return 0f
+        val dt = if (motionAt == 0L) 1f / 60 else ((now - motionAt) / 1e9f).coerceAtMost(.1f)
+        motionAt = now
+        return dt
+    }
 
     fun begin(id: Long, x: Float, y: Float): Boolean {
         if (held) return false

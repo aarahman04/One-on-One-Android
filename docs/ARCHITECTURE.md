@@ -1353,3 +1353,64 @@ flowchart LR
     Clear --> Visible
     Visible --> Canvas[Existing ball/trail and bat drawing order]
 ```
+
+
+## Pong contact on the displayed timeline (2026-10-24)
+
+This supersedes both 2026-10-23 pending-contact/clearance sections above. Android
+uses a recent bounded offset estimate and 50 ms interpolation. Pointer history
+and frame samples share one elapsed-time racket follower. The rendered ball's
+server-axis time accompanies every sample; a 32-input redundant window survives
+coalescing and packet loss. Per-frame flight vector math reuses arrays; networking
+serialization and existing trail objects remain outside that vector calculation.
+
+```mermaid
+sequenceDiagram
+    participant U as Pointer history / display frame
+    participant A as Android PongClient / MatchSession
+    participant S as Backend PongSim
+    U->>A: Sample bat and raw touch at ct, drawn ball at v
+    A->>A: Shared relative sweep, impact-time rim, predict return
+    A-->>S: match:paddle ct/v/n + bounded recent samples
+    S->>S: Validate, clamp v to now-cap..now, recover unseen n
+    S->>S: Sweep bat + historical ball; judge eligibility at impact
+    S->>S: Strike once; fast-forward accepted curve to now
+    S-->>A: match:pong t / ack per seat / h / curve
+    A->>A: Confirm or reject; blend correction for 60 ms, allow retry
+    Note over A: Only authoritative h triggers hit sound/haptic
+```
+
+History is 800 ms with 8 ms sub-steps; current flight identity and point state
+prevent replay. All head directions are legal; paint dimensions, flight formulas,
+score and serve rules remain. The ball dims when not eligible. Old untimed clients
+retain their control path. The 500 ms cap and bounded sample window are explicit
+owner-approved deviations backed by the harness. Details, complete profile table,
+commands and Xiaomi checklist: [PONG-CONTACT-EVIDENCE.md](games/PONG-CONTACT-EVIDENCE.md).
+
+
+## Game release parity gate (2026-10-24)
+
+The owner-approved final presentation keeps the ball fully opaque, superseding
+the dim-ball cue above; shared contact eligibility and physics are unchanged.
+The production incident was an old active Railway deployment, not lost Android
+option fields. Verify active backend source before building the signed client.
+
+```mermaid
+flowchart LR
+    Options[Android invite: clock or target] --> Transport[Existing GameService / Transport]
+    Transport --> Server[Current backend: clocks, target, match reactions]
+    Server --> Snapshot[Snapshot clock/points and reaction event]
+    Snapshot --> UI[Clock chips, scoreboard and comment slots]
+    Main[Reviewed backend main] --> Railway[Verify ACTIVE source commit and health]
+    Railway --> Android[Reviewed Android main]
+    Android --> Build[android-build: signed 2.0.12 / code 19]
+```
+
+Local real-socket checks cover all turn-game clocks/increments/comments, timeout
+without another move and Pong 11/21/custom targets. Offline demo approval does
+not substitute for the signed two-account production checklist.
+
+
+The chat composer now requests `KeyboardCapitalization.Sentences` from the
+platform keyboard. Draft storage, slash parsing and the message transport retain
+the typed text; this does not add a text-transform layer.

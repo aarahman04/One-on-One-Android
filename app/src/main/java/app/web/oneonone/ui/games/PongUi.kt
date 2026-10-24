@@ -65,19 +65,18 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
         vm.paddle(game.myX, game.myY)
         var hits = game.hits
         var bounce = game.bounceAt
-        var lastFrame = 0L
         var round = game.round
         while (isActive) {
             withFrameNanos {
                 if (currentPaused || round != game.round) touch.cancel()
                 round = game.round
-                if (touch.held && !currentPaused) {
-                    val dt = if (lastFrame == 0L) 1f / 60 else (it - lastFrame) / 1e9f
+                game.advance(it)
+                val dt = touch.elapsed(it)
+                if (touch.held && !currentPaused && dt > 0) {
                     val follow = PongClient.racketFollow(dt)
                     vm.paddle(game.myX + (touch.x - game.myX) * follow, game.myY + (touch.y - game.myY) * follow, touch = touch.x to touch.y)
                 }
-                lastFrame = it
-                game.advance(it); frame = it
+                frame = it
             }
             if (game.hits != hits) { hits = game.hits; sounds?.play(GameSound.Hit); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
             if (game.bounceAt != bounce) { bounce = game.bounceAt; sounds?.play(GameSound.Bounce) }
@@ -92,7 +91,14 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().background(Arena, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
             val unit = minOf(maxWidth / (1 + 2 * MarginX), maxHeight / (PongClient.CourtH + MarginTop + MarginBottom))
             Box(Modifier.size(unit * (1 + 2 * MarginX), unit * (PongClient.CourtH + MarginTop + MarginBottom))) {
-                PongTable(game, touch, { frame }, enabled = !paused) { x, y -> vm.paddle(x, y, true) }
+                PongTable(game, touch, { frame }, enabled = !paused,
+                    onSample = { x, y, at ->
+                        val dt = touch.elapsed(at)
+                        val follow = PongClient.racketFollow(dt)
+                        // Keep raw history even if rendering already advanced the eased bat past its time.
+                        vm.paddle(game.myX + (x - game.myX) * follow, game.myY + (y - game.myY) * follow,
+                            touch = x to y, sampleNanos = at)
+                    }) { x, y -> vm.paddle(x, y, true) }
                 when {
                     paused -> CourtNotice("Waiting for ${vm.nickname}…", Modifier.align(Alignment.Center))
                     hud.countdown > 0 -> Surface(Modifier.align(Alignment.Center).size(68.dp),
@@ -139,7 +145,8 @@ private fun PongScoreboard(mine: Int, theirs: Int, nickname: String, target: Int
 }
 
 @Composable
-private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, enabled: Boolean, onRelease: (Float, Float) -> Unit) {
+private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, enabled: Boolean,
+                      onSample: (Float, Float, Long) -> Unit, onRelease: (Float, Float) -> Unit) {
     val currentEnabled by rememberUpdatedState(enabled)
     Canvas(Modifier.fillMaxSize().pointerInput(game, enabled) {
         awaitEachGesture {
@@ -150,7 +157,7 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
             // would read as a violent stroke) and the finger can steer from below without hiding the racket.
             var anchorFinger = down.position
             var anchorX = game.myX; var anchorY = game.myY
-            fun move(position: Offset) {
+            fun move(position: Offset, at: Long) {
                 if (!currentEnabled) return
                 val x = anchorX + (position.x - anchorFinger.x) / unit
                 val y = anchorY + (position.y - anchorFinger.y) / unit
@@ -159,6 +166,7 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
                 val cy = y.coerceIn(PongClient.RacketNear, PongClient.RacketFar)
                 if (cx != x || cy != y) { anchorX = cx - (position.x - anchorFinger.x) / unit; anchorY = cy - (position.y - anchorFinger.y) / unit }
                 touch.move(down.id.value, cx, cy)
+                onSample(cx, cy, at)
             }
             var completed = false
             try {
@@ -167,7 +175,9 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                     if (change.isConsumed) break
                     change.consume()
-                    move(change.position)
+                    val now = System.nanoTime()
+                    for (sample in change.historical) move(sample.position, now - (change.uptimeMillis - sample.uptimeMillis) * 1_000_000)
+                    move(change.position, now)
                     if (!change.pressed) { completed = true; break }
                 }
             } finally {
@@ -210,10 +220,9 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
                     .09f * u * sqrt(k), cap = StrokeCap.Round)
         }
         if (game.live && (game.height >= 0 || game.ballX !in 0f..1f || game.ballY !in 0f..PongClient.CourtH)) {
-            val position = game.visibleBallPosition()
-            val ball = at(position.first, position.second)
+            val ball = at(game.ballX, game.ballY)
             val r = PongClient.ballRadius(game.height) * u
-            drawCircle(Ink, r * 1.35f, ball)
+            drawCircle(Ink, r * (1 + app.web.oneonone.data.games.PongPhysics.BallEdge.toFloat()), ball)
             drawCircle(Color.White, r, ball)
         }
         drawRacket(at(game.theirX, game.theirY), OtherRacket, u, up = true)

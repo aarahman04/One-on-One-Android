@@ -6,12 +6,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DemoPongTest {
-    @Test fun aFastForwardStrokeStopsAtThePaintedRimAndReturnsTheBall() {
+    @Test fun aFastForwardStrokeUsesTheImpactTimeRimAndReturnsTheBall() {
         val p = DemoPong()
         p.paddle(2, .5, -.46); p.step(3000.0)
         p.paddle(2, .5, .44)
-        val radius = PongClient.contactRadius(p.z.toFloat()).toDouble()
-        assertEquals(radius, kotlin.math.hypot(p.x - p.paddles[1], p.y - p.paddleY[1]), 1e-6)
+        // The stationary ball is already on the rim when the moving head first reaches it.
+        assertEquals(.5, p.x, 1e-6); assertEquals(.24, p.y, 1e-6)
         p.step(8.0)
         assertEquals(1, p.hits)
     }
@@ -22,12 +22,13 @@ class DemoPongTest {
         var steps = 0
         while ((p.bounces == 0 || p.y < 1.5) && steps++ < 500) p.step(8.0)
         assertEquals(1, p.hits); assertEquals(1, p.bounces)
+        val before = p.x to p.y
         p.paddle(1, p.x, 1.3)
-        assertEquals(PongClient.contactRadius(p.z.toFloat()).toDouble(), p.paddleY[0] - p.y, 1e-6)
+        assertEquals(before.first, p.x, 1e-6); assertEquals(before.second, p.y, 1e-6)
         p.step(8.0)
         assertEquals(2, p.hits)
         assertTrue(p.frame("m")["a"]!!.jsonArray[10].jsonPrimitive.double < .9)
-        assertTrue(p.paddleY[0] - p.y >= PongClient.contactRadius(p.z.toFloat()) - .001)
+        assertEquals(1.3, p.paddleY[0], 1e-6)
     }
 
     @Test fun neutralBlocksAtBothBaselinesProduceARally() {
@@ -45,7 +46,7 @@ class DemoPongTest {
         p.paddle(2, .2, .21); p.step(16.0)
         p.paddle(2, .5, .24); p.step(8.0); p.step(64.0)
         // Same input sequence in backend PongSim, rounded by its wire encoder.
-        assertEquals(.723, p.x, .0001); assertEquals(.3359, p.y, .0001)
+        assertEquals(.5318, p.x, .0001); assertEquals(.3168, p.y, .0001)
         assertEquals(.2378, p.z, .0001); assertEquals(1, p.hits)
         val client = PongClient(1)
         assertTrue(client.receive(p.frame("m"), "m", 1_000_000))
@@ -79,12 +80,12 @@ class DemoPongTest {
         p.paddle(2, .425, .2325, touch = .5 to .24)
         assertEquals(0f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f)
     }
-    @Test fun fastDiagonalContactFollowsThroughAndLaunchesFromTheLeadingRim() {
+    @Test fun fastDiagonalContactFollowsThroughAndLaunchesFromTheHistoricalRim() {
         val p = DemoPong()
         p.paddle(2, .15, -.11); p.step(3000.0)
         p.paddle(2, .72, .46)
         assertEquals(.72, p.paddles[1], 1e-6); assertEquals(.46, p.paddleY[1], 1e-6)
-        assertEquals(PongClient.contactRadius(p.z.toFloat()).toDouble(), kotlin.math.hypot(p.x - p.paddles[1], p.y - p.paddleY[1]), 1e-6)
+        assertEquals(.5, p.x, 1e-6); assertEquals(.24, p.y, 1e-6)
         val start = listOf(p.x, p.y, p.z)
         p.step(8.0)
         assertEquals(1, p.hits)
@@ -98,7 +99,7 @@ class DemoPongTest {
             p.paddle(2, .5, -.4); p.step(3000.0)
             p.paddle(2, .5, -.4); p.step(gap)
             p.paddle(2, .5, .44)
-            assertEquals(PongClient.contactRadius(p.z.toFloat()).toDouble(), p.y - p.paddleY[1], 1e-6)
+            assertEquals(.24, p.y, 1e-6)
             p.step(8.0)
             assertEquals(1, p.hits)
             repeat(15) {

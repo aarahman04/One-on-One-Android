@@ -1,20 +1,52 @@
 ﻿# Native Android release checklist
 
-Updated 2026-10-22 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **18** /
-versionName **2.0.11**; the Gradle fallback stays 5 / 2.0.0-dev. The workflow builds artifacts; it does not upload to Play.
+Updated 2026-10-24 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **19** /
+versionName **2.0.12**; the Gradle fallback stays 5 / 2.0.0-dev. The workflow builds artifacts; it does not upload to Play.
 
 ## Release history
 
-Previous verified signed build: **2.0.10 / versionCode 17** (2026-10-22,
-[39706094512](https://github.com/aarahman04/One-on-One-Android/actions/runs/39706094512)).
-Prepared release: **2.0.11 / versionCode 18**. Manual release workflow dispatch is deferred at the owner's request; no new signed build is claimed. Paired Ping Pong changes in Android
-[#50](https://github.com/aarahman04/One-on-One-Android/pull/50) and backend
-[#127](https://github.com/aarahman04/One-on-One/pull/127).
-Run `android-build` from merged `main` with inputs `versionCode=18`,
-`versionName=2.0.11`; use the fresh `android-release/app-release.aab` for Play and
-`app-release.apk` for sideload checks. Preserve its `mapping.txt` for retrace.
-The next upload after code 18 must use **19 or higher**. Build history does not
+Previous verified signed build: **2.0.11 / versionCode 18** (2026-10-23,
+[39886525017](https://github.com/aarahman04/One-on-One-Android/actions/runs/39886525017)),
+from main `6f8cd1c`. Its certificate and package/version checks passed.
+Prepared release: **2.0.12 / versionCode 19**, paired Android
+[#52](https://github.com/aarahman04/One-on-One-Android/pull/52) and backend
+[#128](https://github.com/aarahman04/One-on-One/pull/128). The owner approved the
+Pong feel/always-white ball on the emulator and authorized final checks, docs,
+one version increment, backend-first merge and signed workflow dispatch.
+Run `android-build` from the merged Android main with inputs `versionCode=19`,
+`versionName=2.0.12`; use the fresh `android-release/app-release.aab` for Play and
+`app-release.apk` for sideload checks. Preserve `mapping.txt` for retrace. The
+next upload after code 19 must use **20 or higher**. Build history does not
 confirm Play uploads. Release notes and Xiaomi checks: `docs/PROGRESS.md`.
+
+### Backend deployment gate
+
+On 2026-10-24, the production Railway service was still running deployment
+`c0e900a6-d6fc-4e6a-81b3-230b0c4bbf66`, backend PR #121 / commit `3d0c148` from
+2026-10-21. That source has no match clock, target-score option or match:react
+handler. This explains the production defaults despite newer Android builds.
+Railway's configured repo is One-on-One, root `backend`, branch `main`, auto
+deploy enabled, one replica. A merged PR alone is not proof of a live deployment.
+
+Deployment gate verified on 2026-10-24: backend #128 merged as `30a7473` and
+Railway automatically activated deployment `591f5e01-d64b-4d67-a2b2-67eb2bf5bf4d`
+with the #128 merge as source, replacing #121. Production `/health` returns
+`status:ok`. This verifies live source and availability; no authenticated
+production-account game was created. Existing in-memory games reset on rollout.
+
+1. Merge backend #128 after checks. Verify Railway's **active deployment source**
+   includes the resulting main commit, rather than clicking Redeploy on the old
+   #121 deployment. If the GitHub trigger does not create a deployment, use
+   **Deploy Latest Commit** on the service through the existing Railway pipeline.
+2. Check production `/health` and active deployment status after the new build.
+   A bare `{status:ok}` does not identify a source revision; use Railway's source.
+3. Merge Android #52 and dispatch the signed workflow from that main. The test
+   suite verifies clocks/increments/comments on four turn games, actual timer
+   expiry without a move, and Pong 11/21/custom target echo/rematch and games
+   continuing beyond seven to the chosen winning score.
+4. With two owned accounts on the signed build, check the production phone flow
+   below. Do not treat the offline demo or local fake-auth socket tests as an
+   authenticated production-device run.
 
 A4 (alarm, PR #8), A5 (calls, PR #9) and the S1–S5 restyle (PRs #10–#14) are now
 merged; the A7-era notes below that call them pending are historical. Owner Xiaomi
@@ -22,10 +54,13 @@ QA and authenticated minified-device QA are still required before a rollout.
 
 ## Current verification and historical notes
 
-For 2.0.11, debug build/lint and 276 Android tests passed; the paired backend passed
-130 tests and TypeScript checking. The debug APK was installed and launched on
-`PongRemake_Check`. Device feel and authenticated two-phone latency still need
-the checks in `docs/PROGRESS.md`. No database migration is required.
+For 2.0.12, Android debug build/lint and 293 JVM tests pass; the paired backend
+passes 148 tests and TypeScript build. The deterministic contact matrix has
+72 profiles and 17,280 candidate attempts, all acceptance assertions green.
+The owner tested the debug Pong demo and approved the always-white ball. The
+emulator was restarted with software rendering after its host-GPU display froze;
+this is not a game-physics change. Physical feel and authenticated two-phone
+latency still need the checks in `docs/PROGRESS.md`. No migration is required.
 
 The signed workflow restores and verifies the existing upload key and production
 configuration. Historical A7 notes below describe initial release preparation,

@@ -32,7 +32,7 @@ internal class DemoPong(private val target: Int = 7) {
     private var lastHit = 0
     private var landed = false
     private val spin get() = if (lastHit == 0) 0.0 else strokes[lastHit - 1][0]
-    private val samples = Array(2) { ArrayDeque<DoubleArray>() }
+    private val samples = Array(2) { PongPhysics.StrokeWindow() }
 
     @Synchronized fun serving(seat: Int) = flight == null && server == seat
     private fun serveY() = if (server == 1) courtH - .24 else .24
@@ -50,9 +50,9 @@ internal class DemoPong(private val target: Int = 7) {
         var contacted = false
         if (ready && contactStrokes[i] == null && z >= -.033) {
             val contact = PongPhysics.sweepContact(x, y, x, y, oldX, oldY, nextX, nextY, radius, forward.toDouble())
-            if (contact != null && contact.ny * forward >= -1e-6 &&
-                (nextX - oldX) * contact.nx + (nextY - oldY) * contact.ny > 1e-6) {
-                val rim = PongPhysics.rimPosition(contact, nextX, nextY, radius)
+            if (contact != null) {
+                val rim = PongPhysics.rimPosition(contact, oldX + (nextX - oldX) * contact.time,
+                    oldY + (nextY - oldY) * contact.time, radius)
                 x = rim.first; y = rim.second
                 contacted = ready
             }
@@ -60,24 +60,10 @@ internal class DemoPong(private val target: Int = 7) {
         if (py != null) modern[i] = true
         val sampleX = touch?.first?.coerceIn(-.26, 1.26) ?: inputX
         val sampleY = touch?.second?.let { if (seat == 1) it.coerceIn(1.3, 2.5) else courtH - (courtH - it).coerceIn(1.3, 2.5) } ?: inputY
-        // Mirrors the backend's ~50 ms stroke window.
         val window = samples[i]
-        val previous = window.lastOrNull()
-        val still = hypot(sampleX - (previous?.get(1) ?: paddles[i]), sampleY - (previous?.get(2) ?: paddleY[i])) < 1e-5
-        window.addLast(doubleArrayOf(clock, sampleX, sampleY))
-        while (window.size > 2 && window[1][0] <= clock - 50) window.removeFirst()
-        while (window.size > 2 && window[0][0] < clock - 100) window.removeFirst()
-        val ref = window.firstOrNull()
-        val dx = if (ref == null) 0.0 else sampleX - ref[1]; val dy = if (ref == null) 0.0 else sampleY - ref[2]
-        val dt = if (ref == null) 0.0 else (clock - ref[0]) / 1000
-        if (still || hypot(dx, dy) < 1e-5) strokes[i].fill(0.0)
-        else if (dt > 0) {
-            val sx = dx / max(dt, 1.0 / 60); val sy = dy / max(dt, 1.0 / 60)
-            strokes[i][0] = (sx * StrokeGain).coerceIn(-1.0, 1.0)
-            strokes[i][1] = (sy * (if (seat == 1) -1 else 1) * StrokeGain).coerceIn(-.5, 1.0)
-            strokes[i][2] = if (py == null) (sx * StrokeGain).coerceIn(-1.0, 1.0) else dx / hypot(dx, dy)
-            strokes[i][3] = (sy * forward / 10).coerceIn(0.0, 1.0) // Power is separate from recovered aiming and spin.
-        }
+        window.sample(clock.toLong(), sampleX, sampleY, forward.toDouble(), py == null)
+        strokes[i][0] = window.side; strokes[i][1] = window.forward
+        strokes[i][2] = window.direction; strokes[i][3] = window.power
         // Release stops live spin without erasing impact strength.
         if (contacted && contactStrokes[i] == null) contactStrokes[i] = strokes[i].copyOf()
         if (released) { window.clear(); strokes[i].fill(0.0) }
@@ -99,9 +85,9 @@ internal class DemoPong(private val target: Int = 7) {
         while (left > 1e-8 && flight != null && outcome == null) { advance(min(left, .008)); left -= .008 }
     }
 
-    private fun touches(seat: Int) = z >= -.033 && (y - paddleY[seat - 1]) * (if (seat == 1) -1 else 1) >= -.001 &&
+    private fun touches(seat: Int) = z >= -.033 &&
         hypot(x - paddles[seat - 1], y - paddleY[seat - 1]) <= contactRadius() + 1e-6
-    private fun contactRadius() = .137 + .025 / 2 + .033 * 1.35 * (1 + .7 * (z / ArcH).coerceIn(0.0, 1.0))
+    private fun contactRadius() = PongPhysics.contactRadius(z)
     private fun curve(target: DoubleArray, duration: Double) {
         flight = Flight(arrayOf(doubleArrayOf(x, y, z), doubleArrayOf(x + (target[0] - x) * .2, y + (target[1] - y) * .2, ArcH),
             doubleArrayOf(target[0], target[1], ArcH), target), 0.0, duration)
@@ -137,11 +123,13 @@ internal class DemoPong(private val target: Int = 7) {
                 curve(doubleArrayOf(x + vx / length * reach, y + vy / length * reach, .033 - ArcH), current.duration)
             }
         }
-        if (landed && lastHit != 0 && touches(3 - lastHit)) {
-            val seat = 3 - lastHit
-            val across = x - paddles[seat - 1]
-            val radius = contactRadius()
-            y = paddleY[seat - 1] + (if (seat == 1) -1 else 1) * sqrt(max(0.0, radius * radius - across * across))
+        val seat = 3 - lastHit
+        val contact = if (landed && lastHit != 0 && z >= -.033)
+            PongPhysics.sweepContact(oldX, oldY, x, y, paddles[seat - 1], paddleY[seat - 1],
+                paddles[seat - 1], paddleY[seat - 1], contactRadius(), (if (seat == 1) -1 else 1).toDouble()) else null
+        if (contact != null) {
+            val rim = PongPhysics.rimPosition(contact, paddles[seat - 1], paddleY[seat - 1], contactRadius())
+            x = rim.first; y = rim.second
             strike(seat)
         }
         else if (z <= -ArcH || flight === current && current.elapsed >= current.duration) point(if (landed) lastHit else 3 - lastHit)
@@ -169,7 +157,6 @@ internal class DemoPong(private val target: Int = 7) {
     }
     companion object {
         private const val ArcH = 6 / 12.16
-        private const val StrokeGain = 12.16 / 60
         private const val SpinDrift = .3 / 12.16 / .02
     }
 }
