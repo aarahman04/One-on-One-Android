@@ -24,16 +24,16 @@ internal class DemoPong(private val target: Int = 7) {
     private var clock = 0.0
     private val moved = doubleArrayOf(-1.0, -1.0)
     private val modern = booleanArrayOf(false, false)
-    private val strokes = Array(2) { DoubleArray(4) }
+    private val strokes = Array(2) { DoubleArray(6) } // side, forward, direction, power, vx, vy
     private val contactStrokes = arrayOfNulls<DoubleArray>(2)
     private var server = 2
     private data class Flight(val points: Array<DoubleArray>, var elapsed: Double, val duration: Double)
     private var flight: Flight? = null
     private var lastHit = 0
     private var landed = false
-    private var shotSide = 0.0
+    private var shotDrift = 0.0
     // The contact stroke fixes the curve until landing; later bat movement never steers.
-    private val spin get() = if (lastHit == 0 || landed) 0.0 else shotSide
+    private val drift get() = if (lastHit == 0 || landed) 0.0 else shotDrift
     private val samples = Array(2) { PongPhysics.StrokeWindow() }
 
     @Synchronized fun serving(seat: Int) = flight == null && server == seat
@@ -66,6 +66,7 @@ internal class DemoPong(private val target: Int = 7) {
         window.sample(clock.toLong(), sampleX, sampleY, forward.toDouble(), py == null)
         strokes[i][0] = window.side; strokes[i][1] = window.forward
         strokes[i][2] = window.direction; strokes[i][3] = window.power
+        strokes[i][4] = window.vx; strokes[i][5] = window.vy
         // Release stops live spin without erasing impact strength.
         if (contacted && contactStrokes[i] == null) contactStrokes[i] = strokes[i].copyOf()
         if (released) { window.clear(); strokes[i].fill(0.0) }
@@ -97,17 +98,16 @@ internal class DemoPong(private val target: Int = 7) {
     private fun strike(seat: Int) {
         val stroke = contactStrokes[seat - 1] ?: strokes[seat - 1]
         contactStrokes[seat - 1] = null
-        val target = doubleArrayOf(.5 + stroke[2] * (8 / 12.16) * (.7 + .3 * stroke[1]),
-            courtH / 2 + (if (seat == 1) -1 else 1) * (5 + 7 * stroke[1]) / 12.16, -ArcH)
-        curve(target, PongPhysics.flightDuration(stroke[3]))
-        shotSide = stroke[0]
+        val a = PongPhysics.launchArc(x, y, z, stroke[2], stroke[1], stroke[3], stroke[4], stroke[5], if (seat == 1) -1.0 else 1.0)
+        flight = Flight(Array(4) { a.copyOfRange(it * 3, it * 3 + 3) }, 0.0, a[13])
+        shotDrift = a[14]
         lastHit = seat; landed = false
         hits++
     }
     private fun advance(dt: Double) {
         val current = flight ?: return
         val oldX = x; val oldY = y; val oldZ = z
-        current.points[3][0] += spin * SpinDrift * dt
+        current.points[3][0] += drift * dt
         current.elapsed += dt
         val t = (current.elapsed / current.duration).coerceIn(0.0, 1.0)
         val u = (t * t * t - 2 * t * t + t) * 1.363 + (-2 * t * t * t + 3 * t * t) + (t * t * t - t * t) * .3368
@@ -155,8 +155,8 @@ internal class DemoPong(private val target: Int = 7) {
         val current = flight
         if (current == null) put("a", JsonNull) else array("a", current.points.flatMap { it.asIterable() } + listOf(current.elapsed, current.duration))
         put("c", ceil(countdown).toInt()); put("h", hits); put("w", 0)
-        put("spin", round(spin * 10000) / 10000)
-        put("drift", round(spin * SpinDrift * 10000) / 10000)
+        put("spin", round(drift / SpinDrift * 10000) / 10000)
+        put("drift", round(drift * 10000) / 10000)
         put("serve", if (current != null || outcome != null) 0 else server); put("j", bounces); put("l", landed)
     }
     companion object {

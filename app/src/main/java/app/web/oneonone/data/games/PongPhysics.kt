@@ -21,7 +21,10 @@ internal object PongPhysics {
         var forward = 0.0; private set
         var direction = 0.0; private set
         var power = 0.0; private set
-        fun clear() { start = 0; size = 0; side = 0.0; forward = 0.0; direction = 0.0; power = 0.0 }
+        /** Raw finger velocity (widths/s; vy toward the opponent), unclamped. */
+        var vx = 0.0; private set
+        var vy = 0.0; private set
+        fun clear() { start = 0; size = 0; side = 0.0; forward = 0.0; direction = 0.0; power = 0.0; vx = 0.0; vy = 0.0 }
         fun sample(ct: Long, x: Double, y: Double, forwardSign: Double = -1.0, legacy: Boolean = false) {
             val last = (start + size - 1) and 31
             val still = size > 0 && hypot(x - xs[last], y - ys[last]) < 1e-5
@@ -32,13 +35,14 @@ internal object PongPhysics {
             while (size > 2 && times[start] < ct - 100) { start = (start + 1) and 31; size-- }
             val dx = x - xs[start]; val dy = y - ys[start]
             val dt = (ct - times[start]) / 1000.0
-            if (still || hypot(dx, dy) < 1e-5) { side = 0.0; forward = 0.0; direction = 0.0; power = 0.0 }
+            if (still || hypot(dx, dy) < 1e-5) { side = 0.0; forward = 0.0; direction = 0.0; power = 0.0; vx = 0.0; vy = 0.0 }
             else if (dt > 0) {
                 val sx = dx / max(dt, 1.0 / 60); val sy = dy / max(dt, 1.0 / 60)
                 side = (sx * 12.16 / 60).coerceIn(-1.0, 1.0)
                 forward = (sy * forwardSign * 12.16 / 60).coerceIn(-.5, 1.0)
                 direction = if (legacy) side else dx / hypot(dx, dy)
                 power = (sy * forwardSign / 10).coerceIn(0.0, 1.0)
+                vx = sx; vy = sy * forwardSign
             }
         }
     }
@@ -53,15 +57,44 @@ internal object PongPhysics {
         return if (duration > 2) scale * 2 / duration to 2.0 else scale to max(.1, duration)
     }
 
-    fun launch(x: Double, y: Double, z: Double, direction: Double, forward: Double, power: Double,
-               forwardSign: Double = -1.0): FloatArray {
-        val tx = .5 + direction * (8 / 12.16) * (.7 + .3 * forward)
+    // Mirrors backend lateral(): aim plus a deterministic bend, softly saturated inside the table; only a
+    // near-sideways (65..78 degrees) and very fast (8..10 widths/s sideways) swipe overhits past the side line.
+    const val LateralMax = .42
+    const val CurveGain = .15
+    const val Overhit = .3
+    const val BendShare = .4
+    private fun smooth(v: Double, a: Double, b: Double): Double { val t = ((v - a) / (b - a)).coerceIn(0.0, 1.0); return t * t * (3 - 2 * t) }
+    fun lateral(direction: Double, forward: Double, vx: Double, vy: Double): Double {
+        val sideways = abs(vx); val angle = atan2(sideways, max(vy, 0.0)) * 180 / PI
+        val raw = abs(direction) * (8 / 12.16) * (.7 + .3 * forward) + CurveGain * sideways * 12.16 / 60
+        return sign(direction) * (LateralMax * tanh(raw / LateralMax) + Overhit * smooth(sideways, 8.0, 10.0) * smooth(angle, 65.0, 78.0))
+    }
+    private fun ease(t: Double) = (t * t * t - 2 * t * t + t) * 1.363 + (-2 * t * t * t + 3 * t * t) + (t * t * t - t * t) * .3368
+    /** Bernstein weights at the table crossing and its normalized time for a flight launched at height z. */
+    fun landingWeights(z: Double): DoubleArray {
+        val h = 6 / 12.16
+        fun height(u: Double) = (1 - u) * (1 - u) * (1 - u) * z + 3 * (1 - u) * u * h - u * u * u * h
+        var lo = .5; var hi = 1.0
+        repeat(50) { val m = (lo + hi) / 2; if (height(m) > .033) lo = m else hi = m }
+        val u = (lo + hi) / 2; val a = 1 - u
+        lo = 0.0; hi = 1.0
+        repeat(50) { val m = (lo + hi) / 2; if (ease(m) < u) lo = m else hi = m }
+        return doubleArrayOf(a * a * a, 3 * a * a * u, 3 * a * u * u, u * u * u, (lo + hi) / 2)
+    }
+
+    /** Arc points, elapsed, duration, then the endpoint drift (widths/s) that lands the bend exactly. */
+    fun launchArc(x: Double, y: Double, z: Double, direction: Double, forward: Double, power: Double,
+                  vx: Double, vy: Double, forwardSign: Double = -1.0): DoubleArray {
+        val side = lateral(direction, forward, vx, vy); val tx = .5 + (1 - BendShare) * side; val duration = flightDuration(power)
         val ty = .9 + forwardSign * (5 + 7 * forward) / 12.16
         val h = 6 / 12.16
-        return floatArrayOf(x.toFloat(), y.toFloat(), z.toFloat(), (x + (tx - x) * .2).toFloat(),
-            (y + (ty - y) * .2).toFloat(), h.toFloat(), tx.toFloat(), ty.toFloat(), h.toFloat(),
-            tx.toFloat(), ty.toFloat(), -h.toFloat(), 0f, flightDuration(power).toFloat())
+        val w = landingWeights(z); val x1 = x + (tx - x) * .2
+        val drift = (.5 + side - (w[0] * x + w[1] * x1 + (w[2] + w[3]) * tx)) / (w[3] * w[4] * duration)
+        return doubleArrayOf(x, y, z, x1, y + (ty - y) * .2, h, tx, ty, h, tx, ty, -h, 0.0, duration, drift)
     }
+    fun launch(x: Double, y: Double, z: Double, stroke: StrokeWindow, forwardSign: Double = -1.0): FloatArray =
+        launchArc(x, y, z, stroke.direction, stroke.forward, stroke.power, stroke.vx, stroke.vy, forwardSign)
+            .map { it.toFloat() }.toFloatArray()
     data class Contact(val time: Double, val nx: Double, val ny: Double)
     fun rimPosition(contact: Contact, px: Double, py: Double, radius: Double) =
         px + contact.nx * radius to py + contact.ny * radius

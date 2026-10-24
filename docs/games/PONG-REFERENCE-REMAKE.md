@@ -165,3 +165,16 @@ shortening reach. Aim formula, cubic, easing, stroke window, swept contact and
 lag compensation are unchanged. After: hit-to-bounce 648..872 ms, post-bounce
 peak 0.82..3.35 widths/s and at most .92 of the shot's pre-bounce peak, every
 on-table landing has at least 264 ms of reachable contact.
+
+### Playable curve (2026-10-24, round 3)
+
+Owner: hard hits curved off the table. Aim (up to ~.46) plus a full-flight curve
+(~1 width at side=1) stacked past the edge, and the clamped `side` made "hard"
+and "too hard" identical. Now `raw = |direction|*(8/12.16)*(.7+.3f) +
+.15*|vx|*12.16/60` from the raw finger velocity, landing offset
+`L = .42*tanh(raw/.42) + .3*smoothstep(|vx|,8,10)*smoothstep(theta,65deg,78deg)`,
+target x `.5+.6L`, and the contact-time drift lands the crossing exactly at
+`.5+L` (40% of the offset is visible curve). Landing rates (backend
+`pongFairness`, 2 to 14 widths/s, 0 to 90 degrees, 3 contact x, 3 heights):
+theta <= 60 all land within .46; 61 to 75 all land at <= 9 widths/s sideways;
+76 to 90 land at <= 6, 108/162 at 6 to 9, 0/270 above 9.
