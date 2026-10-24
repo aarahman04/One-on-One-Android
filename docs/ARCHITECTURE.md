@@ -1386,3 +1386,26 @@ score and serve rules remain. The ball dims when not eligible. Old untimed clien
 retain their control path. The 500 ms cap and bounded sample window are explicit
 owner-approved deviations backed by the harness. Details, complete profile table,
 commands and Xiaomi checklist: [PONG-CONTACT-EVIDENCE.md](games/PONG-CONTACT-EVIDENCE.md).
+
+
+## Game release parity gate (2026-10-24)
+
+The owner-approved final presentation keeps the ball fully opaque, superseding
+the dim-ball cue above; shared contact eligibility and physics are unchanged.
+The production incident was an old active Railway deployment, not lost Android
+option fields. Verify active backend source before building the signed client.
+
+```mermaid
+flowchart LR
+    Options[Android invite: clock or target] --> Transport[Existing GameService / Transport]
+    Transport --> Server[Current backend: clocks, target, match reactions]
+    Server --> Snapshot[Snapshot clock/points and reaction event]
+    Snapshot --> UI[Clock chips, scoreboard and comment slots]
+    Main[Reviewed backend main] --> Railway[Verify ACTIVE source commit and health]
+    Railway --> Android[Reviewed Android main]
+    Android --> Build[android-build: signed 2.0.12 / code 19]
+```
+
+Local real-socket checks cover all turn-game clocks/increments/comments, timeout
+without another move and Pong 11/21/custom targets. Offline demo approval does
+not substitute for the signed two-account production checklist.

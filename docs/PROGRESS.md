@@ -2087,3 +2087,54 @@ native historical pointer scheduling and authenticated two-phone latency remain
 owner checks; simulation is not a device/FPS claim.
 
 Paired review: [Android #52](https://github.com/aarahman04/One-on-One-Android/pull/52) and [backend #128](https://github.com/aarahman04/One-on-One/pull/128). Both open; owner merges/deploys.
+
+
+## 2026-10-24 — Final game verification and 2.0.12 / code 19
+
+The owner approved the repaired Pong behavior on `PongRemake_Check` and then the
+always-white ball. Removed the eligibility-dependent .45 alpha and its obsolete
+accessibility sentence; physics and return eligibility are unchanged. Rebuilt
+and reinstalled the debug APK. A frozen emulator host-GPU display required a
+cold boot with software rendering; user data was preserved.
+
+Production diagnosis: Railway was still ACTIVE on backend PR #121 (`3d0c148`,
+2026-10-21, deployment c0e900a6-d6fc-4e6a-81b3-230b0c4bbf66), which predates
+clocks, comments and custom Pong targets. It therefore silently used defaults
+with newer Android clients. Source routing on Android preserves clock/points
+and match:reaction; current backend main supports them. Railway is configured
+for root backend, main, automatic deployment, one replica. Release verification
+must check the active deployment's source commit, not only a green GitHub merge
+or a generic health response. See RELEASE-CHECKLIST.md for the precise gate.
+
+Added a real-socket test across Chess, Tic-Tac-Toe, Connect 4 and Reversi for
+invite clock echo on both clients, countdown, legal move/increment and comments;
+a real 10-second expiry test with neither client making another move; socket
+11/21/custom-13 Pong targets/comments/rematches; and real simulations continuing
+past seven and ending at each chosen target. Added Android GameViewModel →
+Transport → snapshot checks across all five games for options and clock display
+anchoring. Existing rule, away/sync/draw, clock receipt and comments tests remain.
+
+Final local checks: assembleDebug, lintDebug, testDebugUnitTest **293 tests**;
+backend npm test **148/148** and npm run build. Signed CI additionally performs
+minified release lint/native alignment/signature/package checks. No production
+authenticated game was created during these tests. The owner authorizes merging
+backend #128 first, Android #52 second, and dispatching android-build from merged
+main for **19 / 2.0.12**. This is one increment from the verified signed 18 / 2.0.11
+run 39886525017; application ID, certificate and Play upload rules stay intact.
+
+Xiaomi / production checks on the new signed build and new backend:
+
+- [ ] Invite each turn game with a chosen clock; both phones show it, only the
+  side to move counts down, a move adds its increment, no-move expiry ends it.
+- [ ] Send an emoji and typed comment from each phone in every game; each appears
+  under the correct sender and expires without covering a clock or controls.
+- [ ] Choose Pong 11, 21 and a custom target; both headers/scoreboards agree,
+  seven does not end the game, the selected target does, rematch keeps it.
+- [ ] Repeat the Pong still/slow/diagonal/all-rim checklist and ensure the ball
+  stays white during both players' flights, on Wi-Fi/mobile and 60/120 Hz.
+- [ ] Compare the installed app version (2.0.12 / 19) and active Railway source
+  with this release before diagnosing any stale-build report. Any Pong miss:
+  note the time and capture `adb logcat -s PongContact` from the debug app.
+
+No Play upload is requested. Signed APK production-account testing and physical
+Xiaomi checks remain distinct from the successful local/demo checks.

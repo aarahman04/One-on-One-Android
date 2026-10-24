@@ -115,6 +115,33 @@ class GameViewModelTest {
         assertEquals(false, transport.calls.last().second["away"]!!.jsonPrimitive.boolean)
     }
 
+    @Test fun selectedClocksAndPongTargetsReachTheTransportAndSurviveServerSnapshots() = runTest {
+        for (kind in listOf(GameKind.Chess, GameKind.TicTacToe, GameKind.Connect4, GameKind.Reversi, GameKind.Pong)) {
+            val (vm, transport) = fixture()
+            val options = if (kind == GameKind.Pong) MatchOptions(points = 21) else MatchOptions(clock = 60_000L to 2_000L)
+            vm.invite(kind, options); runCurrent()
+            val payload = transport.calls.last().second
+            assertEquals(kind.wire, payload["game"]!!.jsonPrimitive.content)
+            if (kind == GameKind.Pong) assertEquals(21, payload["points"]!!.jsonPrimitive.int)
+            else assertEquals(buildJsonObject { put("base", 60_000L); put("inc", 2_000L) }, payload["clock"])
+            val data = JsonObject(snapshot("playing", "me", kind.wire) + buildJsonObject {
+                if (kind == GameKind.Pong) put("points", 21)
+                else putJsonObject("clock") {
+                    put("base", 60_000L); put("inc", 2_000L); putJsonArray("left") { add(60_000L); add(60_000L) }
+                }
+            })
+            transport.matchStates.emit(data); runCurrent()
+            val match = vm.ui.value.match!!
+            assertEquals(GameStage.Playing, vm.ui.value.stage)
+            if (kind == GameKind.Pong) {
+                assertEquals("First to 21", optionsLabel(match)); assertNull(match.clock)
+            } else {
+                assertEquals("1 min + 2 s", optionsLabel(match))
+                assertEquals(listOf(58_750L, 60_000L), match.clockLeft(match.receivedAtNanos + 1_250_000_000))
+            }
+        }
+    }
+
     @Test fun commentsUseTheGameConnectionEvenWhenPartnerPresenceIsStale() = runTest {
         val (vm, transport) = fixture(online = false)
         transport.matchStates.emit(snapshot("playing", "me")); runCurrent()

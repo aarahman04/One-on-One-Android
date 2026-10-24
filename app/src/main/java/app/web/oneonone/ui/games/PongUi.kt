@@ -185,7 +185,7 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
             }
         }
     }.semantics {
-        contentDescription = "Ping Pong. Move your racket around your half and swipe through the ball. Swipe direction aims the shot. The ball is bright when you can return it and dim before a bounce or below the hitting height."
+        contentDescription = "Ping Pong. Move your racket around your half and swipe through the ball. Swipe direction aims the shot."
         customActions = listOf(
             CustomAccessibilityAction("Move racket left") { if (currentEnabled) onRelease(game.myX - .1f, game.myY); currentEnabled },
             CustomAccessibilityAction("Move racket right") { if (currentEnabled) onRelease(game.myX + .1f, game.myY); currentEnabled },
@@ -222,9 +222,8 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
         if (game.live && (game.height >= 0 || game.ballX !in 0f..1f || game.ballY !in 0f..PongClient.CourtH)) {
             val ball = at(game.ballX, game.ballY)
             val r = PongClient.ballRadius(game.height) * u
-            val opacity = if (game.contactEligible) 1f else .45f
-            drawCircle(Ink.copy(alpha = opacity), r * (1 + app.web.oneonone.data.games.PongPhysics.BallEdge.toFloat()), ball)
-            drawCircle(Color.White.copy(alpha = opacity), r, ball)
+            drawCircle(Ink, r * (1 + app.web.oneonone.data.games.PongPhysics.BallEdge.toFloat()), ball)
+            drawCircle(Color.White, r, ball)
         }
         drawRacket(at(game.theirX, game.theirY), OtherRacket, u, up = true)
         drawRacket(at(game.myX, game.myY), YourRacket, u, up = false)

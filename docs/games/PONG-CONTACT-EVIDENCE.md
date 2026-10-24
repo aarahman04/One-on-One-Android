@@ -125,8 +125,9 @@ using the same full-circle impact-time rim rule. Browser code is unchanged and
 continues using that legacy path. Existing clients keep working with the additive backend fields. Deploy the
 companion backend before the new Android client for timed contact and the larger
 validated paddle payload. Client prediction never awards score/sound/haptic: only authoritative
-hit increments trigger the existing UI feedback. Before-bounce/below-height
-balls dim; accessibility text explains the cue.
+hit increments trigger the existing UI feedback. The owner approved the working contact on the emulator, then requested the ball
+remain white throughout play. The eligibility dimming cue and its accessibility
+text were removed on 2026-10-24; contact eligibility itself is unchanged.
 
 ### Existing assertions legitimately changed
 
@@ -166,7 +167,7 @@ No physical-device run, merge, release or deployment was performed.
 - [ ] Fast diagonal swipe ×20.
 - [ ] Hit left/right/front/back of the head ×10 each.
 - [ ] Repeat on Wi-Fi and mobile data, from both players' seats.
-- [ ] Repeat at 60 Hz and 120 Hz if available; check dim vs bright eligibility,
+- [ ] Repeat at 60 Hz and 120 Hz if available; check a consistently white ball,
   continuous follow-through and one authoritative sound/haptic per hit.
 - [ ] Any miss: note the time, run `adb logcat -s PongContact`, and send the log.
   Debug logs include v, ct, impact drawn gap, prediction/confirmation, delay and

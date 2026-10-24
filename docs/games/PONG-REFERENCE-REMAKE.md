@@ -86,8 +86,8 @@ immediately; confirmation/rejection blends for 60 ms without a frozen rim or
 receipt teleport. If all pre-bounce return frames are lost, a confirmed prediction
 continues until the new curve is valid at the drawn time. Acked rejection allows
 another attempt. Only authoritative hit counts trigger sound/haptic; score stays
-server-owned. The full head is legal, while a dim ball communicates pre-bounce or
-below-height ineligibility. Existing paint order and layout remain.
+server-owned. The full head is legal, and the ball remains fully white/opaque throughout play, as requested after
+the owner's successful emulator test. Existing paint order and layout remain.
 
 One pointer owns a stroke. Its final up position is applied; cancellation uses
 the actual bat position, a second finger cannot steal control, and pause/new
