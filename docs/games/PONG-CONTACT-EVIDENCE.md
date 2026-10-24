@@ -66,7 +66,7 @@ BEFORE/AFTER table is [pong-contact-profiles.md](pong-contact-profiles.md), with
 raw values in `pong-contact-before.json` and `pong-contact-after.json`.
 AFTER assertions pass every profile: overlap miss/ghost rates zero, no early
 launch, contact-to-visible-launch p95 zero, no unconfirmed returns, stroke-target
-error below 0.00000006 widths. Largest correction step 0.0192; largest per-profile
+error below 0.0000003 widths. Largest correction step 0.0192; largest per-profile
 p99 below 0.02. These are deterministic simulation results, not device results.
 
 ### Metric definitions

@@ -2062,7 +2062,7 @@ vectors and **28** Kotlin-validated action traces cover 60/90/120 Hz plus the ra
 lost-pre-bounce confirmation case. Complete deterministic matrix: **72 profiles,
 17,280 attempts per revision**, every candidate acceptance assertion passes.
 Measured misses/ghosts zero; largest profile p99 correction **.01737**, max
-**.01920** widths; stroke error <.00000005; visible launch delay p95 zero.
+**.01920** widths; stroke error <.0000003; visible launch delay p95 zero.
 Original miss rates worsen to about 85% at 150 ms one-way. Per-profile table,
 measurement definitions, failed-before evidence and legitimate test adjustments:
 [games/PONG-CONTACT-EVIDENCE.md](games/PONG-CONTACT-EVIDENCE.md).
@@ -2085,3 +2085,5 @@ Debug-only log prints v, ct, drawn impact gap, prediction/confirmation, confirma
 delay and raw correction. Release implementation is a no-op. Physical feel,
 native historical pointer scheduling and authenticated two-phone latency remain
 owner checks; simulation is not a device/FPS claim.
+
+Paired review: [Android #52](https://github.com/aarahman04/One-on-One-Android/pull/52) and [backend #128](https://github.com/aarahman04/One-on-One/pull/128). Both open; owner merges/deploys.
