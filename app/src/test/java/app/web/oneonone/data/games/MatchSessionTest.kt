@@ -17,10 +17,12 @@ private class FakeChannel : MatchChannel {
     val releases = mutableListOf<Boolean>()
     val paddleY = mutableListOf<Float?>()
     val touches = mutableListOf<Pair<Float, Float>?>()
+    val timings = mutableListOf<PaddleTiming?>()
+    val windows = mutableListOf<JsonArray?>()
     var reply: suspend (String, JsonObject) -> JsonObject = { _, _ -> buildJsonObject { put("ok", true) } }
     override suspend fun call(event: String, payload: JsonObject): JsonObject { calls += event to payload; return reply(event, payload) }
-    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean, touch: Pair<Float, Float>?) {
-        paddles += x; paddleY += y; releases += released; touches += touch
+    override fun paddle(matchId: String, x: Float, y: Float?, released: Boolean, touch: Pair<Float, Float>?, timing: PaddleTiming?, samples: JsonArray?) {
+        paddles += x; paddleY += y; releases += released; touches += touch; timings += timing; windows += samples
     }
 }
 
@@ -217,6 +219,36 @@ class MatchSessionTest {
         advanceTimeBy(MatchSession.PaddleIntervalMs + 1); runCurrent()
         assertEquals(.7f, ch.paddles.last(), 0f)
         assertFalse(ch.releases.last())
+    }
+
+    @Test fun timedSamplesRecoverCoalescedMotionAndSwitchToContactRateImmediately() = runTest {
+        val (s, ch) = session()
+        ch.states.emit(matchJson(game = "pong", turn = null)); runCurrent()
+        ch.frames.emit(buildJsonObject {
+            put("id", "m1"); put("t", 1000); put("h", 1); put("c", 0); put("l", true); put("drift", 0)
+            putJsonArray("b") { add(.5); add(1.6); add(0); add(1) }
+            putJsonArray("p") { add(.5); add(.5) }; putJsonArray("r") { add(2.4); add(-.08) }
+            putJsonArray("s") { add(0); add(0) }; putJsonArray("z") { add(.033); add(0) }
+            putJsonArray("ack") { add(0); add(0) }
+        }); runCurrent()
+        s.pong!!.advance(0)
+        s.paddle(.5f, 2.4f); runCurrent()
+        advanceTimeBy(5)
+        s.paddle(.5f, 1.9f); runCurrent()
+        assertEquals("near contact interrupts the 33 ms wait", 2, ch.timings.size)
+        advanceTimeBy(8); s.paddle(.49f, 1.9f); runCurrent()
+        advanceTimeBy(8); s.paddle(.48f, 1.9f); runCurrent()
+        assertEquals(3, ch.timings.size)
+        s.paddle(.47f, 1.9f, released = true); runCurrent()
+        assertTrue(ch.releases.last())
+        val times = ch.timings.filterNotNull()
+        assertTrue(times.zipWithNext().all { (a, b) -> b.ct > a.ct && b.n > a.n && b.v >= a.v })
+        val window = ch.windows.last()!!
+        assertEquals("coalesced samples survive in the next packet", 4, window.size)
+        assertEquals(listOf(1L, 2L, 3L, 4L), window.map { it.jsonArray[0].jsonPrimitive.long })
+        repeat(50) { advanceTimeBy(1); s.paddle(.47f, 1.9f) }
+        s.paddle(.47f, 1.9f, released = true); runCurrent()
+        assertTrue(ch.windows.last()!!.size <= 31)
     }
 
     @Test fun queuedPaddleInputIsDiscardedOnPauseResultRematchAndReset() = runTest {

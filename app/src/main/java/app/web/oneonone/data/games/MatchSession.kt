@@ -5,13 +5,15 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
 /** What a [MatchSession] needs from the network; kept small so the session is testable without Android. */
+data class PaddleTiming(val ct: Long, val v: Double, val n: Long)
+
 interface MatchChannel {
     val states: Flow<JsonObject>
     val frames: Flow<JsonObject>
     val reactions: Flow<JsonObject> get() = emptyFlow()
     /** Emits a `match:*` event and returns its ack. */
     suspend fun call(event: String, payload: JsonObject): JsonObject
-    fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false, touch: Pair<Float, Float>? = null)
+    fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false, touch: Pair<Float, Float>? = null, timing: PaddleTiming? = null, samples: JsonArray? = null)
 }
 
 enum class GameStage { Idle, Hub, Outgoing, Incoming, Playing, Result }
@@ -43,9 +45,12 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     val reactions = mutableReactions.asSharedFlow()
     var me = ""; private set
     var pong: PongClient? = null; private set
-    private data class PaddleInput(val x: Float, val y: Float, val released: Boolean, val touch: Pair<Float, Float>?)
+    private data class PaddleInput(val x: Float, val y: Float, val released: Boolean, val touch: Pair<Float, Float>?, val timing: PaddleTiming?)
     private var pendingPaddle: PaddleInput? = null
     private var paddleJob: Job? = null
+    private var paddleIntervalMs = PaddleIntervalMs
+    private var lastPaddleCt = 0L
+    private val recentPaddles = ArrayDeque<PaddleInput>(32)
 
     init {
         scope.launch { channel.states.collect { offer(MatchCodec.decode(it)) } }
@@ -55,7 +60,7 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
 
     fun reset(user: String) {
         me = user; mutableMatch.value = null; pong = null; mutableBusy.value = false
-        paddleJob?.cancel(); pendingPaddle = null
+        paddleJob?.cancel(); pendingPaddle = null; recentPaddles.clear()
     }
 
     private fun offer(next: Match?) {
@@ -63,7 +68,7 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
         val current = match.value
         if (current != null && current.id == next.id && next.version < current.version) return
         if (current?.id != next.id || next.status != MatchStatus.Playing || next.paused) {
-            paddleJob?.cancel(); pendingPaddle = null
+            paddleJob?.cancel(); pendingPaddle = null; recentPaddles.clear()
         }
         if (next.game == GameKind.Pong && (current?.id != next.id || pong == null)) pong = PongClient(next.seat(me))
         if (next.game != GameKind.Pong) pong = null
@@ -144,31 +149,55 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
     }
 
     /** Own paddle (view x); sent at most every [PaddleIntervalMs], always the latest position. */
-    fun paddle(viewX: Float, viewY: Float, released: Boolean = false, touch: Pair<Float, Float>? = null) {
+    fun paddle(viewX: Float, viewY: Float, released: Boolean = false, touch: Pair<Float, Float>? = null, sampleNanos: Long = clock()) {
         val m = match.value ?: return
         val client = pong ?: return
         if (m.status != MatchStatus.Playing || m.paused) return
         if (!viewX.isFinite() || !viewY.isFinite() || touch?.let { !it.first.isFinite() || !it.second.isFinite() } == true) return
-        val (x, y) = client.paddle(viewX, viewY)
+        val (x, y) = client.paddle(viewX, viewY, sampleNanos, touch, released, lastPaddleCt)
+        lastPaddleCt = client.sampleCt
+        val timing = if (client.displayTimeMs > 0) PaddleTiming(client.sampleCt, client.displayTimeMs, client.sampleN) else null
         val serverTouch = touch?.let { if (client.seat == 1) it else 1 - it.first to PongClient.CourtH - it.second }
+        val current = PaddleInput(x, y, released, serverTouch, timing)
+        if (timing != null) {
+            if (recentPaddles.size == 32) recentPaddles.removeFirst()
+            recentPaddles.addLast(current)
+        }
+        fun emit(input: PaddleInput) {
+            val samples = input.timing?.let { t -> buildJsonArray {
+                for (sample in recentPaddles) {
+                    val at = sample.timing ?: continue
+                    if (at.n >= t.n) break
+                    add(buildJsonArray {
+                        add(at.n); add(at.ct); add(at.v); add(sample.x); add(sample.y)
+                        add(sample.touch?.first ?: sample.x); add(sample.touch?.second ?: sample.y); add(if (sample.released) 1 else 0)
+                    })
+                }
+            } }
+            channel.paddle(m.id, input.x, input.y, input.released, input.touch, input.timing, samples)
+        }
         if (released) {
             // Preserve the last held segment before release; otherwise coalescing can erase a whole swipe.
-            pendingPaddle?.let { channel.paddle(m.id, it.x, it.y, it.released, it.touch) }
+            pendingPaddle?.let(::emit)
             pendingPaddle = null
-            channel.paddle(m.id, x, y, true, serverTouch)
+            emit(current)
             return
         }
-        pendingPaddle = PaddleInput(x, y, false, serverTouch)
-        if (paddleJob?.isActive == true) return
+        pendingPaddle = current
+        if (paddleJob?.isActive == true) {
+            if (!client.contactPossible || paddleIntervalMs == ContactIntervalMs) return
+            paddleJob?.cancel() // Entering contact range must not wait out the slower send interval.
+        }
         paddleJob = scope.launch {
             while (true) {
                 val input = pendingPaddle ?: break
                 pendingPaddle = null
-                channel.paddle(m.id, input.x, input.y, input.released, input.touch)
-                delay(PaddleIntervalMs)
+                emit(input)
+                paddleIntervalMs = if (client.contactPossible) ContactIntervalMs else PaddleIntervalMs
+                delay(paddleIntervalMs)
             }
         }
     }
 
-    companion object { const val PaddleIntervalMs = 33L }
+    companion object { const val PaddleIntervalMs = 33L; const val ContactIntervalMs = 16L }
 }

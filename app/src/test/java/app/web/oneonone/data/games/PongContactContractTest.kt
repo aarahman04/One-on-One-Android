@@ -47,4 +47,86 @@ class PongContactContractTest {
             }
         }
     }
+
+    @Test fun compensatedRenderingReportsTheTimeOfTheDrawnBall() {
+        val p = PongClient(1)
+        fun at(t: Int, y: Double) = JsonObject(incoming() + buildJsonObject {
+            put("t", t); putJsonArray("b") { add(.5); add(y); add(0); add(1) }
+            putJsonArray("ack") { add(0); add(0) }
+        })
+        p.receive(at(1000, 1.6), "m", 1_040_000_000)
+        p.advance(1_070_000_000)
+        assertEquals(1000.0, p.displayTimeMs, 1e-5) // Startup cannot interpolate before the first frame.
+        assertEquals(1.6f, p.ballY, 1e-5f)
+        p.receive(at(1033, 1.633), "m", 1_073_000_000)
+        p.advance(1_113_000_000)
+        assertEquals(1023.0, p.displayTimeMs, 1e-5)
+        assertEquals(1.623f, p.ballY, 1e-5f)
+    }
+
+    @Test fun aNewFrameCannotChangeEligibilityBeforeItIsDrawn() {
+        val p = PongClient(1)
+        fun data(t: Int, landed: Boolean) = JsonObject(incoming() + buildJsonObject {
+            put("t", t); put("l", landed); putJsonArray("ack") { add(0); add(0) }
+        })
+        p.receive(data(1000, false), "m", 1_000_000_000); p.advance(1_000_000_000)
+        assertFalse(p.contactEligible)
+        p.receive(data(1033, true), "m", 1_033_000_000)
+        assertFalse("pointer events must use the eligibility that was drawn", p.contactEligible)
+        p.advance(1_100_000_000)
+        assertTrue(p.contactEligible)
+    }
+
+    @Test fun rejectingAPredictionBlendsAndAllowsAnotherAttempt() {
+        val p = PongClient(1)
+        fun ack(n: Long) = JsonObject(incoming() + buildJsonObject { putJsonArray("ack") { add(n); add(0) } })
+        p.receive(ack(0), "m", 1_000_000_000); p.advance(1_000_000_000)
+        p.paddle(.5f, 1.6f, 1_000_000_000)
+        p.advance(1_020_000_000)
+        val before = p.visibleBallPosition()
+        p.receive(ack(p.sampleN), "m", 1_020_000_000)
+        assertEquals(before, p.visibleBallPosition())
+        p.advance(1_020_000_000); assertEquals(before, p.visibleBallPosition())
+        p.advance(1_080_000_000)
+        assertTrue(p.contactEligible)
+        p.paddle(.5f, 2.4f, 1_080_000_000); p.paddle(.5f, 1.6f, 1_081_000_000)
+        val impact = p.ballY
+        p.advance(1_100_000_000)
+        assertTrue(p.ballY < impact)
+        assertEquals(1, p.hits)
+    }
+
+    @Test fun releaseStopsFuturePredictedDriftWithoutErasingTheDriftAlreadyApplied() {
+        val p = PongClient(1)
+        p.receive(incoming(), "m", 1_000_000_000); p.advance(1_000_000_000)
+        p.paddle(.2f, 2f, 1_000_000_000)
+        p.paddle(.8f, 1.4f, 1_016_000_000)
+        p.advance(1_080_000_000)
+        val before = p.visibleBallPosition()
+        p.paddle(p.myX, p.myY, 1_080_000_000, released = true)
+        p.advance(1_080_000_000)
+        assertEquals(before.first, p.ballX, 1e-6f); assertEquals(before.second, p.ballY, 1e-6f)
+    }
+
+    @Test fun pairedHarnessActionsMatchTheRealKotlinDisplay() {
+        val traces = Json.parseToJsonElement(javaClass.getResource("/pong-display-traces.json")!!.readText()).jsonArray
+        for (trace in traces) {
+            val p = PongClient(1)
+            for ((index, action) in trace.jsonObject["actions"]!!.jsonArray.withIndex()) {
+                val a = action.jsonObject
+                val at = a["at"]!!.jsonPrimitive.double
+                val nanos = (at * 1_000_000).toLong()
+                when (a["type"]!!.jsonPrimitive.content) {
+                    "receive" -> assertTrue("frame $index", p.receive(JsonObject(a["frame"]!!.jsonObject + ("id" to JsonPrimitive("m"))), "m", nanos))
+                    "advance" -> p.advance(nanos)
+                    "paddle" -> p.paddle(a["x"]!!.jsonPrimitive.float, a["y"]!!.jsonPrimitive.float, nanos, released = a["released"]!!.jsonPrimitive.boolean)
+                }
+                val expected = a["expected"]!!.jsonArray
+                listOf(p.ballX.toDouble(), p.ballY.toDouble(), p.height.toDouble(), p.displayTimeMs).forEachIndexed { i, value ->
+                    assertEquals("latency=${trace.jsonObject["latency"]} style=${trace.jsonObject["style"]} action=$index ${a["type"]} component=$i",
+                        expected[i].jsonPrimitive.double, value, if (i == 3) .001 else .0001)
+                }
+            }
+        }
+    }
 }

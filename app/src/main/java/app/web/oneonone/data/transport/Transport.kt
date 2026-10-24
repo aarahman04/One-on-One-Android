@@ -18,7 +18,7 @@ interface Transport {
     val pongFrames: Flow<JsonObject> get() = emptyFlow()
     val matchReactions: Flow<JsonObject> get() = emptyFlow()
     suspend fun match(event: String, payload: JsonObject): JsonObject = error("Not supported.")
-    fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false, touch: Pair<Float, Float>? = null) {}
+    fun paddle(matchId: String, x: Float, y: Float? = null, released: Boolean = false, touch: Pair<Float, Float>? = null, timing: app.web.oneonone.data.games.PaddleTiming? = null, samples: kotlinx.serialization.json.JsonArray? = null) {}
     suspend fun start()
     suspend fun stop()
     suspend fun send(message: SendMessage): ChatMessage

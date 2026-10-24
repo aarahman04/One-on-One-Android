@@ -16,6 +16,16 @@ class PongTouchTest {
         assertFalse(touch.held)
     }
 
+    @Test fun pointerHistoryAndRenderingConsumeElapsedMotionOnlyOnce() {
+        val touch = PongTouch()
+        assertEquals(1f / 60, touch.elapsed(1_000_000_000), 1e-6f)
+        assertEquals(.008f, touch.elapsed(1_008_000_000), 1e-6f)
+        assertEquals(0f, touch.elapsed(1_004_000_000), 0f)
+        assertEquals(0f, touch.elapsed(1_008_000_000), 0f)
+        assertEquals(.008f, touch.elapsed(1_016_000_000), 1e-6f)
+        assertEquals(.1f, touch.elapsed(2_000_000_000), 0f)
+    }
+
     @Test fun cancelStopsAtActualBatAndRoundResetCannotResumeOldFinger() {
         val touch = PongTouch()
         touch.begin(1, .5f, 2f); touch.move(1, .8f, 1.3f)

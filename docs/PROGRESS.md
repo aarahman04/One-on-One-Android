@@ -2027,3 +2027,61 @@ Xiaomi / physical-device checks remain:
 - [ ] If the game stalls again, capture the screen and logs before restarting; the underlying stall has not been diagnosed.
 
 No release version/signing change, Play upload, merge, production deployment or database migration is part of this follow-up.
+
+
+## 2026-10-24 — Pong displayed-time contact repair
+
+Followed `docs/prompts/codex-pong-contact-fix.md`, starting from requested Android
+branch `claude/nifty-fermat-y3aga8` (prompt-only commit over main 6f8cd1c) and freshly
+synced backend main bf35268. Android client was implemented first, then the paired
+backend. Final fetch incorporated prompt update e60c049 (adaptive per-seat RTT cap).
+User-local CLAUDE.md/untracked work is excluded.
+
+Replaced the frozen rim with a predicted return using shared relative sweep,
+impact-time rim and client-time stroke math. Added exact drawn v, monotonic ct,
+sequence n and a bounded redundant sample window through the existing transport.
+Pointer history and display motion share one elapsed follower; sends switch from
+33 ms to 16 ms near possible contact, retaining final release. Smoothed recent
+offset and 50 ms interpolation match the drawing and contact timeline. Confirmed
+or rejected launch blends for 60 ms; rejection re-arms contact. Only authoritative
+h triggers hit sound/haptic; score stays server-owned. Ineligible balls dim.
+
+Backend uses 800 ms of bounded sub-step history, clamps v per seat to server-measured RTT +100 ms (250–500 ms),
+validates before replay and catches the unchanged flight up from impact. Full
+head directions now work without a front-arc relocation. Token bucket 64/s,
+capacity 96 handles release bursts. Owner approved the measured 500 ms bound and
+redundant samples. Existing black ball edge was already painted: geometry and
+forgiveness stay unchanged (edge .35, forgiveness 0). No flight/duration/aim/drift,
+bounce/scoring/serve formula, dependency, migration, signing or version change.
+
+Validation: `gradlew.bat assembleDebug lintDebug testDebugUnitTest --console=plain
+--max-workers=1` PASS, **292 tests / 43 suites**, zero failures/errors/skips.
+Lint: no errors/warnings (one pre-existing AutoboxingStateCreation hint).
+Companion backend `npm test` **144/144**, `npm run build` PASS. Shared golden
+vectors and **28** Kotlin-validated action traces cover 60/90/120 Hz plus the rare
+lost-pre-bounce confirmation case. Complete deterministic matrix: **72 profiles,
+17,280 attempts per revision**, every candidate acceptance assertion passes.
+Measured misses/ghosts zero; largest profile p99 correction **.01737**, max
+**.01920** widths; stroke error <.00000005; visible launch delay p95 zero.
+Original miss rates worsen to about 85% at 150 ms one-way. Per-profile table,
+measurement definitions, failed-before evidence and legitimate test adjustments:
+[games/PONG-CONTACT-EVIDENCE.md](games/PONG-CONTACT-EVIDENCE.md).
+
+Build/simulation verified only; no device, emulator, install, release, merge or
+deployment performed for this change. Deploy backend first, then Android after
+owner review/merge. Browser code stays on the compatible untimed path.
+
+### Xiaomi checklist (paired backend + debug APK)
+
+- [ ] Still bat, ball runs into it ×20.
+- [ ] Slow sweep through ball ×20.
+- [ ] Fast diagonal swipe ×20.
+- [ ] Left/right/front/back of the head ×10 each.
+- [ ] Wi-Fi and mobile data, both seats.
+- [ ] 60 Hz and 120 Hz screen if available.
+- [ ] Any miss: note the time, run `adb logcat -s PongContact`, and send the log.
+
+Debug-only log prints v, ct, drawn impact gap, prediction/confirmation, confirmation
+delay and raw correction. Release implementation is a no-op. Physical feel,
+native historical pointer scheduling and authenticated two-phone latency remain
+owner checks; simulation is not a device/FPS claim.

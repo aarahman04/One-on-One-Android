@@ -131,7 +131,7 @@ class GameViewModel @Inject constructor(private val service: GameService) : View
         if (!connected || !scoped) offlineNotice()
         else session.react(text)
     }
-    fun paddle(viewX: Float, viewY: Float, released: Boolean = false, touch: Pair<Float, Float>? = null) = session.paddle(viewX, viewY, released, touch)
+    fun paddle(viewX: Float, viewY: Float, released: Boolean = false, touch: Pair<Float, Float>? = null, sampleNanos: Long = System.nanoTime()) = session.paddle(viewX, viewY, released, touch, sampleNanos)
 
     private fun message(code: String) = when (code) {
         "partner_offline" -> "Games need $nickname to be online."

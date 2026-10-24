@@ -68,14 +68,26 @@ captured at contact before release clears live spin, so lifting a finger does
 not turn a hard hit into a neutral one. The recovered .9-.2*forward duration
 above describes the reference, not this owner-adjusted release setting.
 
-Android predicts one fixed world-space impact for at most 150 ms. A confirmed
-hit or round reset clears it; expiry cannot re-arm the same pending contact.
-The preview does not follow later bat movement. After confirmation the visible
-ball uses only the server flight, without circular ball-to-bat display
-projection. Input, network snapshots and rendering never push the local bat
-backward or pause it at contact. Neither a preview nor touch awards a local
-hit, sound or score. The ball and its tapered white trail are drawn before the
-bats, so a bat can briefly cover the ball at contact as in the reference.
+The 2026-10-24 contact repair supersedes the frozen preview and final-position
+rim resolution above. Kotlin and TypeScript share a full-circle relative sweep
+for both moving ball and moving head. The launch starts at the impact-time rim,
+with the same accepted cubic, duration, aim and drift. Radius is the outlined
+head plus the existing black outer ball (`1 + BALL_EDGE`, edge .35), with named
+forgiveness zero. The task's claim that the black edge was extra hit forgiveness
+was disproved by the renderer; geometry stays unchanged.
+
+Android renders 50 ms behind a recent, slowly adjusted offset estimate. Samples
+carry client ct, exact displayed server time v and sequence n, plus up to 32
+recent samples to recover lost/coalesced stroke segments. Input switches from
+33 to 16 ms sends near eligible contact. The server keeps 800 ms of 8 ms history,
+clamps rewind per seat to server-measured RTT +100 ms (250–500 ms), judges
+historical eligibility and fast-forwards the new flight. A prediction launches
+immediately; confirmation/rejection blends for 60 ms without a frozen rim or
+receipt teleport. If all pre-bounce return frames are lost, a confirmed prediction
+continues until the new curve is valid at the drawn time. Acked rejection allows
+another attempt. Only authoritative hit counts trigger sound/haptic; score stays
+server-owned. The full head is legal, while a dim ball communicates pre-bounce or
+below-height ineligibility. Existing paint order and layout remain.
 
 One pointer owns a stroke. Its final up position is applied; cancellation uses
 the actual bat position, a second finger cannot steal control, and pause/new
@@ -117,3 +129,17 @@ and `drift` remain additive; message formats and legacy x-only input behavior
 are unchanged. The paired backend is required for the contact/strength fixes;
 use the existing Railway deployment pipeline. No migration, dependency or
 website-client change is needed.
+
+
+## Contact repair verification (2026-10-24)
+
+The earlier checks/delivery above describe the previous release. The new paired
+change adds failing-before launch/history regressions, shared math/stroke vectors,
+28 Kotlin-validated display traces, loss/replay/window validation and a 72-profile
+BEFORE/AFTER simulation with 17,280 attempts per revision. Every candidate profile
+passes the executable acceptance checks; largest correction step .0192 widths,
+zero measured misses/ghosts, identical targets within r4. These are build and
+simulation results, with physical Xiaomi checks still pending. Full definitions,
+all profile rows, approved deviations and exact device checklist are in
+[PONG-CONTACT-EVIDENCE.md](PONG-CONTACT-EVIDENCE.md). Backend must be deployed first;
+Android follows after the owner merges the paired PRs. This task performs neither.
