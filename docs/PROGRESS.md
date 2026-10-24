@@ -2158,3 +2158,25 @@ was created for the check.
 Capitalization was checked on the rebuilt emulator app: the focused composer
 reports inputType `0x2c001`, including Android's `TYPE_TEXT_FLAG_CAP_SENTENCES`
 (`0x4000`). No test message was sent.
+
+## 2026-10-24 - Pong speed and fairness
+
+Owner complaints: hits too fast; shots landing near a line could not be
+returned. Backend branch `fix/pong-speed-fairness` adds a deterministic
+reachability sweep and tunes the server sim; Android mirrors launch duration
+and the debug `DemoPong`. See [reference remake](games/PONG-REFERENCE-REMAKE.md)
+for before/after numbers. Old Android clients render server arcs unchanged
+(frames already carry points, elapsed and duration); they only mispredict the
+duration of their own launch until confirmation blends it.
+
+Build verification only (assembleDebug, lintDebug, testDebugUnitTest); not
+device-tested.
+
+### Xiaomi checklist (pong fairness)
+
+- [ ] A hard flick still feels quick but is visibly slower than 2.0.12 (about 1 s across).
+- [ ] After the table bounce the ball never speeds up.
+- [ ] Holding a sideways swipe after hitting curves the ball only until it lands.
+- [ ] Short drops near the net and deep balls near the end line can be reached from the baseline.
+- [ ] Wide shots near the side still go out and score when not returned.
+- [ ] Own-hit prediction has no visible jump on confirmation against the new backend.

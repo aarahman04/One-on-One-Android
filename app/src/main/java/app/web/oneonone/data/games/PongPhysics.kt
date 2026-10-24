@@ -43,6 +43,11 @@ internal object PongPhysics {
         }
     }
 
+    // Mirrors backend flightDuration/bounceScale: hard ~1 s, soft 1.35 s; a bounce never outruns its incoming speed.
+    fun flightDuration(power: Double) = 1.35 - .35 * power
+    const val PeakSpeed = 1.7063 // peak normalized ground speed of the eased cubic
+    fun bounceScale(speed: Double) = min(30 / 12.16 / max(speed, 1e-6), 2 / PeakSpeed)
+
     fun launch(x: Double, y: Double, z: Double, direction: Double, forward: Double, power: Double,
                forwardSign: Double = -1.0): FloatArray {
         val tx = .5 + direction * (8 / 12.16) * (.7 + .3 * forward)
@@ -50,7 +55,7 @@ internal object PongPhysics {
         val h = 6 / 12.16
         return floatArrayOf(x.toFloat(), y.toFloat(), z.toFloat(), (x + (tx - x) * .2).toFloat(),
             (y + (ty - y) * .2).toFloat(), h.toFloat(), tx.toFloat(), ty.toFloat(), h.toFloat(),
-            tx.toFloat(), ty.toFloat(), -h.toFloat(), 0f, (1.15 - .45 * power).toFloat())
+            tx.toFloat(), ty.toFloat(), -h.toFloat(), 0f, flightDuration(power).toFloat())
     }
     data class Contact(val time: Double, val nx: Double, val ny: Double)
     fun rimPosition(contact: Contact, px: Double, py: Double, radius: Double) =
