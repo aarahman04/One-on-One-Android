@@ -155,10 +155,13 @@ landings with under 250 ms of reachable contact and 14 with none. Causes: the
 .7 s hard duration, a bounce that reused the whole flight duration for a
 2.47-width reach, steering that kept moving the endpoint after the landing,
 and steering-made sideways bounces. Changes, mirrored in Android
-`PongPhysics`/`DemoPong`: duration `1.35-.35*power`; drift stops at landing;
-bounce sideways velocity clamped to its forward velocity; bounce duration
-`1.7063*reach/incoming3DSpeed` (1.7063 = eased cubic peak normalized speed),
-capped at 2 s by shortening reach. Aim formula, cubic, easing, stroke window,
-swept contact and lag compensation are unchanged. After: hit-to-bounce
-648..872 ms, post-bounce at most 2.35 widths/s and never above incoming, every
-on-table landing has at least 368 ms of reachable contact.
+`PongPhysics`/`DemoPong`/`PongClient`: duration `1.35-.35*power`; the curve
+(`spin`) is the side captured at contact, constant until landing, and later bat
+movement, release or idle input never steers it (owner: steering after contact
+is removed, the swipe curve is kept); drift stops at landing; bounce sideways
+velocity clamped to its forward velocity; bounce keeps `.9` of the shot's own
+average ground pace (contact to undrifted aim / duration), capped at 2 s by
+shortening reach. Aim formula, cubic, easing, stroke window, swept contact and
+lag compensation are unchanged. After: hit-to-bounce 648..872 ms, post-bounce
+peak 0.82..3.35 widths/s and at most .92 of the shot's pre-bounce peak, every
+on-table landing has at least 264 ms of reachable contact.
