@@ -43,10 +43,15 @@ internal object PongPhysics {
         }
     }
 
-    // Mirrors backend flightDuration/bounceScale: hard ~1 s, soft 1.35 s; a bounce never outruns its incoming speed.
+    // Mirrors backend flightDuration/bounce: hard ~1 s, soft 1.35 s.
     fun flightDuration(power: Double) = 1.35 - .35 * power
-    const val PeakSpeed = 1.7063 // peak normalized ground speed of the eased cubic
-    fun bounceScale(speed: Double) = min(30 / 12.16 / max(speed, 1e-6), 2 / PeakSpeed)
+    const val BouncePace = .9
+    /** Reach multiplier and duration keeping .9 of the shot's average ground pace; the 2 s cap shortens reach. */
+    fun bounce(vx: Double, vy: Double, vz: Double, pace: Double): Pair<Double, Double> {
+        val ground = hypot(vx, vy); val scale = 30 / 12.16 / (hypot(ground, vz).takeIf { it != 0.0 } ?: 1.0)
+        val duration = ground * scale / max(pace * BouncePace, 1e-6)
+        return if (duration > 2) scale * 2 / duration to 2.0 else scale to max(.1, duration)
+    }
 
     fun launch(x: Double, y: Double, z: Double, direction: Double, forward: Double, power: Double,
                forwardSign: Double = -1.0): FloatArray {

@@ -16,15 +16,16 @@ arrive first. The last hitter cannot recapture an outgoing flight.
 confirmed server flight without circular ball-to-bat display corrections. It
 never awards a local score or hit. Strength controls duration from 1.35 s for a
 neutral/light touch to 1.0 s at maximum power, separately from the recovered
-aiming/spin parameters. Live steering stops at the table landing; the bounce
-is at most 45 degrees sideways and never faster than the incoming ball.
+aiming/spin parameters. The curve is fixed by the stroke captured at contact
+(bat movement afterwards never steers) and ends at the table landing; the bounce
+is at most 45 degrees sideways and keeps .9 of the shot's own pace.
 See [reference remake](games/PONG-REFERENCE-REMAKE.md).
 
 ```mermaid
 flowchart LR
-    Hit[Swept contact] -->|1.35-.35*power s, live drift| Air[Outgoing flight]
+    Hit[Swept contact: stroke frozen] -->|1.35-.35*power s, contact-side drift| Air[Outgoing flight]
     Air -->|table landing: drift stops| Bounce[Bounce: sideways <= forward]
-    Bounce -->|duration 1.7063*reach/speed, <= 2 s| Receiver[Receiver contact window >= 250 ms]
+    Bounce -->|.9 x shot pace, <= 2 s| Receiver[Receiver contact window >= 250 ms]
 ```
 
 ```mermaid

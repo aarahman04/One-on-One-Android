@@ -31,7 +31,9 @@ internal class DemoPong(private val target: Int = 7) {
     private var flight: Flight? = null
     private var lastHit = 0
     private var landed = false
-    private val spin get() = if (lastHit == 0 || landed) 0.0 else strokes[lastHit - 1][0]
+    private var shotSide = 0.0
+    // The contact stroke fixes the curve until landing; later bat movement never steers.
+    private val spin get() = if (lastHit == 0 || landed) 0.0 else shotSide
     private val samples = Array(2) { PongPhysics.StrokeWindow() }
 
     @Synchronized fun serving(seat: Int) = flight == null && server == seat
@@ -98,6 +100,7 @@ internal class DemoPong(private val target: Int = 7) {
         val target = doubleArrayOf(.5 + stroke[2] * (8 / 12.16) * (.7 + .3 * stroke[1]),
             courtH / 2 + (if (seat == 1) -1 else 1) * (5 + 7 * stroke[1]) / 12.16, -ArcH)
         curve(target, PongPhysics.flightDuration(stroke[3]))
+        shotSide = stroke[0]
         lastHit = seat; landed = false
         hits++
     }
@@ -119,8 +122,9 @@ internal class DemoPong(private val target: Int = 7) {
                 if (landed) { point(lastHit); return }
                 x = bx; y = by; z = .033; landed = true; bounces++
                 val sideways = vx.coerceIn(-abs(vy), abs(vy))
-                val scale = PongPhysics.bounceScale(sqrt(sideways * sideways + vy * vy + vz * vz))
-                curve(doubleArrayOf(x + sideways * scale, y + vy * scale, .033 - ArcH), max(.1, PongPhysics.PeakSpeed * scale))
+                val p0 = current.points[0]; val p2 = current.points[2] // undrifted aim: the shot's own pace
+                val (scale, duration) = PongPhysics.bounce(sideways, vy, vz, hypot(p2[0] - p0[0], p2[1] - p0[1]) / current.duration)
+                curve(doubleArrayOf(x + sideways * scale, y + vy * scale, .033 - ArcH), duration)
             }
         }
         val seat = 3 - lastHit
