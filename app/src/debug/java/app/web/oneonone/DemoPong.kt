@@ -31,7 +31,7 @@ internal class DemoPong(private val target: Int = 7) {
     private var flight: Flight? = null
     private var lastHit = 0
     private var landed = false
-    private val spin get() = if (lastHit == 0) 0.0 else strokes[lastHit - 1][0]
+    private val spin get() = if (lastHit == 0 || landed) 0.0 else strokes[lastHit - 1][0]
     private val samples = Array(2) { PongPhysics.StrokeWindow() }
 
     @Synchronized fun serving(seat: Int) = flight == null && server == seat
@@ -97,7 +97,7 @@ internal class DemoPong(private val target: Int = 7) {
         contactStrokes[seat - 1] = null
         val target = doubleArrayOf(.5 + stroke[2] * (8 / 12.16) * (.7 + .3 * stroke[1]),
             courtH / 2 + (if (seat == 1) -1 else 1) * (5 + 7 * stroke[1]) / 12.16, -ArcH)
-        curve(target, 1.15 - .45 * stroke[3])
+        curve(target, PongPhysics.flightDuration(stroke[3]))
         lastHit = seat; landed = false
         hits++
     }
@@ -118,9 +118,9 @@ internal class DemoPong(private val target: Int = 7) {
             if (bx in 0.0..1.0 && by in 0.0..courtH) {
                 if (landed) { point(lastHit); return }
                 x = bx; y = by; z = .033; landed = true; bounces++
-                val length = sqrt(vx * vx + vy * vy + vz * vz).takeIf { it != 0.0 } ?: 1.0
-                val reach = 30 / 12.16
-                curve(doubleArrayOf(x + vx / length * reach, y + vy / length * reach, .033 - ArcH), current.duration)
+                val sideways = vx.coerceIn(-abs(vy), abs(vy))
+                val scale = PongPhysics.bounceScale(sqrt(sideways * sideways + vy * vy + vz * vz))
+                curve(doubleArrayOf(x + sideways * scale, y + vy * scale, .033 - ArcH), max(.1, PongPhysics.PeakSpeed * scale))
             }
         }
         val seat = 3 - lastHit

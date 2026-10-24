@@ -143,3 +143,22 @@ simulation results, with physical Xiaomi checks still pending. Full definitions,
 all profile rows, approved deviations and exact device checklist are in
 [PONG-CONTACT-EVIDENCE.md](PONG-CONTACT-EVIDENCE.md). Backend must be deployed first;
 Android follows after the owner merges the paired PRs. This task performs neither.
+
+## Speed and fairness tuning (2026-10-24)
+
+Owner report: hits were too fast, and a hitter could place a ball the receiver
+could not reach. A deterministic sweep (backend `test/pongFairness.test.ts`,
+2430 shots of finger velocity, hit position and live steering; receiver bat at
+6 widths/s after 200 ms from the neutral baseline) measured hit-to-bounce
+456 ms, post-bounce speed up to 5.3 widths/s (5.3x the incoming speed), 158
+landings with under 250 ms of reachable contact and 14 with none. Causes: the
+.7 s hard duration, a bounce that reused the whole flight duration for a
+2.47-width reach, steering that kept moving the endpoint after the landing,
+and steering-made sideways bounces. Changes, mirrored in Android
+`PongPhysics`/`DemoPong`: duration `1.35-.35*power`; drift stops at landing;
+bounce sideways velocity clamped to its forward velocity; bounce duration
+`1.7063*reach/incoming3DSpeed` (1.7063 = eased cubic peak normalized speed),
+capped at 2 s by shortening reach. Aim formula, cubic, easing, stroke window,
+swept contact and lag compensation are unchanged. After: hit-to-bounce
+648..872 ms, post-bounce at most 2.35 widths/s and never above incoming, every
+on-table landing has at least 368 ms of reachable contact.

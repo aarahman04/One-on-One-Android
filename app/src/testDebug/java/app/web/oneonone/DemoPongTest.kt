@@ -4,6 +4,7 @@ import app.web.oneonone.data.games.PongClient
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.hypot
 
 class DemoPongTest {
     @Test fun aFastForwardStrokeUsesTheImpactTimeRimAndReturnsTheBall() {
@@ -46,8 +47,8 @@ class DemoPongTest {
         p.paddle(2, .2, .21); p.step(16.0)
         p.paddle(2, .5, .24); p.step(8.0); p.step(64.0)
         // Same input sequence in backend PongSim, rounded by its wire encoder.
-        assertEquals(.5318, p.x, .0001); assertEquals(.3168, p.y, .0001)
-        assertEquals(.2378, p.z, .0001); assertEquals(1, p.hits)
+        assertEquals(.5256, p.x, .0001); assertEquals(.3019, p.y, .0001)
+        assertEquals(.2265, p.z, .0001); assertEquals(1, p.hits)
         val client = PongClient(1)
         assertTrue(client.receive(p.frame("m"), "m", 1_000_000))
         assertEquals(1f, client.spin, .0001f)
@@ -62,7 +63,7 @@ class DemoPongTest {
         assertEquals(0, p.hits)
         p.paddle(2, .2, .21); p.step(900.0); p.paddle(2, .5, .24); p.step(8.0) // slow wide placement: no hook, runs out
         var outside = false
-        repeat(250) {
+        repeat(400) { // the slow bounce now lasts its full 2 s before the point
             p.step(8.0)
             if (p.x > 1.02) { outside = true; assertTrue(p.vx > 0) }
         }
@@ -90,7 +91,7 @@ class DemoPongTest {
         p.step(8.0)
         assertEquals(1, p.hits)
         assertEquals(start, listOf(p.x, p.y, p.z))
-        assertEquals(1.1414, p.frame("m")["a"]!!.jsonArray[13].jsonPrimitive.double, .0001)
+        assertEquals(1.3434, p.frame("m")["a"]!!.jsonArray[13].jsonPrimitive.double, .0001)
     }
 
     @Test fun lightAndHardImpactUsesTheOutlineWithoutTrappingFollowThrough() {
@@ -185,4 +186,18 @@ class DemoPongTest {
         assertEquals(contact, listOf(p.x, p.y, p.z))
     }
 
+    @Test fun steeringStopsAtTheBounceAndTheBounceIsNeverFaster() {
+        val p = DemoPong()
+        p.paddle(1, 5.0, 2.5, true) // receiver out of reach
+        p.paddle(2, .5, -.4); p.step(3000.0)
+        p.paddle(2, .5, -.4); p.step(16.0)
+        p.paddle(2, .5, .3); p.step(8.0)
+        assertEquals(1, p.hits)
+        var x = .5; var incoming = 0.0
+        while (p.bounces == 0) { incoming = hypot(p.vx, p.vy); x += .01; p.paddle(2, x, .3); p.step(16.0) }
+        val end = p.frame("m")["a"]!!.jsonArray[9].jsonPrimitive.double
+        repeat(10) { x += .01; p.paddle(2, x, .3); p.step(16.0); assertTrue(hypot(p.vx, p.vy) <= incoming * 1.05) }
+        assertEquals(0.0, p.frame("m")["drift"]!!.jsonPrimitive.double, 0.0)
+        assertEquals(end, p.frame("m")["a"]!!.jsonArray[9].jsonPrimitive.double, 1e-9)
+    }
 }

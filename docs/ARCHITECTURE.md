@@ -14,9 +14,18 @@ finger. The next physics tick consumes that impact even if more paddle packets
 arrive first. The last hitter cannot recapture an outgoing flight.
 `PongClient` shows one fixed pending impact for at most 150 ms, then uses the
 confirmed server flight without circular ball-to-bat display corrections. It
-never awards a local score or hit. Strength controls duration from 1.15 s for a
-neutral/light touch to .7 s at maximum power, separately from the recovered
-aiming/spin parameters. See [reference remake](games/PONG-REFERENCE-REMAKE.md).
+never awards a local score or hit. Strength controls duration from 1.35 s for a
+neutral/light touch to 1.0 s at maximum power, separately from the recovered
+aiming/spin parameters. Live steering stops at the table landing; the bounce
+is at most 45 degrees sideways and never faster than the incoming ball.
+See [reference remake](games/PONG-REFERENCE-REMAKE.md).
+
+```mermaid
+flowchart LR
+    Hit[Swept contact] -->|1.35-.35*power s, live drift| Air[Outgoing flight]
+    Air -->|table landing: drift stops| Bounce[Bounce: sideways <= forward]
+    Bounce -->|duration 1.7063*reach/speed, <= 2 s| Receiver[Receiver contact window >= 250 ms]
+```
 
 ```mermaid
 flowchart LR
