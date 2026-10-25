@@ -13,6 +13,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -31,7 +33,11 @@ import androidx.compose.ui.unit.sp
 import app.web.oneonone.data.games.PongClient
 import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.coroutines.isActive
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 private const val MarginX = .28f
@@ -42,6 +48,8 @@ private val TableGreen = Color(0xFF76B536)
 private val Ink = Color(0xFF10140D)
 private val YourRacket = Color(0xFFFF6B55)
 private val OtherRacket = Color(0xFF00B9ED)
+private const val SpinTurnsPerSecond = 3f
+private const val SpinLabelNanos = 600_000_000L
 
 private class PongHud {
     var mine by mutableIntStateOf(0)
@@ -49,6 +57,22 @@ private class PongHud {
     var countdown by mutableIntStateOf(0)
     var serving by mutableStateOf(false)
     var myServe by mutableStateOf(false)
+    var label by mutableStateOf<String?>(null)
+    var labelX by mutableFloatStateOf(0f)
+    var labelY by mutableFloatStateOf(0f)
+    // Draw-only spin motion, advanced once per frame; plain fields so drawing never allocates or recomposes.
+    var spinPhase = 0f
+    var dirX = 0f
+    var dirY = -1f
+    var lastX = .5f
+    var lastY = 0f
+}
+
+/** Short hit label for a noticeable spin, else null. */
+internal fun spinLabel(side: Float, top: Float): String? = when {
+    maxOf(abs(side), abs(top)) < .3f -> null
+    abs(top) >= abs(side) -> if (top > 0) "Topspin" else "Backspin"
+    else -> "Sidespin"
 }
 
 @Composable
@@ -66,11 +90,32 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
         var hits = game.hits
         var bounce = game.bounceAt
         var round = game.round
+        var shots = game.shotCount
+        var lastFrame = 0L
+        var labelAt = 0L
         while (isActive) {
             withFrameNanos {
                 if (currentPaused || round != game.round) touch.cancel()
                 round = game.round
                 game.advance(it)
+                val step = if (lastFrame == 0L) 0f else ((it - lastFrame) / 1e9f).coerceIn(0f, .1f)
+                lastFrame = it
+                val mx = game.ballX - hud.lastX; val my = game.ballY - hud.lastY; val moved = sqrt(mx * mx + my * my)
+                if (moved > 1e-4f) { hud.dirX = mx / moved; hud.dirY = my / moved }
+                hud.lastX = game.ballX; hud.lastY = game.ballY
+                val top = game.spinTop; val side = game.spinSide
+                // Signed by the dominant spin: forward roll for topspin, backward for backspin, orbit way for sidespin.
+                hud.spinPhase = (hud.spinPhase + step * SpinTurnsPerSecond * 2 * PI.toFloat() * if (abs(top) >= abs(side)) top else side) %
+                    (2 * PI.toFloat())
+                if (game.shotCount != shots) {
+                    shots = game.shotCount
+                    hud.label = spinLabel(game.shotSide, game.shotTop)
+                    val x = if (game.shotMine) game.myX else game.theirX
+                    val y = if (game.shotMine) game.myY - .32f else game.theirY + .32f
+                    hud.labelX = ((x + MarginX) / (1 + 2 * MarginX) * 2 - 1).coerceIn(-1f, 1f)
+                    hud.labelY = ((y + MarginTop) / (PongClient.CourtH + MarginTop + MarginBottom) * 2 - 1).coerceIn(-1f, 1f)
+                    labelAt = it
+                } else if (hud.label != null && it - labelAt > SpinLabelNanos) hud.label = null
                 val dt = touch.elapsed(it)
                 if (touch.held && !currentPaused && dt > 0) {
                     val follow = PongClient.racketFollow(dt)
@@ -91,7 +136,7 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().background(Arena, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
             val unit = minOf(maxWidth / (1 + 2 * MarginX), maxHeight / (PongClient.CourtH + MarginTop + MarginBottom))
             Box(Modifier.size(unit * (1 + 2 * MarginX), unit * (PongClient.CourtH + MarginTop + MarginBottom))) {
-                PongTable(game, touch, { frame }, enabled = !paused,
+                PongTable(game, touch, hud, { frame }, enabled = !paused,
                     onSample = { x, y, at ->
                         val dt = touch.elapsed(at)
                         val follow = PongClient.racketFollow(dt)
@@ -99,6 +144,7 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
                         vm.paddle(game.myX + (x - game.myX) * follow, game.myY + (y - game.myY) * follow,
                             touch = x to y, sampleNanos = at)
                     }) { x, y -> vm.paddle(x, y, true) }
+                hud.label?.let { SpinLabel(it, Modifier.align(BiasAlignment(hud.labelX, hud.labelY))) }
                 when {
                     paused -> CourtNotice("Waiting for ${vm.nickname}…", Modifier.align(Alignment.Center))
                     hud.countdown > 0 -> Surface(Modifier.align(Alignment.Center).size(68.dp),
@@ -115,6 +161,10 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
                 }
             }
         }
+        Text("Flick forward for topspin · pull back for backspin · swipe sideways to curve",
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall, color = OneTheme.colors.textDim,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         footer()
     }
 }
@@ -125,6 +175,13 @@ private fun CourtNotice(text: String, modifier: Modifier) {
         Text(text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
             style = MaterialTheme.typography.labelMedium, color = OneTheme.colors.text)
     }
+}
+
+@Composable
+private fun SpinLabel(text: String, modifier: Modifier) {
+    // Not a live region: announcing every hit would flood TalkBack; the hint below the table explains spin.
+    Text(text, modifier.background(Ink.copy(alpha = .78f), RoundedCornerShape(OneTheme.radii.md10)).padding(horizontal = 8.dp, vertical = 3.dp),
+        color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
 }
 
 @Composable
@@ -145,7 +202,7 @@ private fun PongScoreboard(mine: Int, theirs: Int, nickname: String, target: Int
 }
 
 @Composable
-private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, enabled: Boolean,
+private fun PongTable(game: PongClient, touch: PongTouch, hud: PongHud, frame: () -> Long, enabled: Boolean,
                       onSample: (Float, Float, Long) -> Unit, onRelease: (Float, Float) -> Unit) {
     val currentEnabled by rememberUpdatedState(enabled)
     Canvas(Modifier.fillMaxSize().pointerInput(game, enabled) {
@@ -212,11 +269,14 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
                     at(game.bounceX, game.bounceY), style = Stroke(.008f * u))
             }
         }
+        val top = game.spinTop; val side = game.spinSide
+        // Warm trail for topspin, cool for backspin.
+        val trailColor = if (top >= 0) lerp(Color.White, YourRacket, .8f * top) else lerp(Color.White, OtherRacket, -.8f * top)
         for (index in 1 until game.trail.size) {
             val previous = game.trail[index - 1]; val point = game.trail[index]
             val k = (1 - (now - point.atNanos) / 300_000_000f).coerceIn(0f, 1f)
             if (point.height >= 0 || point.x !in 0f..1f || point.y !in 0f..PongClient.CourtH)
-                drawLine(Color.White.copy(alpha = .95f * k), at(previous.x, previous.y), at(point.x, point.y),
+                drawLine(trailColor.copy(alpha = .95f * k), at(previous.x, previous.y), at(point.x, point.y),
                     .09f * u * sqrt(k), cap = StrokeCap.Round)
         }
         if (game.live && ballShown(game)) {
@@ -224,6 +284,15 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
             val r = PongClient.ballRadius(game.height) * u
             drawCircle(Ink, r * (1 + app.web.oneonone.data.games.PongPhysics.BallEdge.toFloat()), ball)
             drawCircle(Color.White, r, ball)
+            val amount = maxOf(abs(top), abs(side))
+            if (amount > .05f) {
+                val mark = Ink.copy(alpha = (.4f + .5f * amount).coerceAtMost(.9f))
+                val phase = hud.spinPhase
+                if (abs(top) >= abs(side)) {
+                    // A mark rolling over the top along the flight; hidden while it is under the ball.
+                    if (cos(phase) > 0) drawCircle(mark, r * .3f, ball + Offset(hud.dirX, hud.dirY) * (sin(phase) * r * .62f))
+                } else drawCircle(mark, r * .3f, ball + Offset(cos(phase), sin(phase)) * (r * .55f))
+            }
         }
         drawRacket(at(game.theirX, game.theirY), OtherRacket, u, up = true)
         drawRacket(at(game.myX, game.myY), YourRacket, u, up = false)

@@ -27,6 +27,16 @@ class PongClient(val seat: Int) {
     var bounceX = 0f; private set
     var bounceY = 0f; private set
     var bounceAt = 0L; private set
+    /** Spin of the last shot (view x sign; top + / back -), set when it is hit: locally predicted or from the server. */
+    var shotSide = 0f; private set
+    var shotTop = 0f; private set
+    var shotMine = false; private set
+    var shotCount = 0; private set
+    private var frameSpinSide = 0f
+    private var frameSpinTop = 0f
+    /** The ball's current spin for rendering: the predicted return's, else the drawn frame's. */
+    val spinSide get() = prediction?.get(15) ?: frameSpinSide
+    val spinTop get() = prediction?.get(16) ?: frameSpinTop
     private val trailPoints = ArrayDeque<PongTrail>()
     val trail: List<PongTrail> get() = trailPoints
     private var frame = FloatArray(4)
@@ -70,7 +80,7 @@ class PongClient(val seat: Int) {
     private var offsetIndex = 0
     private data class DisplayFrame(val t: Long, val b: FloatArray, val arc: FloatArray?, val height: Float,
                                     val spin: Float, val drift: Float?, val landed: Boolean, val serving: Int, val hits: Int,
-                                    val theirX: Float, val theirY: Float)
+                                    val theirX: Float, val theirY: Float, val spinSide: Float, val spinTop: Float)
     private val frames = ArrayDeque<DisplayFrame>()
     private var drawnFrame: DisplayFrame? = null
     private var reconcile = false
@@ -120,6 +130,9 @@ class PongClient(val seat: Int) {
             require(incomingSpin.isFinite())
             val incomingDrift = data["drift"]?.let { (it as JsonPrimitive).float }
             require(incomingDrift == null || incomingDrift.isFinite())
+            // Optional additive field: the ball's [sidespin, top/back spin], clamped to the documented range.
+            val ballSpin = if (data["sp"] != null) numbers("sp", 2).also { for (i in 0..1) it[i] = it[i].coerceIn(-1f, 1f) }
+                else floatArrayOf(0f, 0f)
             val timestamp = data["t"]?.let { (it as JsonPrimitive).long }
             require(timestamp == null || timestamp in lastTimestamp..Long.MAX_VALUE / 1_000_000)
             val countdown = (data["c"] as JsonPrimitive).int
@@ -135,6 +148,7 @@ class PongClient(val seat: Int) {
             require(countdown >= 0 && hitCount >= 0 && serving in 0..2 && bounceCount >= 0)
 
             val newHit = hitCount != hits
+            val viewSpin = if (seat == 1) ballSpin[0] else -ballSpin[0]
             val reset = !live || s[seat - 1] != myScore || s[2 - seat] != theirScore ||
                 serving != 0 && (!waitingServe || countdown > frameCountdown + 100)
             frame = floatArrayOf(viewX(b[0]), viewY(b[1]), if (seat == 1) b[2] else -b[2], if (seat == 1) b[3] else -b[3])
@@ -146,6 +160,11 @@ class PongClient(val seat: Int) {
             if (reset) {
                 myX = viewX(p[seat - 1]); myY = viewY(r[seat - 1]); round++
                 trailPoints.clear(); lastTrail = 0L
+            }
+            if (newHit && !reset) {
+                // A confirmed local return keeps its label time; any other new hit starts one.
+                if (prediction == null) { shotCount++; shotMine = curve != null && curve[10] < curve[1] }
+                shotSide = viewSpin; shotTop = ballSpin[1]
             }
             if (reset || newHit || prediction != null && ack != null && ack >= predictionN && hitCount <= predictionHits) {
                 if (prediction != null && !reset) {
@@ -164,6 +183,7 @@ class PongClient(val seat: Int) {
             myScore = s[seat - 1]; theirScore = s[2 - seat]
             spin = if (seat == 1) incomingSpin else -incomingSpin
             frameDrift = incomingDrift?.let { if (seat == 1) it else -it }
+            frameSpinSide = viewSpin; frameSpinTop = ballSpin[1]
             hits = hitCount
             waitingServe = serving != 0; myServe = serving == seat
             returnReady = landed
@@ -184,7 +204,7 @@ class PongClient(val seat: Int) {
                 sentAt + offset
             }
             if (compensated) {
-                frames.addLast(DisplayFrame(timestamp!!, frame, arc, frameHeight, spin, frameDrift, landed, serving, hitCount, nextTheirX, nextTheirY))
+                frames.addLast(DisplayFrame(timestamp!!, frame, arc, frameHeight, spin, frameDrift, landed, serving, hitCount, nextTheirX, nextTheirY, viewSpin, ballSpin[1]))
                 if (reset) drawnFrame = frames.last()
                 while (frames.size > 32 || frames.size > 1 && timestamp - frames.first().t > 800) frames.removeFirst()
             }
@@ -227,6 +247,7 @@ class PongClient(val seat: Int) {
             age = ((displayTimeMs - selected.t) / 1000).toFloat()
             frame = selected.b; arc = selected.arc; frameHeight = selected.height
             frameDrift = selected.drift; returnReady = selected.landed
+            frameSpinSide = selected.spinSide; frameSpinTop = selected.spinTop
         } else if (lastTimestamp > 0) displayTimeMs = lastTimestamp + age * 1000.0
         countdownMs = (frameCountdown - (age * 1000).toInt()).coerceAtLeast(0)
         val curve = arc
@@ -329,7 +350,12 @@ class PongClient(val seat: Int) {
         val px = px0 + (px1 - px0) * contact.time; val py = py0 + (py1 - py0) * contact.time
         val rim = PongPhysics.rimPosition(contact, px, py, radius)
         val h = h0 + (h1 - h0) * contact.time
-        prediction = PongPhysics.launch(rim.first, rim.second, h, stroke).also { predictionDrift = it[14] }
+        // The incoming ball's spin (after its bounce) shapes the return exactly as on the server.
+        val drawn = if (compensated) drawnFrame else null
+        prediction = PongPhysics.launch(rim.first, rim.second, h, stroke, -1.0,
+            (drawn?.spinSide ?: frameSpinSide).toDouble(), (drawn?.spinTop ?: frameSpinTop).toDouble())
+            .also { predictionDrift = it[14]; shotSide = it[15]; shotTop = it[16] }
+        shotMine = true; shotCount++
         predictionViewAt = if (previousBallTime > 0) previousBallTime + (displayTimeMs - previousBallTime) * contact.time else displayTimeMs
         predictionAt = now - ((displayTimeMs - predictionViewAt).coerceAtLeast(0.0) * 1_000_000).toLong()
         predictionHits = hits; predictionN = max(sampleN + if (nextSample) 1 else 0, acknowledged + 1)

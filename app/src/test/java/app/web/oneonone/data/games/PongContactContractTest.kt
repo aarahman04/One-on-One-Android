@@ -23,6 +23,20 @@ class PongContactContractTest {
         assertEquals(0, p.myScore)
     }
 
+    @Test fun aPassiveLocalReturnUsesTheIncomingBallSpinLikeTheServer() {
+        fun returned(side: Double): PongClient {
+            val p = PongClient(1)
+            p.receive(JsonObject(incoming() + buildJsonObject { putJsonArray("sp") { add(side); add(0) } }), "m", 1_000_000_000)
+            p.advance(1_000_000_000)
+            p.paddle(.5f, 2f, 1_000_000_000); p.paddle(.5f, 1.75f, 1_100_000_000) // a slow, mostly passive push
+            p.advance(1_400_000_000)
+            return p
+        }
+        val plain = returned(0.0); val spun = returned(1.0)
+        assertEquals(0f, spun.spinTop, 1e-6f) // the prediction's own stroke spin (2.5 widths/s: no topspin)
+        assertTrue("incoming sidespin deflects a passive block toward +x", spun.ballX > plain.ballX + 1e-3f)
+    }
+
     @Test fun backHalfContactAlsoPredictsAForwardLaunch() {
         val p = PongClient(1)
         val data = JsonObject(incoming() + buildJsonObject { putJsonArray("r") { add(1.3); add(-.08) } })

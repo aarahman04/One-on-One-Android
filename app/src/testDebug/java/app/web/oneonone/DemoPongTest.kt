@@ -4,6 +4,7 @@ import app.web.oneonone.data.games.PongClient
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.abs
 import kotlin.math.hypot
 
 class DemoPongTest {
@@ -47,14 +48,17 @@ class DemoPongTest {
         p.paddle(2, .2, .21); p.step(16.0)
         p.paddle(2, .5, .24); p.step(8.0); p.step(64.0)
         // Same input sequence in backend PongSim, rounded by its wire encoder.
-        assertEquals(.5208, p.x, .0001); assertEquals(.3019, p.y, .0001)
+        assertEquals(.51, p.x, .0001); assertEquals(.3019, p.y, .0001)
         assertEquals(.2265, p.z, .0001); assertEquals(1, p.hits)
         val client = PongClient(1)
         assertTrue(client.receive(p.frame("m"), "m", 1_000_000))
-        assertEquals(.6993f, client.spin, .0001f)
-        assertEquals(.8627f, p.frame("m")["drift"]!!.jsonPrimitive.float, .0001f)
+        val spin = .5971f / (.3f / 12.16f / .02f)
+        assertEquals(spin, client.spin, .0002f)
+        assertEquals(.5971f, p.frame("m")["drift"]!!.jsonPrimitive.float, .0001f)
+        assertEquals(listOf(1.0, 0.0), p.frame("m")["sp"]!!.jsonArray.map { abs(it.jsonPrimitive.double) })
+        assertEquals(1f, client.spinSide, 0f)
         p.paddle(2, .5, .24, true)
-        assertEquals(.6993f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f) // the contact curve, not live input
+        assertEquals(spin, p.frame("m")["spin"]!!.jsonPrimitive.float, .0002f) // the contact curve, not live input
     }
 
     @Test fun demoWaitsForServeAndScoresAnOpenSideMiss() {
@@ -190,7 +194,7 @@ class DemoPongTest {
     @Test fun batMovementAfterContactNeverSteersAndTheBounceKeepsTheShotPace() {
         fun rally(move: Boolean): List<List<Double>> {
             val p = DemoPong()
-            p.paddle(1, 1.26, 2.5, true) // receiver out of reach
+            p.paddle(1, -.26, 2.5, true) // receiver out of reach (the shot's sidespin now kicks it toward +x)
             p.paddle(2, .4, -.2); p.step(3000.0)
             p.paddle(2, .4, -.2); p.step(16.0); p.paddle(2, .5, .24); p.step(8.0)
             assertEquals(1, p.hits)

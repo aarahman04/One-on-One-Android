@@ -163,7 +163,9 @@ export class CompensatedDisplay {
     const rim = rimPosition(c, bat, r), h = a[2] + (b[2] - a[2]) * c.time
     const viewAt = this.previousTime > 0 ? this.previousTime + (this.v - this.previousTime) * c.time : this.v
     const at = now - Math.max(0, this.v - viewAt)
-    this.prediction = { arc: launch(rim[0], rim[1], h, this.stroke.stroke).map(Math.fround), at, viewAt, driftAt: at,
+    // Same incoming ball spin as Kotlin PongClient: the drawn frame's sp, clamped and stored as floats.
+    const sp = (this.selected?.sp ?? [0, 0]).map(v => Math.fround(clamp(v, -1, 1))) as [number, number]
+    this.prediction = { arc: launch(rim[0], rim[1], h, this.stroke.stroke, -1, ...sp).map(Math.fround), at, viewAt, driftAt: at,
       hits: this.frame!.h, n: Math.max(this.n + (nextSample ? 1 : 0), this.frame!.ack[0] + 1) }
     this.used = true; this.predictedAt = now; this.predictionCount++
     this.predictedV = this.v

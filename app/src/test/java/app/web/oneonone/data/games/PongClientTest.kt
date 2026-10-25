@@ -133,6 +133,29 @@ class PongClientTest {
                 PongClient.contactRadius(height), 1e-6f)
     }
 
+    @Test fun ballSpinIsOptionalClampedRotatedForSeatTwoAndValidated() {
+        val one = PongClient(1); val two = PongClient(2)
+        val spun = frame { putJsonArray("sp") { add(3f); add(-.4f) } }
+        assertTrue(one.receive(spun, "m", ms)); assertTrue(two.receive(spun, "m", ms))
+        assertEquals(1f, one.spinSide, 0f); assertEquals(-.4f, one.spinTop, 1e-6f)
+        assertEquals(-1f, two.spinSide, 0f); assertEquals(-.4f, two.spinTop, 1e-6f)
+        assertTrue(one.receive(frame(), "m", 2 * ms)) // older servers omit it
+        assertEquals(0f, one.spinSide, 0f); assertEquals(0f, one.spinTop, 0f)
+        for (bad in listOf(frame { putJsonArray("sp") { add(1f) } }, frame { putJsonArray("sp") { add("NaN"); add(0f) } },
+            frame { put("sp", "x") }, frame { putJsonArray("sp") { add(0f); add(0f); add(0f) } }))
+            assertFalse(one.receive(bad, "m", 3 * ms))
+    }
+
+    @Test fun aNewServerHitSetsTheShotSpinAndWhoHitIt() {
+        val p = PongClient(1)
+        assertTrue(p.receive(frame { put("h", 1) }, "m", ms))
+        val before = p.shotCount
+        assertTrue(p.receive(frame { put("h", 2); arc(); putJsonArray("sp") { add(-.6f); add(.8f) } }, "m", 2 * ms))
+        assertEquals(before + 1, p.shotCount)
+        assertEquals(-.6f, p.shotSide, 1e-6f); assertEquals(.8f, p.shotTop, 1e-6f)
+        assertTrue(p.shotMine) // the arc heads away from this seat
+    }
+
     @Test fun malformedFramesAreRejectedAtomicallyAndLegacyFieldsStillWork() {
         val p = PongClient(1)
         assertFalse(p.receive(frame(), "other", ms)); assertFalse(p.live)

@@ -202,18 +202,12 @@ internal class DemoMatches(private val scope: CoroutineScope, private val me: St
     private suspend fun runPong(p: DemoPong) {
         var last = System.nanoTime()
         var frameMs = 0.0
-        val botSeat = players.indexOf(partner) + 1
+        val bot = DemoPongBot(players.indexOf(partner) + 1)
         while (currentCoroutineContext().isActive && p.outcome == null) {
             val now = System.nanoTime()
             val ms = ((now - last) / 1e6).coerceIn(1.0, 50.0)
             last = now
-            val reach = .0024 * ms
-            // Hold the baseline until countdown ends; don't sit on top of the waiting ball.
-            val target = if (p.vy != 0.0 && (p.vy < 0) == (botSeat == 2)) p.x else .5
-            val cur = p.paddles[botSeat - 1]
-            val targetY = if (p.serving(botSeat) && p.countdown == 0.0) p.y else if (botSeat == 1) p.courtH + .08 else -.08
-            val py = p.paddleY[botSeat - 1]
-            p.paddle(botSeat, cur + (target - cur).coerceIn(-reach, reach), py + (targetY - py).coerceIn(-reach, reach), released = true)
+            bot.tick(p, ms)
             p.step(ms)
             frameMs += ms
             if (frameMs >= 1000.0 / 30 || p.outcome != null) {
