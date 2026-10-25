@@ -27,11 +27,6 @@ class PongClient(val seat: Int) {
     var bounceX = 0f; private set
     var bounceY = 0f; private set
     var bounceAt = 0L; private set
-    /** Spin of the last shot (view x sign; top + / back -), set when it is hit: locally predicted or from the server. */
-    var shotSide = 0f; private set
-    var shotTop = 0f; private set
-    var shotMine = false; private set
-    var shotCount = 0; private set
     private var frameSpinSide = 0f
     private var frameSpinTop = 0f
     /** The ball's current spin for rendering: the predicted return's, else the drawn frame's. */
@@ -160,11 +155,6 @@ class PongClient(val seat: Int) {
             if (reset) {
                 myX = viewX(p[seat - 1]); myY = viewY(r[seat - 1]); round++
                 trailPoints.clear(); lastTrail = 0L
-            }
-            if (newHit && !reset) {
-                // A confirmed local return keeps its label time; any other new hit starts one.
-                if (prediction == null) { shotCount++; shotMine = curve != null && curve[10] < curve[1] }
-                shotSide = viewSpin; shotTop = ballSpin[1]
             }
             if (reset || newHit || prediction != null && ack != null && ack >= predictionN && hitCount <= predictionHits) {
                 if (prediction != null && !reset) {
@@ -354,8 +344,7 @@ class PongClient(val seat: Int) {
         val drawn = if (compensated) drawnFrame else null
         prediction = PongPhysics.launch(rim.first, rim.second, h, stroke, -1.0,
             (drawn?.spinSide ?: frameSpinSide).toDouble(), (drawn?.spinTop ?: frameSpinTop).toDouble())
-            .also { predictionDrift = it[14]; shotSide = it[15]; shotTop = it[16] }
-        shotMine = true; shotCount++
+            .also { predictionDrift = it[14] }
         predictionViewAt = if (previousBallTime > 0) previousBallTime + (displayTimeMs - previousBallTime) * contact.time else displayTimeMs
         predictionAt = now - ((displayTimeMs - predictionViewAt).coerceAtLeast(0.0) * 1_000_000).toLong()
         predictionHits = hits; predictionN = max(sampleN + if (nextSample) 1 else 0, acknowledged + 1)

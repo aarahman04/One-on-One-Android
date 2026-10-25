@@ -2192,23 +2192,28 @@ authority; Android mirrors it in `PongPhysics`, `DemoPong` and `PongClient`. See
 - Spin S/T comes from the finger at contact; OVERHIT removed, so every swipe lands in-table.
 - An incoming ball's spin (frame `sp`, optional, validated and clamped) shapes a passive
   return in both the server and the local prediction.
-- Ball mark rolls (top/back) or orbits (side), trail tints warm/cool, a short
-  Topspin/Backspin/Sidespin label shows by the hitter, and one hint line sits under the table.
+- Ball mark rolls (top/back) or orbits (side), trail tints warm/cool, and one hint line sits
+  under the table. Owner feedback: no per-hit spin label (the trail is enough); the play area
+  is clipped so a ball flying past the end line never paints over the hint or Resign/Leave.
 - Debug demo opponent cycles neutral, topspin drive, backspin push, sidespin left/right and
   placement left/right by swiping through `StrokeWindow`.
 - Tests: Kotlin spin fuzz (77,760 + 3,840 shots), backend golden parity to 1e-9,
   sp decoding, passive deflection and spin bounce checks; display traces regenerated
   with the harness against the new backend.
 
-Build verification only (assembleDebug, lintDebug, testDebugUnitTest); not device-tested.
+Released as **2.0.13 / versionCode 20** (android-build dispatched from main). Build plus
+emulator play (clip, trail tint, varied demo returns); the emulator uses software GL
+(`ro.hardware.egl=emulation`, ~26 ms median frames), so bat smoothness must be judged on a phone.
 
 ### Xiaomi checklist (pong spin)
 
 - [ ] A full-speed sideways swipe lands on the table every time; points are lost only by missing.
-- [ ] A fast forward flick shows "Topspin", a warm trail, a low arc and a long, quick bounce.
-- [ ] Pulling the bat back through the ball shows "Backspin", a cool trail and a short, sitting bounce.
-- [ ] A sideways swipe shows "Sidespin", the mark orbits and the ball kicks sideways off the table.
+- [ ] A fast forward flick shows a warm trail, a low arc and a long, quick bounce.
+- [ ] Pulling the bat back through the ball shows a cool trail and a short, sitting bounce.
+- [ ] A sideways swipe curves, the mark orbits and the ball kicks sideways off the table.
 - [ ] Holding the bat still against the demo's spin returns: sidespin deflects, topspin goes long, backspin short.
 - [ ] The demo opponent's returns visibly vary (drive, push, both sidespins, both placements, neutral).
 - [ ] Own-hit prediction has no visible jump on confirmation against the new backend.
 - [ ] The hint line fits under the table at the largest font size; TalkBack reads it.
+- [ ] A ball flying past either end line disappears at the yellow area's edge, never over the buttons.
+- [ ] Both bats move smoothly on the phone (the emulator's software GL is not a smoothness test).

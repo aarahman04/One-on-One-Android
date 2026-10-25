@@ -146,16 +146,6 @@ class PongClientTest {
             assertFalse(one.receive(bad, "m", 3 * ms))
     }
 
-    @Test fun aNewServerHitSetsTheShotSpinAndWhoHitIt() {
-        val p = PongClient(1)
-        assertTrue(p.receive(frame { put("h", 1) }, "m", ms))
-        val before = p.shotCount
-        assertTrue(p.receive(frame { put("h", 2); arc(); putJsonArray("sp") { add(-.6f); add(.8f) } }, "m", 2 * ms))
-        assertEquals(before + 1, p.shotCount)
-        assertEquals(-.6f, p.shotSide, 1e-6f); assertEquals(.8f, p.shotTop, 1e-6f)
-        assertTrue(p.shotMine) // the arc heads away from this seat
-    }
-
     @Test fun malformedFramesAreRejectedAtomicallyAndLegacyFieldsStillWork() {
         val p = PongClient(1)
         assertFalse(p.receive(frame(), "other", ms)); assertFalse(p.live)

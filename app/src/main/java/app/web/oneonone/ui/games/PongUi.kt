@@ -13,8 +13,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -49,7 +49,6 @@ private val Ink = Color(0xFF10140D)
 private val YourRacket = Color(0xFFFF6B55)
 private val OtherRacket = Color(0xFF00B9ED)
 private const val SpinTurnsPerSecond = 3f
-private const val SpinLabelNanos = 600_000_000L
 
 private class PongHud {
     var mine by mutableIntStateOf(0)
@@ -57,22 +56,12 @@ private class PongHud {
     var countdown by mutableIntStateOf(0)
     var serving by mutableStateOf(false)
     var myServe by mutableStateOf(false)
-    var label by mutableStateOf<String?>(null)
-    var labelX by mutableFloatStateOf(0f)
-    var labelY by mutableFloatStateOf(0f)
     // Draw-only spin motion, advanced once per frame; plain fields so drawing never allocates or recomposes.
     var spinPhase = 0f
     var dirX = 0f
     var dirY = -1f
     var lastX = .5f
     var lastY = 0f
-}
-
-/** Short hit label for a noticeable spin, else null. */
-internal fun spinLabel(side: Float, top: Float): String? = when {
-    maxOf(abs(side), abs(top)) < .3f -> null
-    abs(top) >= abs(side) -> if (top > 0) "Topspin" else "Backspin"
-    else -> "Sidespin"
 }
 
 @Composable
@@ -90,9 +79,7 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
         var hits = game.hits
         var bounce = game.bounceAt
         var round = game.round
-        var shots = game.shotCount
         var lastFrame = 0L
-        var labelAt = 0L
         while (isActive) {
             withFrameNanos {
                 if (currentPaused || round != game.round) touch.cancel()
@@ -107,15 +94,6 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
                 // Signed by the dominant spin: forward roll for topspin, backward for backspin, orbit way for sidespin.
                 hud.spinPhase = (hud.spinPhase + step * SpinTurnsPerSecond * 2 * PI.toFloat() * if (abs(top) >= abs(side)) top else side) %
                     (2 * PI.toFloat())
-                if (game.shotCount != shots) {
-                    shots = game.shotCount
-                    hud.label = spinLabel(game.shotSide, game.shotTop)
-                    val x = if (game.shotMine) game.myX else game.theirX
-                    val y = if (game.shotMine) game.myY - .32f else game.theirY + .32f
-                    hud.labelX = ((x + MarginX) / (1 + 2 * MarginX) * 2 - 1).coerceIn(-1f, 1f)
-                    hud.labelY = ((y + MarginTop) / (PongClient.CourtH + MarginTop + MarginBottom) * 2 - 1).coerceIn(-1f, 1f)
-                    labelAt = it
-                } else if (hud.label != null && it - labelAt > SpinLabelNanos) hud.label = null
                 val dt = touch.elapsed(it)
                 if (touch.held && !currentPaused && dt > 0) {
                     val follow = PongClient.racketFollow(dt)
@@ -133,7 +111,8 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
     }
     Column(modifier.fillMaxWidth()) {
         PongScoreboard(hud.mine, hud.theirs, vm.nickname, match.points ?: 7)
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().background(Arena, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
+        // Clipped so a ball flying past the end line never paints over the controls below.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Arena), contentAlignment = Alignment.Center) {
             val unit = minOf(maxWidth / (1 + 2 * MarginX), maxHeight / (PongClient.CourtH + MarginTop + MarginBottom))
             Box(Modifier.size(unit * (1 + 2 * MarginX), unit * (PongClient.CourtH + MarginTop + MarginBottom))) {
                 PongTable(game, touch, hud, { frame }, enabled = !paused,
@@ -144,7 +123,6 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
                         vm.paddle(game.myX + (x - game.myX) * follow, game.myY + (y - game.myY) * follow,
                             touch = x to y, sampleNanos = at)
                     }) { x, y -> vm.paddle(x, y, true) }
-                hud.label?.let { SpinLabel(it, Modifier.align(BiasAlignment(hud.labelX, hud.labelY))) }
                 when {
                     paused -> CourtNotice("Waiting for ${vm.nickname}…", Modifier.align(Alignment.Center))
                     hud.countdown > 0 -> Surface(Modifier.align(Alignment.Center).size(68.dp),
@@ -175,13 +153,6 @@ private fun CourtNotice(text: String, modifier: Modifier) {
         Text(text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
             style = MaterialTheme.typography.labelMedium, color = OneTheme.colors.text)
     }
-}
-
-@Composable
-private fun SpinLabel(text: String, modifier: Modifier) {
-    // Not a live region: announcing every hit would flood TalkBack; the hint below the table explains spin.
-    Text(text, modifier.background(Ink.copy(alpha = .78f), RoundedCornerShape(OneTheme.radii.md10)).padding(horizontal = 8.dp, vertical = 3.dp),
-        color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
 }
 
 @Composable
