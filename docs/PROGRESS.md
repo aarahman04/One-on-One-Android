@@ -2181,3 +2181,34 @@ device-tested.
 - [ ] Short drops near the net and deep balls near the end line can be reached from the baseline.
 - [ ] Wide shots near the side still go out and score when not returned.
 - [ ] Own-hit prediction has no visible jump on confirmation against the new backend.
+
+## 2026-10-25 - Pong spin and every stroke lands
+
+Owner request: sideways hits must never leave the table, and add real spin. Paired
+backend branch `feat/pong-spin` (`aarahman04/One-on-One`, commit `1ce5818`) is the
+authority; Android mirrors it in `PongPhysics`, `DemoPong` and `PongClient`. See
+[spin plan](games/PONG-SPIN-PLAN.md) for the formulas and final tuned values.
+
+- Spin S/T comes from the finger at contact; OVERHIT removed, so every swipe lands in-table.
+- An incoming ball's spin (frame `sp`, optional, validated and clamped) shapes a passive
+  return in both the server and the local prediction.
+- Ball mark rolls (top/back) or orbits (side), trail tints warm/cool, a short
+  Topspin/Backspin/Sidespin label shows by the hitter, and one hint line sits under the table.
+- Debug demo opponent cycles neutral, topspin drive, backspin push, sidespin left/right and
+  placement left/right by swiping through `StrokeWindow`.
+- Tests: Kotlin spin fuzz (77,760 + 3,840 shots), backend golden parity to 1e-9,
+  sp decoding, passive deflection and spin bounce checks; display traces regenerated
+  with the harness against the new backend.
+
+Build verification only (assembleDebug, lintDebug, testDebugUnitTest); not device-tested.
+
+### Xiaomi checklist (pong spin)
+
+- [ ] A full-speed sideways swipe lands on the table every time; points are lost only by missing.
+- [ ] A fast forward flick shows "Topspin", a warm trail, a low arc and a long, quick bounce.
+- [ ] Pulling the bat back through the ball shows "Backspin", a cool trail and a short, sitting bounce.
+- [ ] A sideways swipe shows "Sidespin", the mark orbits and the ball kicks sideways off the table.
+- [ ] Holding the bat still against the demo's spin returns: sidespin deflects, topspin goes long, backspin short.
+- [ ] The demo opponent's returns visibly vary (drive, push, both sidespins, both placements, neutral).
+- [ ] Own-hit prediction has no visible jump on confirmation against the new backend.
+- [ ] The hint line fits under the table at the largest font size; TalkBack reads it.

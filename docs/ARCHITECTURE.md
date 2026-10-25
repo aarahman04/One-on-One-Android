@@ -1426,3 +1426,23 @@ not substitute for the signed two-account production checklist.
 The chat composer now requests `KeyboardCapitalization.Sentences` from the
 platform keyboard. Draft storage, slash parsing and the message transport retain
 the typed text; this does not add a text-transform layer.
+
+## Ping Pong spin (2026-10-25)
+
+The server owns spin. Each shot's spin `[S, T]` comes from the contact stroke; the ball keeps
+it until its bounce (kick, reach, pace, height) and then decays to `[.6S, .5T]`, which is the
+receiver's incoming spin. Frames carry it as the additive `sp` field. `PongClient` validates it
+at the trust boundary and feeds the drawn frame's value into its own return prediction, so the
+prediction matches the server; `PongUi` only reads it for drawing.
+
+```mermaid
+flowchart LR
+    F[Finger stroke vx, vy] --> L[PongPhysics.launchArc<br/>S, T, lateral, depth, arc k]
+    I[Incoming sp after bounce] --> L
+    L --> B[Bounce: kick .25S, m, q, height 1-.35T+]
+    B --> D[Decay S*.6, T*.5 = next incoming sp]
+    D --> W[Frame sp]
+    W --> C[PongClient validate + clamp]
+    C --> P[Local prediction launch]
+    C --> U[PongUi mark, trail, label]
+```
