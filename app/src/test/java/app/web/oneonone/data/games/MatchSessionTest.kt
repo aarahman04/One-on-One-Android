@@ -243,6 +243,8 @@ class MatchSessionTest {
         assertTrue(ch.releases.last())
         val times = ch.timings.filterNotNull()
         assertTrue(times.zipWithNext().all { (a, b) -> b.ct > a.ct && b.n > a.n && b.v >= a.v })
+        // v is the drawn ball's time (judged); w the steady display time the opponent draws this racket at.
+        assertTrue(times.all { it.w != null && it.w!! >= it.v })
         val window = ch.windows.last()!!
         assertEquals("coalesced samples survive in the next packet", 4, window.size)
         assertEquals(listOf(1L, 2L, 3L, 4L), window.map { it.jsonArray[0].jsonPrimitive.long })

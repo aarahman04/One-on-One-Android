@@ -1446,3 +1446,39 @@ flowchart LR
     C --> P[Local prediction launch]
     C --> U[PongUi mark, trail, label]
 ```
+
+## Ping Pong coherent display timeline (2026-10-25)
+
+The server lag-compensates a hit to the ball time its hitter saw (`v`). With the additive frame field `pv`
+(when each racket was sent, on its sender's steady display axis `w`), `PongClient` draws the opponent's racket
+and the ball they hit at the same server time. The ball's delay `D` moves between 50 ms (ball coming to me:
+small rewind for my own hits) and the opponent's measured lag `F` (ball going to them: their hit and racket
+line up). Score, serve, countdown, bounces and impact animation follow the drawn frame. Frames without `pv`
+keep the previous display path unchanged.
+
+```mermaid
+sequenceDiagram
+    participant O as Opponent phone
+    participant S as PongSim
+    participant V as Viewer PongClient
+    O->>S: match:paddle x,y, v = drawn ball time, w = display time
+    Note over S: judge(v): contact at impact time t, rewind and catch up
+    S-->>V: match:pong t, a(start = t), p/r, pv = w
+    Note over V: F = max recent (t - pv) + 48 ms
+    Note over V: racket at newest - F (pv samples)<br/>ball at newest - D, D -> F while going to O
+    V->>V: ball reaches the racket rim at t, impact pulse, then the return
+    Note over V: D -> 50 ms by the bounce on my side<br/>my own hits: predict now, judged at my v
+```
+
+```mermaid
+flowchart LR
+    R[receive frame] --> Q{pv present?}
+    Q -- no --> L[legacy: score/serve/bounce on arrival<br/>racket and ball at displayTime]
+    Q -- yes --> B[buffer frame + pv racket sample + lag]
+    B --> A[advance: ballTime = newest - D]
+    A --> SEL[select frame by ballTime and flight identity h/j]
+    SEL --> EV[showDrawn: score, serve, round, bounce, impact]
+    SEL --> BALL[evaluate arc at ballTime]
+    A --> BAT[opponent racket at newest - F, <=50 ms extrapolation]
+    EV --> UI[PongUi: impact pulse, sounds, point and serve notice]
+```

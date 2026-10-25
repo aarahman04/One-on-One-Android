@@ -5,7 +5,8 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
 /** What a [MatchSession] needs from the network; kept small so the session is testable without Android. */
-data class PaddleTiming(val ct: Long, val v: Double, val n: Long)
+/** v: server time of the drawn ball (judged); w: the steady display time, only for drawing this racket for the opponent. */
+data class PaddleTiming(val ct: Long, val v: Double, val n: Long, val w: Double? = null)
 
 interface MatchChannel {
     val states: Flow<JsonObject>
@@ -156,7 +157,7 @@ class MatchSession(private val channel: MatchChannel, private val scope: Corouti
         if (!viewX.isFinite() || !viewY.isFinite() || touch?.let { !it.first.isFinite() || !it.second.isFinite() } == true) return
         val (x, y) = client.paddle(viewX, viewY, sampleNanos, touch, released, lastPaddleCt)
         lastPaddleCt = client.sampleCt
-        val timing = if (client.displayTimeMs > 0) PaddleTiming(client.sampleCt, client.displayTimeMs, client.sampleN) else null
+        val timing = if (client.displayTimeMs > 0) PaddleTiming(client.sampleCt, client.ballTimeMs, client.sampleN, client.displayTimeMs) else null
         val serverTouch = touch?.let { if (client.seat == 1) it else 1 - it.first to PongClient.CourtH - it.second }
         val current = PaddleInput(x, y, released, serverTouch, timing)
         if (timing != null) {
