@@ -48,6 +48,8 @@ private val TableGreen = Color(0xFF76B536)
 private val Ink = Color(0xFF10140D)
 private val YourRacket = Color(0xFFFF6B55)
 private val OtherRacket = Color(0xFF00B9ED)
+private val SpinMark = Color(0xFF6B7280)
+private const val ImpactNanos = 140_000_000f
 private const val SpinTurnsPerSecond = 3f
 
 private class PongHud {
@@ -56,6 +58,9 @@ private class PongHud {
     var countdown by mutableIntStateOf(0)
     var serving by mutableStateOf(false)
     var myServe by mutableStateOf(false)
+    /** Why the last point was won, shown briefly while the next serve counts down. */
+    var point by mutableStateOf<String?>(null)
+    var pointAt = 0L
     // Draw-only spin motion, advanced once per frame; plain fields so drawing never allocates or recomposes.
     var spinPhase = 0f
     var dirX = 0f
@@ -76,8 +81,9 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
     val currentPaused by rememberUpdatedState(paused)
     LaunchedEffect(game) {
         vm.paddle(game.myX, game.myY)
-        var hits = game.hits
+        var impact = game.impactAt
         var bounce = game.bounceAt
+        var scored = false
         var round = game.round
         var lastFrame = 0L
         while (isActive) {
@@ -101,9 +107,23 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
                 }
                 frame = it
             }
-            if (game.hits != hits) { hits = game.hits; sounds?.play(GameSound.Hit); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+            // Sound and haptics follow the drawn contact, not packet arrival.
+            if (game.impactAt != impact) { impact = game.impactAt; sounds?.play(GameSound.Hit); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
             if (game.bounceAt != bounce) { bounce = game.bounceAt; sounds?.play(GameSound.Bounce) }
-            if (game.myScore != hud.mine || game.theirScore != hud.theirs) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (scored && (game.myScore != hud.mine || game.theirScore != hud.theirs)) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                val mine = game.myScore > hud.mine
+                // Every stroke lands, so a point means the receiver missed; the last hitter is who was not receiving.
+                hud.point = when {
+                    mine && impact > 0 && game.impactMine -> "Point to you · ${vm.nickname} missed"
+                    mine -> "Point to you"
+                    impact > 0 && !game.impactMine -> "Point to ${vm.nickname} · you missed"
+                    else -> "Point to ${vm.nickname}"
+                }
+                hud.pointAt = frame
+            }
+            scored = true
+            if (hud.point != null && frame - hud.pointAt > 1_400_000_000L) hud.point = null
             hud.mine = game.myScore; hud.theirs = game.theirScore
             hud.countdown = ceil(game.countdownMs / 1000f).toInt()
             hud.serving = game.waitingServe; hud.myServe = game.myServe
@@ -125,15 +145,11 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
                     }) { x, y -> vm.paddle(x, y, true) }
                 when {
                     paused -> CourtNotice("Waiting for ${vm.nickname}…", Modifier.align(Alignment.Center))
-                    hud.countdown > 0 -> Surface(Modifier.align(Alignment.Center).size(68.dp),
-                        shape = RoundedCornerShape(100), color = OneTheme.colors.bgRaised.copy(alpha = .9f)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            AnimatedContent(hud.countdown, label = "serve countdown") { count ->
-                                Text("$count", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = OneTheme.colors.text,
-                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                            }
-                        }
-                    }
+                    // The serve countdown names who serves; a point explanation stays up while it runs.
+                    hud.countdown > 0 -> CourtNotice(listOfNotNull(hud.point,
+                        if (hud.myServe) "Your serve in ${hud.countdown}" else "${vm.nickname} serves in ${hud.countdown}").joinToString("\n"),
+                        Modifier.align(Alignment.Center))
+                    hud.point != null -> CourtNotice(hud.point!!, Modifier.align(Alignment.Center))
                     hud.serving -> CourtNotice(if (hud.myServe) "Your serve · move your racket into the ball" else "${vm.nickname} is serving",
                         Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
                 }
@@ -151,7 +167,8 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
 private fun CourtNotice(text: String, modifier: Modifier) {
     Surface(modifier, shape = RoundedCornerShape(OneTheme.radii.md10), color = OneTheme.colors.bgRaised.copy(alpha = .94f)) {
         Text(text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
-            style = MaterialTheme.typography.labelMedium, color = OneTheme.colors.text)
+            style = MaterialTheme.typography.labelMedium, color = OneTheme.colors.text,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -257,7 +274,8 @@ private fun PongTable(game: PongClient, touch: PongTouch, hud: PongHud, frame: (
             drawCircle(Color.White, r, ball)
             val amount = maxOf(abs(top), abs(side))
             if (amount > .05f) {
-                val mark = Ink.copy(alpha = (.4f + .5f * amount).coerceAtMost(.9f))
+                // A soft grey mark: reads as rotation, not as a dark spot on the ball.
+                val mark = SpinMark.copy(alpha = (.25f + .35f * amount).coerceAtMost(.6f))
                 val phase = hud.spinPhase
                 if (abs(top) >= abs(side)) {
                     // A mark rolling over the top along the flight; hidden while it is under the ball.
@@ -265,8 +283,10 @@ private fun PongTable(game: PongClient, touch: PongTouch, hud: PongHud, frame: (
                 } else drawCircle(mark, r * .3f, ball + Offset(cos(phase), sin(phase)) * (r * .55f))
             }
         }
-        drawRacket(at(game.theirX, game.theirY), OtherRacket, u, up = true)
-        drawRacket(at(game.myX, game.myY), YourRacket, u, up = false)
+        // A short pulse on the racket that made the drawn contact; drawing only, it never changes the shot.
+        val impact = if (game.impactAt > 0) (1 - (now - game.impactAt) / ImpactNanos).coerceIn(0f, 1f) else 0f
+        drawRacket(at(game.theirX, game.theirY), OtherRacket, u, up = true, if (game.impactMine) 0f else impact)
+        drawRacket(at(game.myX, game.myY), YourRacket, u, up = false, if (game.impactMine) impact else 0f)
     }
 }
 
@@ -275,8 +295,8 @@ private fun ballShown(g: PongClient) = g.height >= 0 || g.ballX !in 0f..1f || g.
 /** Shadow sits beside the ball, at most one ball diameter away. */
 internal fun shadowOffset(height: Float) = (.8f * height).coerceAtMost(2 * PongClient.BallR)
 
-private fun DrawScope.drawRacket(center: Offset, color: Color, u: Float, up: Boolean) {
-    val r = PongClient.HeadR * u
+private fun DrawScope.drawRacket(center: Offset, color: Color, u: Float, up: Boolean, impact: Float = 0f) {
+    val r = PongClient.HeadR * u * (1 + .08f * impact)
     val handleWidth = PongClient.HandleWidth * u
     val handleY = if (up) center.y - r - PongClient.HandleLength * u else center.y + r * .55f
     val handle = Rect(Offset(center.x - handleWidth / 2, handleY), Size(handleWidth, r * .45f + PongClient.HandleLength * u))
@@ -285,6 +305,7 @@ private fun DrawScope.drawRacket(center: Offset, color: Color, u: Float, up: Boo
     drawRect(Ink, handle.topLeft, handle.size, style = Stroke(PongClient.HandleOutline * u))
     drawCircle(color, r, center)
     drawCircle(Ink, r, center, style = Stroke(PongClient.HeadOutline * u))
+    if (impact > 0) drawCircle(Color.White.copy(alpha = .7f * impact), r * (1.05f + .25f * (1 - impact)), center, style = Stroke(.02f * u))
     val bandY = center.y + (if (up) -.65f else .65f) * r
     drawLine(Ink, Offset(center.x - .72f * r, bandY), Offset(center.x + .72f * r, bandY), .018f * u)
 }

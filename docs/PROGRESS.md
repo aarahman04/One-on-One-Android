@@ -2217,3 +2217,44 @@ emulator play (clip, trail tint, varied demo returns); the emulator uses softwar
 - [ ] The hint line fits under the table at the largest font size; TalkBack reads it.
 - [ ] A ball flying past either end line disappears at the yellow area's edge, never over the buttons.
 - [ ] Both bats move smoothly on the phone (the emulator's software GL is not a smoothness test).
+
+## 2026-10-25 - Ping Pong gameplay, sync and rendering repair
+
+Owner report (screen recording; not available to this session, worked from code and the report): the ball
+changed direction while the racket was elsewhere, opponent hits could not be seen, sudden ball movements,
+black numbered circles, lag. Full investigation, shot lifecycle and evidence:
+[PONG-SYNC-REPAIR.md](games/PONG-SYNC-REPAIR.md). Paired backend PR adds frame `pv` and paddle `w`
+(additive; physics unchanged).
+
+- Root causes: opponent racket drawn at packet-arrival time while their hit is rewound to the ball time they
+  saw; the post-hit frame arrived after the 50 ms buffer had drawn the old flight past the impact (a ~0.2-width
+  snap per opponent hit even at 50 ms RTT); score/serve/bounce applied on arrival, ahead of the drawn ball.
+- Fix: one drawn timeline per phone (`PongClient` with `pv`): opponent racket from `pv`-stamped samples at
+  `newest - F`; ball delay `D` between 50 ms and `F`; frames selected by flight identity; score, serve,
+  countdown, bounce and impact at the drawn time; late hits ease over 60 ms; racket extrapolation <= 50 ms.
+  `MatchSession` sends `v` = drawn-ball time and `w` = display time.
+- UI: short impact pulse on the racket that made the drawn contact; hit sound/haptic on the drawn contact;
+  the dark numbered countdown disc is replaced by a notice naming who serves ("Your serve in 2"); a point
+  notice explains it ("Point to you · Sam missed"); softer grey spin mark instead of a dark dot.
+- Tests: `PongSyncReplayTest` replays two players rallying against the real backend `PongSim`
+  (`scripts/pong-sync-trace.ts`) at 50/100/200/300 ms RTT with jitter and frame loss, at 60 and 120 Hz, and
+  compares against the previous display (`pv` stripped). New `PongClientTest` and `MatchSessionTest` checks.
+
+Build verification: the Pong logic was compiled and unit-tested locally with a standalone Kotlin compiler, and
+PR #54 CI (`assembleDebug lintDebug testDebugUnitTest`) passed. Not device-tested. Backend #131 merged as
+`4b9c73f`; the Railway deployment could not be checked from the cloud session (host blocked by its network policy).
+
+Release candidate **2.0.14 / versionCode 21**: android-build defaults bumped and the workflow dispatched on the PR
+branch at the owner's request, for phone testing before merge. No Play upload made from this session.
+
+### Xiaomi checklist (pong sync)
+
+- [ ] Two accounts on two phones: watching the opponent hit, the ball reaches their racket and turns there, with a brief racket pulse.
+- [ ] The ball never visibly jumps or reverses before reaching a racket during normal rallies.
+- [ ] The opponent's racket moves smoothly (no freezing then jumping), including during your own shot.
+- [ ] A missed ball travels past the racket before the score changes; the point notice names who missed.
+- [ ] Countdown shows "Your serve in N" / "<name> serves in N" only between points and disappears when play starts; no dark disc.
+- [ ] Your own hits still respond instantly; the hit sound plays when the ball visibly meets a racket.
+- [ ] On mobile data / weak Wi-Fi the incoming ball may speed up slightly while the outgoing ball slows slightly; it never stops or snaps.
+- [ ] Background the app mid-rally and return: the game pauses/resumes with a serve countdown, no stuck ball.
+- [ ] Spin mark reads as rotation, not as a black spot; trail still tints by spin.

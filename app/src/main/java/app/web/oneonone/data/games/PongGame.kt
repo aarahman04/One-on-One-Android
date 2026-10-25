@@ -27,6 +27,9 @@ class PongClient(val seat: Int) {
     var bounceX = 0f; private set
     var bounceY = 0f; private set
     var bounceAt = 0L; private set
+    /** When a racket last visibly struck the ball (draw clock) and whose racket it was. */
+    var impactAt = 0L; private set
+    var impactMine = false; private set
     private var frameSpinSide = 0f
     private var frameSpinTop = 0f
     /** The ball's current spin for rendering: the predicted return's, else the drawn frame's. */
@@ -75,7 +78,8 @@ class PongClient(val seat: Int) {
     private var offsetIndex = 0
     private data class DisplayFrame(val t: Long, val b: FloatArray, val arc: FloatArray?, val height: Float,
                                     val spin: Float, val drift: Float?, val landed: Boolean, val serving: Int, val hits: Int,
-                                    val theirX: Float, val theirY: Float, val spinSide: Float, val spinTop: Float)
+                                    val theirX: Float, val theirY: Float, val spinSide: Float, val spinTop: Float,
+                                    val myScore: Int = 0, val theirScore: Int = 0, val countdown: Int = 0, val bounces: Int = 0)
     private val frames = ArrayDeque<DisplayFrame>()
     private var drawnFrame: DisplayFrame? = null
     private var reconcile = false
@@ -94,6 +98,29 @@ class PongClient(val seat: Int) {
     private var previousBallY = ballY
     private var previousHeight = height
     private var previousBallTime = 0.0
+    /** Server time of the drawn ball. Equals [displayTimeMs] unless frames carry `pv` (coherent timeline). */
+    var ballTimeMs = 0.0; private set
+    private var coherent = false
+    private var ballDelay = InterpolationMs
+    private var farDelay = InterpolationMs
+    private val lagT = DoubleArray(64)
+    private val lagMs = DoubleArray(64)
+    private var lagCount = 0
+    private var lagIndex = 0
+    private val batV = DoubleArray(64)
+    private val batX = FloatArray(64)
+    private val batY = FloatArray(64)
+    private var batCount = 0
+    private var batIndex = 0
+    private var shownHits = -1
+    private var shownBounces = -1
+    private var shownScore = -1 to -1
+    private var shownServing = 0
+    private var landingFrame: DisplayFrame? = null
+    private var landingAt = 0.0
+    private var impactHits = 0
+    private var stepX = 0f
+    private var stepY = 0f
     val contactEligible get(): Boolean {
         val drawn = if (compensated) drawnFrame else null
         val returning = (drawn?.landed ?: returnReady) && (drawn?.b?.get(3) ?: frame[3]) > 0
@@ -141,8 +168,17 @@ class PongClient(val seat: Int) {
                 values[seat - 1].jsonPrimitive.long
             }
             require(countdown >= 0 && hitCount >= 0 && serving in 0..2 && bounceCount >= 0)
+            // Optional additive field: the server time each seat's racket (p/r) was sent at, on its sender's display axis.
+            val racketTimes = data["pv"]?.let { value ->
+                value.jsonArray.map { it.jsonPrimitive.double }.also { require(it.size == 2 && it.all(Double::isFinite)) }
+            }
+            // With `pv` the whole display (score, serve, bounces, resets) follows the drawn ball, not packet arrival.
+            val timeline = ack != null && timestamp != null && racketTimes != null
 
             val newHit = hitCount != hits
+            if (live && newHit && hitCount != impactHits && !timeline) {
+                impactHits = hitCount; impactAt = nowNanos; impactMine = curve?.let { viewY(it[10]) < viewY(it[1]) } ?: false
+            }
             val viewSpin = if (seat == 1) ballSpin[0] else -ballSpin[0]
             val reset = !live || s[seat - 1] != myScore || s[2 - seat] != theirScore ||
                 serving != 0 && (!waitingServe || countdown > frameCountdown + 100)
@@ -152,12 +188,12 @@ class PongClient(val seat: Int) {
             val nextTheirX = viewX(p[2 - seat]); val nextTheirY = viewY(r[2 - seat])
             frameTheirX = nextTheirX; frameTheirY = nextTheirY
             frameCountdown = countdown
-            if (reset) {
+            if (reset && (!timeline || !live)) {
                 myX = viewX(p[seat - 1]); myY = viewY(r[seat - 1]); round++
                 trailPoints.clear(); lastTrail = 0L
             }
             if (reset || newHit || prediction != null && ack != null && ack >= predictionN && hitCount <= predictionHits) {
-                if (prediction != null && !reset) {
+                if (prediction != null && (!reset || timeline)) {
                     reconcile = true
                     reconcileCurve = prediction; reconcileViewAt = predictionViewAt; reconcileAt = predictionAt
                     reconcileDriftAt = predictionDriftAt; reconcileDrift = predictionDrift
@@ -165,22 +201,21 @@ class PongClient(val seat: Int) {
                     confirmationDelay = (nowNanos - predictionAt) / 1_000_000.0
                 }
                 prediction = null; localContactUsed = false
-                if (reset) {
+                if (reset && !timeline) {
                     frames.clear(); drawnFrame = null; stroke.clear()
                     reconcile = false; reconcileCurve = null; blendAt = 0L; confirmationLog = false
                 }
             }
-            myScore = s[seat - 1]; theirScore = s[2 - seat]
+            if (!timeline || !live) { myScore = s[seat - 1]; theirScore = s[2 - seat]; waitingServe = serving != 0; myServe = serving == seat }
             spin = if (seat == 1) incomingSpin else -incomingSpin
             frameDrift = incomingDrift?.let { if (seat == 1) it else -it }
             frameSpinSide = viewSpin; frameSpinTop = ballSpin[1]
             hits = hitCount
-            waitingServe = serving != 0; myServe = serving == seat
             returnReady = landed
             acknowledged = ack ?: acknowledged
             sampleN = max(sampleN, acknowledged)
             compensated = ack != null && timestamp != null
-            if (bounceCount > bounces) { bounceX = frame[0]; bounceY = frame[1]; bounceAt = nowNanos }
+            if (bounceCount > bounces && !timeline) { bounceX = frame[0]; bounceY = frame[1]; bounceAt = nowNanos }
             bounces = bounceCount
             frameAt = if (timestamp == null) nowNanos else {
                 val sentAt = timestamp * 1_000_000
@@ -194,11 +229,26 @@ class PongClient(val seat: Int) {
                 sentAt + offset
             }
             if (compensated) {
-                frames.addLast(DisplayFrame(timestamp!!, frame, arc, frameHeight, spin, frameDrift, landed, serving, hitCount, nextTheirX, nextTheirY, viewSpin, ballSpin[1]))
-                if (reset) drawnFrame = frames.last()
+                frames.addLast(DisplayFrame(timestamp!!, frame, arc, frameHeight, spin, frameDrift, landed, serving, hitCount, nextTheirX, nextTheirY,
+                    viewSpin, ballSpin[1], s[seat - 1], s[2 - seat], countdown, bounceCount))
+                if (reset && !timeline) drawnFrame = frames.last()
                 while (frames.size > 32 || frames.size > 1 && timestamp - frames.first().t > 800) frames.removeFirst()
             }
-            if (!live || reset || curve == null && b[2] == 0f && b[3] == 0f && prediction == null) {
+            if (racketTimes != null && timestamp != null) {
+                val v = racketTimes[2 - seat]
+                // Time only goes back when the opponent's first timed sample replaces the untimed server clock.
+                if (batCount > 0 && v < batV[(batIndex + 63) % 64]) batCount = 0
+                val last = if (batCount > 0) batV[(batIndex + 63) % 64] else Double.NEGATIVE_INFINITY
+                if (v > last) {
+                    batV[batIndex] = v; batX[batIndex] = nextTheirX; batY[batIndex] = nextTheirY
+                    batIndex = (batIndex + 1) % 64; batCount = minOf(batCount + 1, 64)
+                    // How far a fresh racket sample trails the frame: the opponent's view lag plus the frame interval.
+                    lagT[lagIndex] = timestamp.toDouble(); lagMs[lagIndex] = timestamp - v
+                    lagIndex = (lagIndex + 1) % 64; lagCount = minOf(lagCount + 1, 64)
+                }
+            }
+            coherent = timeline
+            if (!live || !timeline && (reset || curve == null && b[2] == 0f && b[3] == 0f && prediction == null)) {
                 ballX = frame[0]; ballY = frame[1]; height = frameHeight
                 previousBallX = ballX; previousBallY = ballY; previousHeight = height
                 if (!live) { theirX = frameTheirX; theirY = frameTheirY }
@@ -213,45 +263,63 @@ class PongClient(val seat: Int) {
         if (!live) return
         val dt = if (lastAdvance == 0L) 0f else ((nowNanos - lastAdvance) / 1e9f).coerceIn(0f, .1f)
         lastAdvance = nowNanos
-        val priorViewTime = displayTimeMs
+        val priorBallTime = ballTimeMs
         var age = ((nowNanos - frameAt) / 1e9f).coerceIn(0f, .15f)
         var shown = frames.lastOrNull()
         if (compensated && shown != null) {
             var selected: DisplayFrame = shown
             val desired = (nowNanos - (serverOffset ?: 0)) / 1_000_000.0 - InterpolationMs
-            displayTimeMs = if (prediction != null) max(displayTimeMs, desired).coerceAtLeast(frames.first().t.toDouble())
+            displayTimeMs = if (prediction != null && !coherent) max(displayTimeMs, desired).coerceAtLeast(frames.first().t.toDouble())
+                // A local launch keeps moving through a frame stall at real time instead of jumping to the newest time.
+                else if (prediction != null) max(displayTimeMs, min(desired, max(shown.t + 50.0, displayTimeMs + dt * 1000.0)))
+                    .coerceAtLeast(frames.first().t.toDouble())
                 else max(displayTimeMs, desired).coerceIn(frames.first().t.toDouble(), shown.t + 50.0)
+            ballTimeMs = if (coherent) coherentBallTime(desired + InterpolationMs, dt * 1000.0) else displayTimeMs
             for (i in 0 until frames.size) {
                 val candidate = frames[i]
-                if (candidate.t <= displayTimeMs) selected = candidate else break
+                if (candidate.t <= ballTimeMs) selected = candidate else break
             }
             // A post-impact frame describes the return even before its emission time.
             val shownStart = selected.arc?.let { selected.t - round(it[12] * 10000.0) / 10 } ?: Double.NEGATIVE_INFINITY
-            for (i in 0 until frames.size) {
+            if (coherent) {
+                // The newest later flight (a hit or a bounce) that has already started at the drawn time.
+                var best = selected; var bestStart = shownStart
+                for (i in 0 until frames.size) {
+                    val candidate = frames[i]
+                    val a = candidate.arc ?: continue
+                    val start = candidate.t - a[12] * 1000.0
+                    if (candidate.t > selected.t && (candidate.hits != selected.hits || candidate.bounces != selected.bounces) &&
+                        start <= ballTimeMs && start >= bestStart) { best = candidate; bestStart = start }
+                }
+                selected = best
+            } else for (i in 0 until frames.size) {
                 val candidate = frames[i]
                 val a = candidate.arc ?: continue
                 val start = candidate.t - round(a[12] * 10000.0) / 10
-                if (candidate.t > selected.t && start > shownStart + 1 && start <= displayTimeMs) { selected = candidate; break }
+                if (candidate.t > selected.t && start > shownStart + 1 && start <= ballTimeMs) { selected = candidate; break }
             }
             shown = selected; drawnFrame = selected
-            age = ((displayTimeMs - selected.t) / 1000).toFloat()
+            age = ((ballTimeMs - selected.t) / 1000).toFloat()
             frame = selected.b; arc = selected.arc; frameHeight = selected.height
             frameDrift = selected.drift; returnReady = selected.landed
             frameSpinSide = selected.spinSide; frameSpinTop = selected.spinTop
         } else if (lastTimestamp > 0) displayTimeMs = lastTimestamp + age * 1000.0
-        countdownMs = (frameCountdown - (age * 1000).toInt()).coerceAtLeast(0)
+        if (!coherent) ballTimeMs = displayTimeMs
+        val drawnHitsBefore = shownHits
+        if (coherent && shown != null) showDrawn(shown, nowNanos)
+        countdownMs = ((if (coherent && shown != null) shown.countdown else frameCountdown) - (age * 1000).toInt()).coerceAtLeast(0)
         val curve = arc
         val target = targetPosition
         if (curve == null) { target[0] = frame[0] + frame[2] * age; target[1] = frame[1] + frame[3] * age; target[2] = frameHeight }
         else flightPositionInto(curve, age, shown?.spin ?: spin, frameDrift, target)
         previousBallX = ballX; previousBallY = ballY; previousHeight = height
-        previousBallTime = priorViewTime
+        previousBallTime = priorBallTime
         if (prediction == null && contactEligible && (lastReleased || nowNanos - lastInputAt > 120_000_000))
             predict(ballX, ballY, height, target[0], target[1], target[2], myX, myY, myX, myY, nowNanos, true)
         val predicted = prediction
         if (predicted != null) {
             advancePredictionDrift(nowNanos)
-            val elapsed = if (predictionViewAt > 0) ((displayTimeMs - predictionViewAt) / 1000).toFloat()
+            val elapsed = if (predictionViewAt > 0) ((ballTimeMs - predictionViewAt) / 1000).toFloat()
                 else ((nowNanos - predictionAt) / 1e9).toFloat()
             flightPositionInto(predicted, elapsed, 0f, 0f, target)
         }
@@ -262,7 +330,7 @@ class PongClient(val seat: Int) {
                 val seconds = ((nowNanos - reconcileDriftAt).coerceAtLeast(0) / 1e9).toFloat()
                 source[9] += reconcileDrift * seconds
                 reconcileDriftAt = nowNanos
-                val elapsed = if (reconcileViewAt > 0) ((displayTimeMs - reconcileViewAt) / 1000).toFloat() else ((nowNanos - reconcileAt) / 1e9).toFloat()
+                val elapsed = if (reconcileViewAt > 0) ((ballTimeMs - reconcileViewAt) / 1000).toFloat() else ((nowNanos - reconcileAt) / 1e9).toFloat()
                 flightPositionInto(source, elapsed, 0f, 0f, blendSource)
             }
             // Dropped pre-bounce return frames must not reconcile against the old incoming flight.
@@ -280,17 +348,40 @@ class PongClient(val seat: Int) {
                 reconcile = false
             }
         }
+        // A hit the buffer could not hide (very late frame) eases onto the new flight instead of jumping.
+        if (coherent && prediction == null && !reconcile && drawnHitsBefore >= 0 && shownHits > drawnHitsBefore && blendAt == 0L &&
+            hypot(target[0] - ballX - stepX, target[1] - ballY - stepY) > .02f) {
+            blendAt = nowNanos; blendX = ballX - target[0]; blendY = ballY - target[1]; blendZ = height - target[2]
+        }
         if (blendAt > 0) {
             val remaining = (1 - (nowNanos - blendAt) / 60_000_000f).coerceIn(0f, 1f)
             target[0] += blendX * remaining; target[1] += blendY * remaining; target[2] += blendZ * remaining
             if (remaining == 0f) blendAt = 0L
         }
         val k = if (frameDrift != null || abs(target[0] - ballX) + abs(target[1] - ballY) > .35f) 1f else 1 - exp(-45f * dt)
-        ballX += (target[0] - ballX) * k
-        ballY += (target[1] - ballY) * k
+        stepX = (target[0] - ballX) * k; stepY = (target[1] - ballY) * k
+        ballX += stepX
+        ballY += stepY
         height += (target[2] - height) * k
         val follow = 1 - exp(-35f * dt)
-        if (compensated && frames.isNotEmpty()) {
+        if (coherent && batCount > 0) {
+            // The opponent's racket at the time its own ball view had reached, on the same axis as the ball it hits.
+            val at = (nowNanos - (serverOffset ?: 0)) / 1_000_000.0 - farDelay
+            var newer = batCount
+            for (i in 0 until batCount) if (batV[(batIndex - batCount + i + 64) % 64] > at) { newer = i; break }
+            val a = (batIndex - batCount + maxOf(newer - 1, 0) + 64) % 64; val b = (batIndex - batCount + minOf(newer, batCount - 1) + 64) % 64
+            val f = if (batV[b] > batV[a]) ((at - batV[a]) / (batV[b] - batV[a])).coerceIn(0.0, 1.0).toFloat() else 0f
+            theirX = batX[a] + (batX[b] - batX[a]) * f; theirY = batY[a] + (batY[b] - batY[a]) * f
+            // Past the newest sample (a lost frame): continue its last motion for at most BatExtrapolationMs.
+            val p = (batIndex + 62) % 64
+            if (newer == batCount && batCount > 1 && batV[b] > batV[p]) {
+                val k = ((at - batV[b]).coerceAtMost(BatExtrapolationMs) / (batV[b] - batV[p])).toFloat()
+                val dx = (batX[b] - batX[p]) * k; val dy = (batY[b] - batY[p]) * k
+                val limit = min(1f, BatExtrapolationMax / max(hypot(dx, dy), 1e-6f))
+                theirX = (batX[b] + dx * limit).coerceIn(RacketMin, RacketMax)
+                theirY = (batY[b] + dy * limit).coerceIn(CourtH - RacketFar, CourtH - RacketNear)
+            }
+        } else if (compensated && frames.isNotEmpty()) {
             // Same buffered timeline as the ball, so the bat and ball stay in step and dropped frames are bridged.
             var next = frames.size
             for (i in 0 until frames.size) if (frames[i].t > displayTimeMs) { next = i; break }
@@ -305,6 +396,69 @@ class PongClient(val seat: Int) {
             trailPoints.addLast(PongTrail(ballX, ballY, height, nowNanos))
             lastTrail = nowNanos
         }
+    }
+
+    private fun towardMe(f: DisplayFrame?): Boolean = when {
+        f == null -> false
+        f.arc != null -> f.arc[10] > f.arc[1]
+        f.serving != 0 -> f.serving == seat
+        else -> f.b[3] > 0
+    }
+
+    /**
+     * The ball is drawn [ballDelay] behind the newest server time: [InterpolationMs] while it comes to this player,
+     * [farDelay] while it goes to the opponent, so their delayed racket and their lag-compensated hit line up with
+     * it. The change is spread over the flight so that it finishes by the table bounce when the rate limits allow.
+     */
+    private fun coherentBallTime(newest: Double, dtMs: Double): Double {
+        val latest = if (lagCount > 0) lagT[(lagIndex + 63) % 64] else 0.0
+        var lag = -1.0
+        for (i in 0 until lagCount) if (lagT[i] >= latest - 3000) lag = max(lag, lagMs[i])
+        if (lag >= 0) farDelay += ((lag + FarMarginMs).coerceIn(InterpolationMs, MaxFarDelayMs) - farDelay).coerceIn(-.2 * dtMs, .2 * dtMs)
+        val drawn = drawnFrame
+        // A predicted local hit already sends the ball away, so the delay starts growing at contact.
+        val toward = prediction == null && towardMe(drawn)
+        val want = if (toward) InterpolationMs else farDelay
+        // Changing the delay at rate r draws the ball at 1 - r of real time; finish by the landing when possible.
+        val change = want - ballDelay
+        val remaining = landingTime(drawn) - ballTimeMs + change
+        val rate = if (remaining > 1) (change / remaining).coerceIn(-MaxDelayRate, MaxSlowRate)
+            else if (change > 0) MaxSlowRate else -MaxDelayRate
+        ballDelay = if (abs(change) <= abs(rate * dtMs)) want else ballDelay + rate * dtMs
+        return max(ballTimeMs, newest - ballDelay).coerceIn(frames.first().t.toDouble(), max(displayTimeMs, frames.first().t.toDouble()))
+    }
+
+    /** Server time of the drawn flight's table landing, or NaN after it. */
+    private fun landingTime(f: DisplayFrame?): Double {
+        val a = f?.arc ?: return Double.NaN
+        if (f.landed) return Double.NaN
+        if (landingFrame !== f) {
+            landingFrame = f
+            val w = PongPhysics.landingWeights(a[2].toDouble(), (a[5] / ArcH).toDouble())
+            landingAt = f.t - a[12] * 1000.0 + w[4] * a[13] * 1000.0
+        }
+        return landingAt
+    }
+
+    /** Score, serve, bounce and impact events happen when the drawn ball reaches them. */
+    private fun showDrawn(f: DisplayFrame, now: Long) {
+        val score = f.myScore to f.theirScore
+        if (shownHits >= 0) {
+            if (score != shownScore || f.serving != 0 && shownServing == 0) {
+                round++; trailPoints.clear(); lastTrail = 0L; stroke.clear()
+                ballDelay = if (f.serving == seat) InterpolationMs else farDelay
+            }
+            if (f.hits > shownHits && f.arc != null && f.hits != impactHits) {
+                impactHits = f.hits; impactAt = now; impactMine = !towardMe(f)
+            }
+            if (f.bounces > shownBounces) {
+                bounceX = if (f.landed) f.arc?.get(0) ?: f.b[0] else f.b[0]; bounceY = if (f.landed) f.arc?.get(1) ?: f.b[1] else f.b[1]
+                bounceAt = now
+            }
+        }
+        shownHits = f.hits; shownBounces = f.bounces; shownScore = score; shownServing = f.serving
+        myScore = f.myScore; theirScore = f.theirScore
+        waitingServe = f.serving != 0; myServe = f.serving == seat
     }
 
     /** Returns the two server coordinates after rotating seat two's view. */
@@ -323,7 +477,7 @@ class PongClient(val seat: Int) {
         lastReleased = released
         myX = nextX; myY = nextY
         previousBallX = ballX; previousBallY = ballY; previousHeight = height
-        previousBallTime = displayTimeMs
+        previousBallTime = ballTimeMs
         return viewX(myX) to viewY(myY)
     }
 
@@ -345,12 +499,13 @@ class PongClient(val seat: Int) {
         prediction = PongPhysics.launch(rim.first, rim.second, h, stroke, -1.0,
             (drawn?.spinSide ?: frameSpinSide).toDouble(), (drawn?.spinTop ?: frameSpinTop).toDouble())
             .also { predictionDrift = it[14] }
-        predictionViewAt = if (previousBallTime > 0) previousBallTime + (displayTimeMs - previousBallTime) * contact.time else displayTimeMs
-        predictionAt = now - ((displayTimeMs - predictionViewAt).coerceAtLeast(0.0) * 1_000_000).toLong()
+        predictionViewAt = if (previousBallTime > 0) previousBallTime + (ballTimeMs - previousBallTime) * contact.time else ballTimeMs
+        predictionAt = now - ((ballTimeMs - predictionViewAt).coerceAtLeast(0.0) * 1_000_000).toLong()
         predictionHits = hits; predictionN = max(sampleN + if (nextSample) 1 else 0, acknowledged + 1)
         predictionCt = sampleCt; predictionV = displayTimeMs
         predictionDriftAt = predictionAt
         localContactUsed = true
+        impactAt = now; impactMine = true; impactHits = hits + 1
         // Contact is on the segment's impact-time rim, never the final bat position.
         ballX = rim.first.toFloat(); ballY = rim.second.toFloat(); height = h.toFloat()
         predictionGap = hypot(bx0 + (bx1 - bx0) * contact.time - px, by0 + (by1 - by0) * contact.time - py) - radius
@@ -381,6 +536,15 @@ class PongClient(val seat: Int) {
         private const val LegacySpinDrift = .8f
         private const val LegacySpinTau = 1.8f
         const val InterpolationMs = 50.0
+        /** Covers the opponent's send interval, jitter and one lost frame beyond their measured lag (which includes the frame interval). */
+        const val FarMarginMs = 48.0
+        const val MaxFarDelayMs = 500.0 // the server never rewinds further (MAX_COMP_MS)
+        /** Drawn-time stretch limits while the delay moves between ends: the ball looks at most 75% faster coming
+         *  in and 50% slower going out; at RTT up to ~200 ms the needed change stays near 20-40%. */
+        const val MaxDelayRate = .75
+        const val MaxSlowRate = .5
+        const val BatExtrapolationMs = 50.0
+        const val BatExtrapolationMax = .08f
 
         internal fun ballRadius(height: Float) = BallR * (1 + .7f * (height / ArcH).coerceIn(0f, 1f))
         internal fun contactRadius(height: Float) = PongPhysics.contactRadius(height.toDouble()).toFloat()

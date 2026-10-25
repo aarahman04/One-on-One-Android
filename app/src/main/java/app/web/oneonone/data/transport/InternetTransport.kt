@@ -48,7 +48,7 @@ class InternetTransport @Inject constructor(
             if (y != null) put("y", y.toDouble())
             if (released) put("released", true)
             if (touch != null) put("touch", org.json.JSONArray().put(touch.first.toDouble()).put(touch.second.toDouble()))
-            if (timing != null) { put("ct", timing.ct); put("v", timing.v); put("n", timing.n) }
+            if (timing != null) { put("ct", timing.ct); put("v", timing.v); put("n", timing.n); timing.w?.let { put("w", it) } }
             if (samples != null && samples.isNotEmpty()) put("samples", org.json.JSONArray(samples.toString()))
         })
     }

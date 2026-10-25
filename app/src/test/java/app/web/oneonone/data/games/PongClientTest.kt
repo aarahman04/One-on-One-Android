@@ -405,6 +405,58 @@ class PongClientTest {
         }
     }
 
+    private fun coherent(t: Long, s: List<Int> = listOf(0, 0), b: List<Float> = listOf(.5f, .5f, 0f, -1f), pv: Double = t - 100.0,
+                         theirX: Float = .7f, extra: JsonObjectBuilder.() -> Unit = {}) = frame(b) {
+        put("t", t); putJsonArray("ack") { add(0); add(0) }; putJsonArray("pv") { add(t.toDouble()); add(pv) }
+        putJsonArray("s") { s.forEach { add(it) } }; putJsonArray("p") { add(.3f); add(theirX) }; put("drift", 0f); extra()
+    }
+
+    @Test fun withPvAPointIsShownWhenTheDrawnBallReachesItNotOnArrival() {
+        val p = PongClient(1)
+        for (i in 0..5) p.receive(coherent(1000L + i * 33, extra = { arc(i * .033f) }), "m", (1000L + i * 33) * ms)
+        p.advance(1165 * ms)
+        // The point frame arrives while the drawn ball (50+ ms behind) is still in flight.
+        assertTrue(p.receive(coherent(1198, listOf(0, 1), extra = { put("serve", 2); put("c", 1000) }), "m", 1198 * ms))
+        p.advance(1200 * ms)
+        assertEquals(0 to 0, p.myScore to p.theirScore)
+        assertFalse(p.waitingServe)
+        val round = p.round
+        p.advance(1300 * ms); p.advance(1400 * ms)
+        assertEquals(0 to 1, p.myScore to p.theirScore)
+        assertTrue(p.waitingServe && !p.myServe)
+        assertEquals(round + 1, p.round)
+        assertTrue(p.trail.isEmpty())
+    }
+
+    @Test fun withPvTheOpponentRacketIsDrawnAtTheTimeItWasSentNotWhenItArrived() {
+        val p = PongClient(1)
+        // Racket samples trail their frames by 100 ms; the racket moves .2 -> .6 between 1000 and 1600.
+        for (i in 0..20) {
+            val t = 1000L + i * 33
+            val v = t - 100.0
+            p.receive(coherent(t, pv = v, theirX = (.2f + .4f * ((v - 1000) / 600).toFloat().coerceIn(0f, 1f))), "m", t * ms)
+            p.advance(t * ms)
+        }
+        val at = (1660 - 100 - 48).toDouble() // newest minus measured lag and margin
+        val expected = .2f + .4f * ((at - 1000) / 600).toFloat().coerceIn(0f, 1f)
+        assertEquals(expected, p.theirX, 1e-3f)
+        assertEquals(148.0, p.ballTimeMs.let { 1660 - it }, 1.0) // the outgoing ball is drawn on the same delayed timeline
+    }
+
+    @Test fun impactIsReportedWhenTheContactIsDrawn() {
+        val p = PongClient(1)
+        p.receive(frame(listOf(.5f, 1.6f, 0f, 1f)) { put("l", true); put("drift", 0f) }, "m", ms)
+        p.advance(ms); p.paddle(.5f, 2.4f, ms); p.paddle(.5f, 1.6f, 2 * ms)
+        assertEquals(2 * ms, p.impactAt); assertTrue(p.impactMine)
+        // The confirmation of that predicted hit is not a second impact.
+        p.receive(frame(listOf(.5f, 1.5f, 0f, -1f)) { put("h", 2); put("drift", 0f); arc() }, "m", 30 * ms)
+        assertEquals(2 * ms, p.impactAt)
+        // An opponent hit arrives as a new flight toward this player.
+        p.receive(frame(listOf(.5f, .3f, 0f, 1f)) { put("h", 3); put("drift", 0f)
+            putJsonArray("a") { listOf(.5f, .1f, .16f, .5f, .4f, .49f, .5f, 1.4f, .49f, .5f, 1.4f, -.49f, 0f, .9f).forEach { add(it) } } }, "m", 900 * ms)
+        assertEquals(900 * ms, p.impactAt); assertFalse(p.impactMine)
+    }
+
     @Test fun shadowStaysNearTheBall() {
         assertEquals(0f, app.web.oneonone.ui.games.shadowOffset(0f), 0f)
         assertEquals(2 * PongClient.BallR, app.web.oneonone.ui.games.shadowOffset(.5f), 1e-6f)
