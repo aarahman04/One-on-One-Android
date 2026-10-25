@@ -4,7 +4,8 @@ Owner request: repair racket-to-ball contact, opponent synchronization, sudden b
 numbered circles and lag. The screen recording was **not available** to this session. The work below comes
 from tracing the code and replaying two simulated players against the real server simulation.
 
-Branches: Android `claude/ecstatic-pascal-txv258`, backend `claude/ecstatic-pascal-txv258` (PR #131).
+Android PR #54 (branch `claude/ecstatic-pascal-txv258`, release candidate 2.0.14 / versionCode 21);
+backend PR #131, merged as `4b9c73f`.
 
 ## 1. Existing architecture (as found)
 

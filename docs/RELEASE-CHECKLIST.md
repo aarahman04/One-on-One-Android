@@ -1,9 +1,15 @@
 ﻿# Native Android release checklist
 
-Updated 2026-10-24 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **19** /
-versionName **2.0.12**; the Gradle fallback stays 5 / 2.0.0-dev. The workflow builds artifacts; it does not upload to Play.
+Updated 2026-10-25 for `app.web.oneonone`. Workflow dispatch defaults are versionCode **21** /
+versionName **2.0.14**; the Gradle fallback stays 5 / 2.0.0-dev. The workflow builds artifacts; it does not upload to Play.
 
 ## Release history
+
+Release candidate: **2.0.14 / versionCode 21** (2026-10-25): Pong coherent display timeline, Android
+[#54](https://github.com/aarahman04/One-on-One-Android/pull/54) with backend
+[#131](https://github.com/aarahman04/One-on-One/pull/131) (merged as `4b9c73f`; confirm Railway's active
+deployment source before testing). Dispatched on the PR branch at the owner's request, for two-phone testing
+before merge. 2.0.13 / 20 shipped from main after #53. The next upload after code 21 must use **22 or higher**.
 
 Previous verified signed build: **2.0.11 / versionCode 18** (2026-10-23,
 [39886525017](https://github.com/aarahman04/One-on-One-Android/actions/runs/39886525017)),

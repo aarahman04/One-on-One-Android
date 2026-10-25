@@ -2240,9 +2240,12 @@ black numbered circles, lag. Full investigation, shot lifecycle and evidence:
   (`scripts/pong-sync-trace.ts`) at 50/100/200/300 ms RTT with jitter and frame loss, at 60 and 120 Hz, and
   compares against the previous display (`pv` stripped). New `PongClientTest` and `MatchSessionTest` checks.
 
-Build verification only: the Pong data/UI-free code was compiled and unit-tested locally with a standalone
-Kotlin compiler; `assembleDebug lintDebug testDebugUnitTest` runs in this PR's CI (the cloud session has no
-Android SDK). Not device-tested. No version bump or Play upload.
+Build verification: the Pong logic was compiled and unit-tested locally with a standalone Kotlin compiler, and
+PR #54 CI (`assembleDebug lintDebug testDebugUnitTest`) passed. Not device-tested. Backend #131 merged as
+`4b9c73f`; the Railway deployment could not be checked from the cloud session (host blocked by its network policy).
+
+Release candidate **2.0.14 / versionCode 21**: android-build defaults bumped and the workflow dispatched on the PR
+branch at the owner's request, for phone testing before merge. No Play upload made from this session.
 
 ### Xiaomi checklist (pong sync)
 
