@@ -2158,3 +2158,62 @@ was created for the check.
 Capitalization was checked on the rebuilt emulator app: the focused composer
 reports inputType `0x2c001`, including Android's `TYPE_TEXT_FLAG_CAP_SENTENCES`
 (`0x4000`). No test message was sent.
+
+## 2026-10-24 - Pong speed and fairness
+
+Owner complaints: hits too fast; shots landing near a line could not be
+returned. Backend branch `fix/pong-speed-fairness` adds a deterministic
+reachability sweep and tunes the server sim; Android mirrors launch duration
+and the debug `DemoPong`. See [reference remake](games/PONG-REFERENCE-REMAKE.md)
+for before/after numbers. Old Android clients render server arcs unchanged
+(frames already carry points, elapsed and duration); they only mispredict the
+duration of their own launch until confirmation blends it.
+
+Build verification only (assembleDebug, lintDebug, testDebugUnitTest); not
+device-tested.
+
+### Xiaomi checklist (pong fairness)
+
+- [ ] A hard flick still feels quick but is visibly slower than 2.0.12 (about 1 s across).
+- [ ] After the table bounce hard shots stay lively, soft shots stay slow, and the ball never speeds up.
+- [ ] A diagonal swipe still curves the ball until it lands; moving the bat left/right after contact changes nothing.
+- [ ] Hard diagonal drives land on the table toward their side; only a very fast near-sideways flick goes off the side.
+- [ ] Short drops near the net and deep balls near the end line can be reached from the baseline.
+- [ ] Wide shots near the side still go out and score when not returned.
+- [ ] Own-hit prediction has no visible jump on confirmation against the new backend.
+
+## 2026-10-25 - Pong spin and every stroke lands
+
+Owner request: sideways hits must never leave the table, and add real spin. Paired
+backend branch `feat/pong-spin` (`aarahman04/One-on-One`, commit `1ce5818`) is the
+authority; Android mirrors it in `PongPhysics`, `DemoPong` and `PongClient`. See
+[spin plan](games/PONG-SPIN-PLAN.md) for the formulas and final tuned values.
+
+- Spin S/T comes from the finger at contact; OVERHIT removed, so every swipe lands in-table.
+- An incoming ball's spin (frame `sp`, optional, validated and clamped) shapes a passive
+  return in both the server and the local prediction.
+- Ball mark rolls (top/back) or orbits (side), trail tints warm/cool, and one hint line sits
+  under the table. Owner feedback: no per-hit spin label (the trail is enough); the play area
+  is clipped so a ball flying past the end line never paints over the hint or Resign/Leave.
+- Debug demo opponent cycles neutral, topspin drive, backspin push, sidespin left/right and
+  placement left/right by swiping through `StrokeWindow`.
+- Tests: Kotlin spin fuzz (77,760 + 3,840 shots), backend golden parity to 1e-9,
+  sp decoding, passive deflection and spin bounce checks; display traces regenerated
+  with the harness against the new backend.
+
+Released as **2.0.13 / versionCode 20** (android-build dispatched from main). Build plus
+emulator play (clip, trail tint, varied demo returns); the emulator uses software GL
+(`ro.hardware.egl=emulation`, ~26 ms median frames), so bat smoothness must be judged on a phone.
+
+### Xiaomi checklist (pong spin)
+
+- [ ] A full-speed sideways swipe lands on the table every time; points are lost only by missing.
+- [ ] A fast forward flick shows a warm trail, a low arc and a long, quick bounce.
+- [ ] Pulling the bat back through the ball shows a cool trail and a short, sitting bounce.
+- [ ] A sideways swipe curves, the mark orbits and the ball kicks sideways off the table.
+- [ ] Holding the bat still against the demo's spin returns: sidespin deflects, topspin goes long, backspin short.
+- [ ] The demo opponent's returns visibly vary (drive, push, both sidespins, both placements, neutral).
+- [ ] Own-hit prediction has no visible jump on confirmation against the new backend.
+- [ ] The hint line fits under the table at the largest font size; TalkBack reads it.
+- [ ] A ball flying past either end line disappears at the yellow area's edge, never over the buttons.
+- [ ] Both bats move smoothly on the phone (the emulator's software GL is not a smoothness test).

@@ -23,6 +23,20 @@ class PongContactContractTest {
         assertEquals(0, p.myScore)
     }
 
+    @Test fun aPassiveLocalReturnUsesTheIncomingBallSpinLikeTheServer() {
+        fun returned(side: Double): PongClient {
+            val p = PongClient(1)
+            p.receive(JsonObject(incoming() + buildJsonObject { putJsonArray("sp") { add(side); add(0) } }), "m", 1_000_000_000)
+            p.advance(1_000_000_000)
+            p.paddle(.5f, 2f, 1_000_000_000); p.paddle(.5f, 1.75f, 1_100_000_000) // a slow, mostly passive push
+            p.advance(1_400_000_000)
+            return p
+        }
+        val plain = returned(0.0); val spun = returned(1.0)
+        assertEquals(0f, spun.spinTop, 1e-6f) // the prediction's own stroke spin (2.5 widths/s: no topspin)
+        assertTrue("incoming sidespin deflects a passive block toward +x", spun.ballX > plain.ballX + 1e-3f)
+    }
+
     @Test fun backHalfContactAlsoPredictsAForwardLaunch() {
         val p = PongClient(1)
         val data = JsonObject(incoming() + buildJsonObject { putJsonArray("r") { add(1.3); add(-.08) } })
@@ -96,16 +110,23 @@ class PongContactContractTest {
         assertEquals(1, p.hits)
     }
 
-    @Test fun releaseStopsFuturePredictedDriftWithoutErasingTheDriftAlreadyApplied() {
-        val p = PongClient(1)
-        p.receive(incoming(), "m", 1_000_000_000); p.advance(1_000_000_000)
-        p.paddle(.2f, 2f, 1_000_000_000)
-        p.paddle(.8f, 1.4f, 1_016_000_000)
-        p.advance(1_080_000_000)
-        val before = p.visibleBallPosition()
-        p.paddle(p.myX, p.myY, 1_080_000_000, released = true)
-        p.advance(1_080_000_000)
-        assertEquals(before.first, p.ballX, 1e-6f); assertEquals(before.second, p.ballY, 1e-6f)
+    @Test fun predictedCurveIsFixedAtContactWhateverTheBatDoesAfterwards() {
+        fun client() = PongClient(1).also {
+            it.receive(incoming(), "m", 1_000_000_000); it.advance(1_000_000_000)
+            it.paddle(.2f, 2f, 1_000_000_000)
+            it.paddle(.8f, 1.4f, 1_016_000_000)
+            it.advance(1_080_000_000)
+        }
+        val released = client(); val swiping = client(); val held = client()
+        released.paddle(released.myX, released.myY, 1_080_000_000, released = true)
+        for (i in 1..20) {
+            val at = 1_080_000_000L + i * 16_000_000L
+            swiping.paddle(if (i % 2 == 0) .1f else 1.1f, 1.4f, at)
+            held.paddle(held.myX, held.myY, at)
+            listOf(released, swiping, held).forEach { it.advance(at) }
+            assertEquals(released.ballX, swiping.ballX, 1e-6f); assertEquals(released.ballY, swiping.ballY, 1e-6f)
+            assertEquals(released.ballX, held.ballX, 1e-6f)
+        }
     }
 
     @Test fun pairedHarnessActionsMatchTheRealKotlinDisplay() {

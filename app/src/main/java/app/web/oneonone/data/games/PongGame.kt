@@ -27,6 +27,11 @@ class PongClient(val seat: Int) {
     var bounceX = 0f; private set
     var bounceY = 0f; private set
     var bounceAt = 0L; private set
+    private var frameSpinSide = 0f
+    private var frameSpinTop = 0f
+    /** The ball's current spin for rendering: the predicted return's, else the drawn frame's. */
+    val spinSide get() = prediction?.get(15) ?: frameSpinSide
+    val spinTop get() = prediction?.get(16) ?: frameSpinTop
     private val trailPoints = ArrayDeque<PongTrail>()
     val trail: List<PongTrail> get() = trailPoints
     private var frame = FloatArray(4)
@@ -53,6 +58,7 @@ class PongClient(val seat: Int) {
     private var predictionGap = 0.0
     private var predictionViewAt = 0.0
     private var predictionDriftAt = 0L
+    private var predictionDrift = 0f // fixed at contact; later movement never steers
     private var confirmationLog = false
     private var confirmationAccepted = false
     private var confirmationDelay = 0.0
@@ -68,7 +74,8 @@ class PongClient(val seat: Int) {
     private var offsetCount = 0
     private var offsetIndex = 0
     private data class DisplayFrame(val t: Long, val b: FloatArray, val arc: FloatArray?, val height: Float,
-                                    val spin: Float, val drift: Float?, val landed: Boolean, val serving: Int, val hits: Int)
+                                    val spin: Float, val drift: Float?, val landed: Boolean, val serving: Int, val hits: Int,
+                                    val theirX: Float, val theirY: Float, val spinSide: Float, val spinTop: Float)
     private val frames = ArrayDeque<DisplayFrame>()
     private var drawnFrame: DisplayFrame? = null
     private var reconcile = false
@@ -76,8 +83,7 @@ class PongClient(val seat: Int) {
     private var reconcileViewAt = 0.0
     private var reconcileAt = 0L
     private var reconcileDriftAt = 0L
-    private var reconcileIdleAt = 0L
-    private var reconcileSide = 0.0
+    private var reconcileDrift = 0f
     private val blendSource = FloatArray(3)
     private var blendAt = 0L
     private var blendX = 0f
@@ -119,6 +125,9 @@ class PongClient(val seat: Int) {
             require(incomingSpin.isFinite())
             val incomingDrift = data["drift"]?.let { (it as JsonPrimitive).float }
             require(incomingDrift == null || incomingDrift.isFinite())
+            // Optional additive field: the ball's [sidespin, top/back spin], clamped to the documented range.
+            val ballSpin = if (data["sp"] != null) numbers("sp", 2).also { for (i in 0..1) it[i] = it[i].coerceIn(-1f, 1f) }
+                else floatArrayOf(0f, 0f)
             val timestamp = data["t"]?.let { (it as JsonPrimitive).long }
             require(timestamp == null || timestamp in lastTimestamp..Long.MAX_VALUE / 1_000_000)
             val countdown = (data["c"] as JsonPrimitive).int
@@ -134,6 +143,7 @@ class PongClient(val seat: Int) {
             require(countdown >= 0 && hitCount >= 0 && serving in 0..2 && bounceCount >= 0)
 
             val newHit = hitCount != hits
+            val viewSpin = if (seat == 1) ballSpin[0] else -ballSpin[0]
             val reset = !live || s[seat - 1] != myScore || s[2 - seat] != theirScore ||
                 serving != 0 && (!waitingServe || countdown > frameCountdown + 100)
             frame = floatArrayOf(viewX(b[0]), viewY(b[1]), if (seat == 1) b[2] else -b[2], if (seat == 1) b[3] else -b[3])
@@ -150,7 +160,7 @@ class PongClient(val seat: Int) {
                 if (prediction != null && !reset) {
                     reconcile = true
                     reconcileCurve = prediction; reconcileViewAt = predictionViewAt; reconcileAt = predictionAt
-                    reconcileDriftAt = predictionDriftAt; reconcileSide = stroke.side; reconcileIdleAt = lastInputAt + 120_000_000
+                    reconcileDriftAt = predictionDriftAt; reconcileDrift = predictionDrift
                     confirmationLog = true; confirmationAccepted = newHit
                     confirmationDelay = (nowNanos - predictionAt) / 1_000_000.0
                 }
@@ -163,6 +173,7 @@ class PongClient(val seat: Int) {
             myScore = s[seat - 1]; theirScore = s[2 - seat]
             spin = if (seat == 1) incomingSpin else -incomingSpin
             frameDrift = incomingDrift?.let { if (seat == 1) it else -it }
+            frameSpinSide = viewSpin; frameSpinTop = ballSpin[1]
             hits = hitCount
             waitingServe = serving != 0; myServe = serving == seat
             returnReady = landed
@@ -183,7 +194,7 @@ class PongClient(val seat: Int) {
                 sentAt + offset
             }
             if (compensated) {
-                frames.addLast(DisplayFrame(timestamp!!, frame, arc, frameHeight, spin, frameDrift, landed, serving, hitCount))
+                frames.addLast(DisplayFrame(timestamp!!, frame, arc, frameHeight, spin, frameDrift, landed, serving, hitCount, nextTheirX, nextTheirY, viewSpin, ballSpin[1]))
                 if (reset) drawnFrame = frames.last()
                 while (frames.size > 32 || frames.size > 1 && timestamp - frames.first().t > 800) frames.removeFirst()
             }
@@ -226,6 +237,7 @@ class PongClient(val seat: Int) {
             age = ((displayTimeMs - selected.t) / 1000).toFloat()
             frame = selected.b; arc = selected.arc; frameHeight = selected.height
             frameDrift = selected.drift; returnReady = selected.landed
+            frameSpinSide = selected.spinSide; frameSpinTop = selected.spinTop
         } else if (lastTimestamp > 0) displayTimeMs = lastTimestamp + age * 1000.0
         countdownMs = (frameCountdown - (age * 1000).toInt()).coerceAtLeast(0)
         val curve = arc
@@ -241,17 +253,17 @@ class PongClient(val seat: Int) {
             advancePredictionDrift(nowNanos)
             val elapsed = if (predictionViewAt > 0) ((displayTimeMs - predictionViewAt) / 1000).toFloat()
                 else ((nowNanos - predictionAt) / 1e9).toFloat()
-            flightPositionInto(predicted, elapsed, stroke.side.toFloat(), 0f, target)
+            flightPositionInto(predicted, elapsed, 0f, 0f, target)
         }
         if (reconcile) {
             val source = reconcileCurve
             if (source == null) { blendSource[0] = ballX; blendSource[1] = ballY; blendSource[2] = height }
             else {
-                val seconds = ((minOf(nowNanos, reconcileIdleAt) - reconcileDriftAt).coerceAtLeast(0) / 1e9).toFloat()
-                source[9] += (reconcileSide * (.3 / 12.16 / .02)).toFloat() * seconds
+                val seconds = ((nowNanos - reconcileDriftAt).coerceAtLeast(0) / 1e9).toFloat()
+                source[9] += reconcileDrift * seconds
                 reconcileDriftAt = nowNanos
                 val elapsed = if (reconcileViewAt > 0) ((displayTimeMs - reconcileViewAt) / 1000).toFloat() else ((nowNanos - reconcileAt) / 1e9).toFloat()
-                flightPositionInto(source, elapsed, reconcileSide.toFloat(), 0f, blendSource)
+                flightPositionInto(source, elapsed, 0f, 0f, blendSource)
             }
             // Dropped pre-bounce return frames must not reconcile against the old incoming flight.
             if (confirmationAccepted && shown != null && shown.hits < hits) {
@@ -278,7 +290,14 @@ class PongClient(val seat: Int) {
         ballY += (target[1] - ballY) * k
         height += (target[2] - height) * k
         val follow = 1 - exp(-35f * dt)
-        theirX += (frameTheirX - theirX) * follow; theirY += (frameTheirY - theirY) * follow
+        if (compensated && frames.isNotEmpty()) {
+            // Same buffered timeline as the ball, so the bat and ball stay in step and dropped frames are bridged.
+            var next = frames.size
+            for (i in 0 until frames.size) if (frames[i].t > displayTimeMs) { next = i; break }
+            val a = frames[maxOf(next - 1, 0)]; val b = frames[minOf(next, frames.size - 1)]
+            val f = if (b.t > a.t) ((displayTimeMs - a.t) / (b.t - a.t)).coerceIn(0.0, 1.0).toFloat() else 0f
+            theirX = a.theirX + (b.theirX - a.theirX) * f; theirY = a.theirY + (b.theirY - a.theirY) * f
+        } else { theirX += (frameTheirX - theirX) * follow; theirY += (frameTheirY - theirY) * follow }
         while (trailPoints.isNotEmpty() && nowNanos - trailPoints.first().atNanos >= 300_000_000L) trailPoints.removeFirst()
         val previous = trailPoints.lastOrNull()
         if (curve != null && age < .15f && nowNanos - lastTrail >= 12_000_000L &&
@@ -321,7 +340,11 @@ class PongClient(val seat: Int) {
         val px = px0 + (px1 - px0) * contact.time; val py = py0 + (py1 - py0) * contact.time
         val rim = PongPhysics.rimPosition(contact, px, py, radius)
         val h = h0 + (h1 - h0) * contact.time
-        prediction = PongPhysics.launch(rim.first, rim.second, h, stroke.direction, stroke.forward, stroke.power)
+        // The incoming ball's spin (after its bounce) shapes the return exactly as on the server.
+        val drawn = if (compensated) drawnFrame else null
+        prediction = PongPhysics.launch(rim.first, rim.second, h, stroke, -1.0,
+            (drawn?.spinSide ?: frameSpinSide).toDouble(), (drawn?.spinTop ?: frameSpinTop).toDouble())
+            .also { predictionDrift = it[14] }
         predictionViewAt = if (previousBallTime > 0) previousBallTime + (displayTimeMs - previousBallTime) * contact.time else displayTimeMs
         predictionAt = now - ((displayTimeMs - predictionViewAt).coerceAtLeast(0.0) * 1_000_000).toLong()
         predictionHits = hits; predictionN = max(sampleN + if (nextSample) 1 else 0, acknowledged + 1)
@@ -336,9 +359,8 @@ class PongClient(val seat: Int) {
 
     private fun advancePredictionDrift(now: Long) {
         val curve = prediction ?: return
-        val end = minOf(now, lastInputAt + 120_000_000)
-        val seconds = ((end - predictionDriftAt).coerceAtLeast(0) / 1e9).toFloat()
-        curve[9] += (stroke.side * (.3 / 12.16 / .02)).toFloat() * seconds
+        val seconds = ((now - predictionDriftAt).coerceAtLeast(0) / 1e9).toFloat()
+        curve[9] += predictionDrift * seconds
         predictionDriftAt = max(predictionDriftAt, now)
         if (now - lastInputAt > 120_000_000) stroke.clear()
     }

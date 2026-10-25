@@ -24,14 +24,18 @@ internal class DemoPong(private val target: Int = 7) {
     private var clock = 0.0
     private val moved = doubleArrayOf(-1.0, -1.0)
     private val modern = booleanArrayOf(false, false)
-    private val strokes = Array(2) { DoubleArray(4) }
+    private val strokes = Array(2) { DoubleArray(6) } // side, forward, direction, power, vx, vy
     private val contactStrokes = arrayOfNulls<DoubleArray>(2)
     private var server = 2
     private data class Flight(val points: Array<DoubleArray>, var elapsed: Double, val duration: Double)
     private var flight: Flight? = null
     private var lastHit = 0
+    val lastHitter get() = lastHit
     private var landed = false
-    private val spin get() = if (lastHit == 0) 0.0 else strokes[lastHit - 1][0]
+    private var shotDrift = 0.0
+    private val ballSpin = doubleArrayOf(0.0, 0.0) // [sidespin, top(+)/back(-)spin] the ball carries now
+    // The contact stroke fixes the curve until landing; later bat movement never steers.
+    private val drift get() = if (lastHit == 0 || landed) 0.0 else shotDrift
     private val samples = Array(2) { PongPhysics.StrokeWindow() }
 
     @Synchronized fun serving(seat: Int) = flight == null && server == seat
@@ -64,6 +68,7 @@ internal class DemoPong(private val target: Int = 7) {
         window.sample(clock.toLong(), sampleX, sampleY, forward.toDouble(), py == null)
         strokes[i][0] = window.side; strokes[i][1] = window.forward
         strokes[i][2] = window.direction; strokes[i][3] = window.power
+        strokes[i][4] = window.vx; strokes[i][5] = window.vy
         // Release stops live spin without erasing impact strength.
         if (contacted && contactStrokes[i] == null) contactStrokes[i] = strokes[i].copyOf()
         if (released) { window.clear(); strokes[i].fill(0.0) }
@@ -88,23 +93,30 @@ internal class DemoPong(private val target: Int = 7) {
     private fun touches(seat: Int) = z >= -.033 &&
         hypot(x - paddles[seat - 1], y - paddleY[seat - 1]) <= contactRadius() + 1e-6
     private fun contactRadius() = PongPhysics.contactRadius(z)
-    private fun curve(target: DoubleArray, duration: Double) {
-        flight = Flight(arrayOf(doubleArrayOf(x, y, z), doubleArrayOf(x + (target[0] - x) * .2, y + (target[1] - y) * .2, ArcH),
-            doubleArrayOf(target[0], target[1], ArcH), target), 0.0, duration)
+    private fun curve(target: DoubleArray, duration: Double, k: Double) {
+        flight = Flight(arrayOf(doubleArrayOf(x, y, z), doubleArrayOf(x + (target[0] - x) * .2, y + (target[1] - y) * .2, ArcH * k),
+            doubleArrayOf(target[0], target[1], ArcH * k), target), 0.0, duration)
     }
     private fun strike(seat: Int) {
         val stroke = contactStrokes[seat - 1] ?: strokes[seat - 1]
         contactStrokes[seat - 1] = null
-        val target = doubleArrayOf(.5 + stroke[2] * (8 / 12.16) * (.7 + .3 * stroke[1]),
-            courtH / 2 + (if (seat == 1) -1 else 1) * (5 + 7 * stroke[1]) / 12.16, -ArcH)
-        curve(target, 1.15 - .45 * stroke[3])
+        val a = PongPhysics.launchArc(x, y, z, stroke[2], stroke[1], stroke[3], stroke[4], stroke[5], if (seat == 1) -1.0 else 1.0,
+            ballSpin[0], ballSpin[1])
+        flight = Flight(Array(4) { a.copyOfRange(it * 3, it * 3 + 3) }, 0.0, a[13])
+        shotDrift = a[14]; ballSpin[0] = a[15]; ballSpin[1] = a[16]
         lastHit = seat; landed = false
         hits++
+    }
+    /** Test hook: [seat] strikes from (x, y, z) with a contact stroke (side, forward, direction, power, vx, vy)
+     *  against an incoming ball spinning [inS, inT]. */
+    @Synchronized internal fun strikeFrom(seat: Int, x: Double, y: Double, z: Double, stroke: DoubleArray, inS: Double, inT: Double) {
+        countdown = 0.0; this.x = x; this.y = y; this.z = z; ballSpin[0] = inS; ballSpin[1] = inT
+        contactStrokes[seat - 1] = stroke.copyOf(); strike(seat)
     }
     private fun advance(dt: Double) {
         val current = flight ?: return
         val oldX = x; val oldY = y; val oldZ = z
-        current.points[3][0] += spin * SpinDrift * dt
+        current.points[3][0] += drift * dt
         current.elapsed += dt
         val t = (current.elapsed / current.duration).coerceIn(0.0, 1.0)
         val u = (t * t * t - 2 * t * t + t) * 1.363 + (-2 * t * t * t + 3 * t * t) + (t * t * t - t * t) * .3368
@@ -118,9 +130,14 @@ internal class DemoPong(private val target: Int = 7) {
             if (bx in 0.0..1.0 && by in 0.0..courtH) {
                 if (landed) { point(lastHit); return }
                 x = bx; y = by; z = .033; landed = true; bounces++
-                val length = sqrt(vx * vx + vy * vy + vz * vz).takeIf { it != 0.0 } ?: 1.0
-                val reach = 30 / 12.16
-                curve(doubleArrayOf(x + vx / length * reach, y + vy / length * reach, .033 - ArcH), current.duration)
+                // Sidespin kicks sideways; the bounce is still never more sideways than toward the receiver (45 degrees).
+                val s = ballSpin[0]; val t = ballSpin[1]; val top = max(t, 0.0); val back = max(-t, 0.0)
+                val sideways = (vx + .25 * s * abs(vy)).coerceIn(-abs(vy), abs(vy))
+                val p0 = current.points[0]; val p2 = current.points[2] // undrifted aim: the shot's own pace
+                val (scale, duration) = PongPhysics.bounce(sideways, vy, vz, hypot(p2[0] - p0[0], p2[1] - p0[1]) / current.duration,
+                    1 + .35 * top - .45 * back, 1 + .1 * top - .35 * back) // topspin pace .1 (plan .25) keeps a 250 ms return window
+                curve(doubleArrayOf(x + sideways * scale, y + vy * scale, .033 - ArcH), duration, 1 - .35 * top)
+                ballSpin[0] = s * .6; ballSpin[1] = t * .5
             }
         }
         val seat = 3 - lastHit
@@ -138,7 +155,7 @@ internal class DemoPong(private val target: Int = 7) {
         score[seat - 1]++; scored = true
         if (score.sum() % 2 == 0) server = 3 - server
         flight = null; lastHit = 0; landed = false
-        x = .5; y = serveY(); z = 2 / 12.16; vx = 0.0; vy = 0.0; vz = 0.0
+        x = .5; y = serveY(); z = 2 / 12.16; vx = 0.0; vy = 0.0; vz = 0.0; ballSpin.fill(0.0)
         strokes.forEach { it.fill(0.0) }; contactStrokes.fill(null); moved.fill(-1.0); samples.forEach { it.clear() }
         if (score[seat - 1] >= target) outcome = seat else countdown = 1000.0
     }
@@ -151,12 +168,71 @@ internal class DemoPong(private val target: Int = 7) {
         val current = flight
         if (current == null) put("a", JsonNull) else array("a", current.points.flatMap { it.asIterable() } + listOf(current.elapsed, current.duration))
         put("c", ceil(countdown).toInt()); put("h", hits); put("w", 0)
-        put("spin", round(spin * 10000) / 10000)
-        put("drift", round(spin * SpinDrift * 10000) / 10000)
+        put("spin", round(drift / SpinDrift * 10000) / 10000)
+        put("drift", round(drift * 10000) / 10000)
+        array("sp", ballSpin.asIterable())
         put("serve", if (current != null || outcome != null) 0 else server); put("j", bounces); put("l", landed)
     }
     companion object {
         private const val ArcH = 6 / 12.16
         private const val SpinDrift = .3 / 12.16 / .02
+    }
+}
+
+/** Debug-only opponent. It cycles neutral, topspin drive, backspin push, sidespin left/right and placement
+ *  left/right returns by feeding paddle samples through the same StrokeWindow a finger uses. */
+internal class DemoPongBot(private val seat: Int) {
+    var returns = 0; private set
+    private var style = 0
+    private var hits = -1
+    private var bounces = 0
+    private var swipe = -1.0 // seconds since the swipe started; negative while not swiping
+    private var contactX = 0.0
+    private var contactY = 0.0
+    private var contactAt = 0.0
+
+    fun tick(p: DemoPong, ms: Double) {
+        val i = seat - 1; val forward = if (seat == 1) -1.0 else 1.0
+        val baseline = if (seat == 1) p.courtH + .08 else -.08
+        val incoming = p.vy * forward < 0
+        if (p.hits != hits) {
+            hits = p.hits; bounces = p.bounces; swipe = -1.0
+            if (p.hits > 0 && p.lastHitter != seat) style = returns++ % Styles.size
+        }
+        val vx = Styles[style][0]; val vy = Styles[style][1] * forward
+        val cur = p.paddles[i]; val py = p.paddleY[i]
+        if (swipe >= 0) {
+            swipe += ms / 1000
+            p.paddle(seat, contactX + vx * (swipe - contactAt), contactY + vy * (swipe - contactAt))
+            if (swipe > contactAt + .08) swipe = -1.0
+            return
+        }
+        if (style == 0 || p.vy * forward > -.1 || p.serving(seat)) {
+            // Neutral: a still bat on the baseline that the ball runs into. Hold the baseline until the countdown
+            // ends; don't sit on top of the waiting ball.
+            val reach = .0024 * ms
+            val target = if (incoming) p.x else .5
+            val targetY = if (p.serving(seat) && p.countdown == 0.0) p.y else baseline
+            p.paddle(seat, cur + (target - cur).coerceIn(-reach, reach), py + (targetY - py).coerceIn(-reach, reach), released = true)
+            return
+        }
+        // Aim the bat's path through where the ball crosses the baseline, at the stroke's velocity.
+        val time = ((p.y - baseline) / -p.vy).coerceAtLeast(0.0)
+        val x = p.x + p.vx * time
+        // Long enough that a slow stroke starts out of reach and closes on the ball only while swiping.
+        val lead = max(.06, .5 / hypot(vx, vy))
+        if (p.bounces > bounces && time <= lead) {
+            contactX = x; contactY = baseline; contactAt = time; swipe = 0.0
+            p.paddle(seat, x - vx * time, baseline - vy * time)
+            return
+        }
+        val reach = .006 * ms
+        p.paddle(seat, cur + (x - vx * lead - cur).coerceIn(-reach, reach), py + (baseline - vy * lead - py).coerceIn(-reach, reach), released = true)
+    }
+
+    companion object {
+        // Finger velocity (sideways world x, toward the opponent) per style, widths/s.
+        val Styles = arrayOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(0.0, 9.0), doubleArrayOf(2.5, -2.5),
+            doubleArrayOf(-7.0, 2.0), doubleArrayOf(7.0, 2.0), doubleArrayOf(-1.5, 3.0), doubleArrayOf(1.5, 3.0))
     }
 }

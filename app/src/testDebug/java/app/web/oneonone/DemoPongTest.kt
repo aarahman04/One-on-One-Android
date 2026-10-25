@@ -4,6 +4,8 @@ import app.web.oneonone.data.games.PongClient
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.abs
+import kotlin.math.hypot
 
 class DemoPongTest {
     @Test fun aFastForwardStrokeUsesTheImpactTimeRimAndReturnsTheBall() {
@@ -46,14 +48,17 @@ class DemoPongTest {
         p.paddle(2, .2, .21); p.step(16.0)
         p.paddle(2, .5, .24); p.step(8.0); p.step(64.0)
         // Same input sequence in backend PongSim, rounded by its wire encoder.
-        assertEquals(.5318, p.x, .0001); assertEquals(.3168, p.y, .0001)
-        assertEquals(.2378, p.z, .0001); assertEquals(1, p.hits)
+        assertEquals(.51, p.x, .0001); assertEquals(.3019, p.y, .0001)
+        assertEquals(.2265, p.z, .0001); assertEquals(1, p.hits)
         val client = PongClient(1)
         assertTrue(client.receive(p.frame("m"), "m", 1_000_000))
-        assertEquals(1f, client.spin, .0001f)
-        assertEquals(1.2336f, p.frame("m")["drift"]!!.jsonPrimitive.float, .0001f)
+        val spin = .5971f / (.3f / 12.16f / .02f)
+        assertEquals(spin, client.spin, .0002f)
+        assertEquals(.5971f, p.frame("m")["drift"]!!.jsonPrimitive.float, .0001f)
+        assertEquals(listOf(1.0, 0.0), p.frame("m")["sp"]!!.jsonArray.map { abs(it.jsonPrimitive.double) })
+        assertEquals(1f, client.spinSide, 0f)
         p.paddle(2, .5, .24, true)
-        assertEquals(0f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f)
+        assertEquals(spin, p.frame("m")["spin"]!!.jsonPrimitive.float, .0002f) // the contact curve, not live input
     }
 
     @Test fun demoWaitsForServeAndScoresAnOpenSideMiss() {
@@ -62,7 +67,7 @@ class DemoPongTest {
         assertEquals(0, p.hits)
         p.paddle(2, .2, .21); p.step(900.0); p.paddle(2, .5, .24); p.step(8.0) // slow wide placement: no hook, runs out
         var outside = false
-        repeat(250) {
+        repeat(400) { // the slow bounce now lasts its full 2 s before the point
             p.step(8.0)
             if (p.x > 1.02) { outside = true; assertTrue(p.vx > 0) }
         }
@@ -76,9 +81,10 @@ class DemoPongTest {
         p.paddle(2, .2, .21, touch = .2 to .21); p.step(16.0)
         p.paddle(2, .35, .225, touch = .5 to .24); p.step(8.0)
         assertEquals(1, p.hits)
-        assertEquals(1f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f)
+        val spin = p.frame("m")["spin"]!!.jsonPrimitive.float
+        assertTrue(spin > 0f)
         p.paddle(2, .425, .2325, touch = .5 to .24)
-        assertEquals(0f, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f)
+        assertEquals(spin, p.frame("m")["spin"]!!.jsonPrimitive.float, 0f) // the contact curve, not live input
     }
     @Test fun fastDiagonalContactFollowsThroughAndLaunchesFromTheHistoricalRim() {
         val p = DemoPong()
@@ -90,7 +96,7 @@ class DemoPongTest {
         p.step(8.0)
         assertEquals(1, p.hits)
         assertEquals(start, listOf(p.x, p.y, p.z))
-        assertEquals(1.1414, p.frame("m")["a"]!!.jsonArray[13].jsonPrimitive.double, .0001)
+        assertEquals(1.3434, p.frame("m")["a"]!!.jsonArray[13].jsonPrimitive.double, .0001)
     }
 
     @Test fun lightAndHardImpactUsesTheOutlineWithoutTrappingFollowThrough() {
@@ -185,4 +191,30 @@ class DemoPongTest {
         assertEquals(contact, listOf(p.x, p.y, p.z))
     }
 
+    @Test fun batMovementAfterContactNeverSteersAndTheBounceKeepsTheShotPace() {
+        fun rally(move: Boolean): List<List<Double>> {
+            val p = DemoPong()
+            p.paddle(1, -.26, 2.5, true) // receiver out of reach (the shot's sidespin now kicks it toward +x)
+            p.paddle(2, .4, -.2); p.step(3000.0)
+            p.paddle(2, .4, -.2); p.step(16.0); p.paddle(2, .5, .24); p.step(8.0)
+            assertEquals(1, p.hits)
+            var x = .5
+            val path = mutableListOf<List<Double>>()
+            var i = 0
+            while (i < 200 && p.score.sum() == 0) {
+                if (move) { x += if (i % 60 < 30) .03 else -.03; p.paddle(2, x, .24) }
+                p.step(16.0); i++
+                val f = p.frame("m")
+                path += listOf(p.x, p.y, p.z, p.bounces.toDouble(), f["spin"]!!.jsonPrimitive.double, f["drift"]!!.jsonPrimitive.double)
+            }
+            return path
+        }
+        val still = rally(false)
+        assertTrue(still.any { it[4] != 0.0 }) // the contact stroke carries its own curve
+        assertTrue(still.any { it[3] > 0 && it[5] == 0.0 }) // and it ends at the landing
+        assertEquals(still, rally(true))
+        val speeds = still.dropLast(1).zipWithNext { a, b -> Triple(b[3] > 0 && a[3] > 0, hypot(b[0] - a[0], b[1] - a[1]) / .016, 0) }
+        val pre = speeds.filter { !it.first }.maxOf { it.second }
+        assertTrue(speeds.filter { it.first }.all { it.second <= pre * 1.02 })
+    }
 }

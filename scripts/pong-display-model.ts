@@ -23,8 +23,7 @@ export class CompensatedDisplay {
   blendSteps: number[] = []
   private confirmationAccepted = false
   private confirmedPrediction: Prediction | null = null
-  private confirmedSide = 0
-  private confirmedIdleAt = 0
+  private confirmedDrift = 0
   private predictedV = 0
   private offsets: number[] = []
   private offset: number | null = null
@@ -55,7 +54,7 @@ export class CompensatedDisplay {
     if (reset || hit || this.prediction && f.ack[0] >= this.prediction.n && f.h <= this.prediction.hits) {
       if (this.prediction && !reset) {
         this.confirmedPrediction = this.prediction
-        this.confirmedSide = this.stroke.stroke.side; this.confirmedIdleAt = this.inputAt + 120
+        this.confirmedDrift = this.prediction.arc[14]
         this.reconcile = true; this.confirmationAccepted = hit
         if (hit) this.confirmations++
         else this.rejections++
@@ -87,8 +86,8 @@ export class CompensatedDisplay {
   private drift(now: number) {
     const p = this.prediction
     if (!p) return
-    const end = Math.min(now, this.inputAt + 120), seconds = Math.max(0, end - p.driftAt) / 1000
-    p.arc[9] = Math.fround(p.arc[9] + this.stroke.stroke.side * (.3 / 12.16 / .02) * seconds)
+    const seconds = Math.max(0, now - p.driftAt) / 1000
+    p.arc[9] = Math.fround(p.arc[9] + p.arc[14] * seconds)
     p.driftAt = Math.max(p.driftAt, now)
     if (now - this.inputAt > 120) this.stroke.clear()
   }
@@ -121,7 +120,7 @@ export class CompensatedDisplay {
       const source = this.confirmedPrediction
       let anchor = [this.x, this.y, this.z]
       if (source) {
-        source.arc[9] = Math.fround(source.arc[9] + this.confirmedSide * (.3 / 12.16 / .02) * Math.max(0, Math.min(now, this.confirmedIdleAt) - source.driftAt) / 1000)
+        source.arc[9] = Math.fround(source.arc[9] + this.confirmedDrift * Math.max(0, now - source.driftAt) / 1000)
         source.driftAt = now
         anchor = this.position({ ...selected, a: source.arc, t: source.viewAt, drift: 0 }, this.v)
       }
@@ -164,7 +163,9 @@ export class CompensatedDisplay {
     const rim = rimPosition(c, bat, r), h = a[2] + (b[2] - a[2]) * c.time
     const viewAt = this.previousTime > 0 ? this.previousTime + (this.v - this.previousTime) * c.time : this.v
     const at = now - Math.max(0, this.v - viewAt)
-    this.prediction = { arc: launch(rim[0], rim[1], h, this.stroke.stroke).map(Math.fround), at, viewAt, driftAt: at,
+    // Same incoming ball spin as Kotlin PongClient: the drawn frame's sp, clamped and stored as floats.
+    const sp = (this.selected?.sp ?? [0, 0]).map(v => Math.fround(clamp(v, -1, 1))) as [number, number]
+    this.prediction = { arc: launch(rim[0], rim[1], h, this.stroke.stroke, -1, ...sp).map(Math.fround), at, viewAt, driftAt: at,
       hits: this.frame!.h, n: Math.max(this.n + (nextSample ? 1 : 0), this.frame!.ack[0] + 1) }
     this.used = true; this.predictedAt = now; this.predictionCount++
     this.predictedV = this.v

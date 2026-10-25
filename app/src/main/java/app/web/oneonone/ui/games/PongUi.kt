@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -31,17 +33,22 @@ import androidx.compose.ui.unit.sp
 import app.web.oneonone.data.games.PongClient
 import app.web.oneonone.ui.theme.OneTheme
 import kotlinx.coroutines.isActive
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 private const val MarginX = .28f
-private const val MarginTop = .5f
-private const val MarginBottom = .9f
+private const val MarginTop = .97f
+private const val MarginBottom = .97f
 private val Arena = Color(0xFFFFCF70)
 private val TableGreen = Color(0xFF76B536)
 private val Ink = Color(0xFF10140D)
 private val YourRacket = Color(0xFFFF6B55)
 private val OtherRacket = Color(0xFF00B9ED)
+private const val SpinTurnsPerSecond = 3f
 
 private class PongHud {
     var mine by mutableIntStateOf(0)
@@ -49,6 +56,12 @@ private class PongHud {
     var countdown by mutableIntStateOf(0)
     var serving by mutableStateOf(false)
     var myServe by mutableStateOf(false)
+    // Draw-only spin motion, advanced once per frame; plain fields so drawing never allocates or recomposes.
+    var spinPhase = 0f
+    var dirX = 0f
+    var dirY = -1f
+    var lastX = .5f
+    var lastY = 0f
 }
 
 @Composable
@@ -66,11 +79,21 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
         var hits = game.hits
         var bounce = game.bounceAt
         var round = game.round
+        var lastFrame = 0L
         while (isActive) {
             withFrameNanos {
                 if (currentPaused || round != game.round) touch.cancel()
                 round = game.round
                 game.advance(it)
+                val step = if (lastFrame == 0L) 0f else ((it - lastFrame) / 1e9f).coerceIn(0f, .1f)
+                lastFrame = it
+                val mx = game.ballX - hud.lastX; val my = game.ballY - hud.lastY; val moved = sqrt(mx * mx + my * my)
+                if (moved > 1e-4f) { hud.dirX = mx / moved; hud.dirY = my / moved }
+                hud.lastX = game.ballX; hud.lastY = game.ballY
+                val top = game.spinTop; val side = game.spinSide
+                // Signed by the dominant spin: forward roll for topspin, backward for backspin, orbit way for sidespin.
+                hud.spinPhase = (hud.spinPhase + step * SpinTurnsPerSecond * 2 * PI.toFloat() * if (abs(top) >= abs(side)) top else side) %
+                    (2 * PI.toFloat())
                 val dt = touch.elapsed(it)
                 if (touch.held && !currentPaused && dt > 0) {
                     val follow = PongClient.racketFollow(dt)
@@ -88,10 +111,11 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
     }
     Column(modifier.fillMaxWidth()) {
         PongScoreboard(hud.mine, hud.theirs, vm.nickname, match.points ?: 7)
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().background(Arena, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
+        // Clipped so a ball flying past the end line never paints over the controls below.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Arena), contentAlignment = Alignment.Center) {
             val unit = minOf(maxWidth / (1 + 2 * MarginX), maxHeight / (PongClient.CourtH + MarginTop + MarginBottom))
             Box(Modifier.size(unit * (1 + 2 * MarginX), unit * (PongClient.CourtH + MarginTop + MarginBottom))) {
-                PongTable(game, touch, { frame }, enabled = !paused,
+                PongTable(game, touch, hud, { frame }, enabled = !paused,
                     onSample = { x, y, at ->
                         val dt = touch.elapsed(at)
                         val follow = PongClient.racketFollow(dt)
@@ -115,6 +139,10 @@ internal fun PongContent(vm: GameViewModel, state: GameUi, modifier: Modifier, s
                 }
             }
         }
+        Text("Flick forward for topspin · pull back for backspin · swipe sideways to curve",
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall, color = OneTheme.colors.textDim,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         footer()
     }
 }
@@ -145,7 +173,7 @@ private fun PongScoreboard(mine: Int, theirs: Int, nickname: String, target: Int
 }
 
 @Composable
-private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, enabled: Boolean,
+private fun PongTable(game: PongClient, touch: PongTouch, hud: PongHud, frame: () -> Long, enabled: Boolean,
                       onSample: (Float, Float, Long) -> Unit, onRelease: (Float, Float) -> Unit) {
     val currentEnabled by rememberUpdatedState(enabled)
     Canvas(Modifier.fillMaxSize().pointerInput(game, enabled) {
@@ -203,8 +231,8 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
         drawLine(Color.White, at(.025f, PongClient.CourtH / 2), at(.975f, PongClient.CourtH / 2), .014f * u)
         if (game.live) {
             val h = game.height.coerceAtLeast(0f)
-            drawCircle(Ink.copy(alpha = .23f), PongClient.BallR * u * (1 - h * 1.216f).coerceAtLeast(.2f),
-                at(game.ballX + .8f * h, game.ballY))
+            if (ballShown(game)) drawCircle(Ink.copy(alpha = .14f), PongClient.BallR * u * (1 - h * 1.216f).coerceAtLeast(.2f),
+                at(game.ballX + shadowOffset(h), game.ballY))
             val since = (now - game.bounceAt) / 1e6f
             if (game.bounceAt > 0 && since in 0f..160f) {
                 val k = since / 160
@@ -212,23 +240,40 @@ private fun PongTable(game: PongClient, touch: PongTouch, frame: () -> Long, ena
                     at(game.bounceX, game.bounceY), style = Stroke(.008f * u))
             }
         }
+        val top = game.spinTop; val side = game.spinSide
+        // Warm trail for topspin, cool for backspin.
+        val trailColor = if (top >= 0) lerp(Color.White, YourRacket, .8f * top) else lerp(Color.White, OtherRacket, -.8f * top)
         for (index in 1 until game.trail.size) {
             val previous = game.trail[index - 1]; val point = game.trail[index]
             val k = (1 - (now - point.atNanos) / 300_000_000f).coerceIn(0f, 1f)
             if (point.height >= 0 || point.x !in 0f..1f || point.y !in 0f..PongClient.CourtH)
-                drawLine(Color.White.copy(alpha = .95f * k), at(previous.x, previous.y), at(point.x, point.y),
+                drawLine(trailColor.copy(alpha = .95f * k), at(previous.x, previous.y), at(point.x, point.y),
                     .09f * u * sqrt(k), cap = StrokeCap.Round)
         }
-        if (game.live && (game.height >= 0 || game.ballX !in 0f..1f || game.ballY !in 0f..PongClient.CourtH)) {
+        if (game.live && ballShown(game)) {
             val ball = at(game.ballX, game.ballY)
             val r = PongClient.ballRadius(game.height) * u
             drawCircle(Ink, r * (1 + app.web.oneonone.data.games.PongPhysics.BallEdge.toFloat()), ball)
             drawCircle(Color.White, r, ball)
+            val amount = maxOf(abs(top), abs(side))
+            if (amount > .05f) {
+                val mark = Ink.copy(alpha = (.4f + .5f * amount).coerceAtMost(.9f))
+                val phase = hud.spinPhase
+                if (abs(top) >= abs(side)) {
+                    // A mark rolling over the top along the flight; hidden while it is under the ball.
+                    if (cos(phase) > 0) drawCircle(mark, r * .3f, ball + Offset(hud.dirX, hud.dirY) * (sin(phase) * r * .62f))
+                } else drawCircle(mark, r * .3f, ball + Offset(cos(phase), sin(phase)) * (r * .55f))
+            }
         }
         drawRacket(at(game.theirX, game.theirY), OtherRacket, u, up = true)
         drawRacket(at(game.myX, game.myY), YourRacket, u, up = false)
     }
 }
+
+private fun ballShown(g: PongClient) = g.height >= 0 || g.ballX !in 0f..1f || g.ballY !in 0f..PongClient.CourtH
+
+/** Shadow sits beside the ball, at most one ball diameter away. */
+internal fun shadowOffset(height: Float) = (.8f * height).coerceAtMost(2 * PongClient.BallR)
 
 private fun DrawScope.drawRacket(center: Offset, color: Color, u: Float, up: Boolean) {
     val r = PongClient.HeadR * u

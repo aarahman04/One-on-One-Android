@@ -143,3 +143,38 @@ simulation results, with physical Xiaomi checks still pending. Full definitions,
 all profile rows, approved deviations and exact device checklist are in
 [PONG-CONTACT-EVIDENCE.md](PONG-CONTACT-EVIDENCE.md). Backend must be deployed first;
 Android follows after the owner merges the paired PRs. This task performs neither.
+
+## Speed and fairness tuning (2026-10-24)
+
+Owner report: hits were too fast, and a hitter could place a ball the receiver
+could not reach. A deterministic sweep (backend `test/pongFairness.test.ts`,
+2430 shots of finger velocity, hit position and live steering; receiver bat at
+6 widths/s after 200 ms from the neutral baseline) measured hit-to-bounce
+456 ms, post-bounce speed up to 5.3 widths/s (5.3x the incoming speed), 158
+landings with under 250 ms of reachable contact and 14 with none. Causes: the
+.7 s hard duration, a bounce that reused the whole flight duration for a
+2.47-width reach, steering that kept moving the endpoint after the landing,
+and steering-made sideways bounces. Changes, mirrored in Android
+`PongPhysics`/`DemoPong`/`PongClient`: duration `1.35-.35*power`; the curve
+(`spin`) is the side captured at contact, constant until landing, and later bat
+movement, release or idle input never steers it (owner: steering after contact
+is removed, the swipe curve is kept); drift stops at landing; bounce sideways
+velocity clamped to its forward velocity; bounce keeps `.9` of the shot's own
+average ground pace (contact to undrifted aim / duration), capped at 2 s by
+shortening reach. Aim formula, cubic, easing, stroke window, swept contact and
+lag compensation are unchanged. After: hit-to-bounce 648..872 ms, post-bounce
+peak 0.82..3.35 widths/s and at most .92 of the shot's pre-bounce peak, every
+on-table landing has at least 264 ms of reachable contact.
+
+### Playable curve (2026-10-24, round 3)
+
+Owner: hard hits curved off the table. Aim (up to ~.46) plus a full-flight curve
+(~1 width at side=1) stacked past the edge, and the clamped `side` made "hard"
+and "too hard" identical. Now `raw = |direction|*(8/12.16)*(.7+.3f) +
+.15*|vx|*12.16/60` from the raw finger velocity, landing offset
+`L = .42*tanh(raw/.42) + .3*smoothstep(|vx|,8,10)*smoothstep(theta,65deg,78deg)`,
+target x `.5+.6L`, and the contact-time drift lands the crossing exactly at
+`.5+L` (40% of the offset is visible curve). Landing rates (backend
+`pongFairness`, 2 to 14 widths/s, 0 to 90 degrees, 3 contact x, 3 heights):
+theta <= 60 all land within .46; 61 to 75 all land at <= 9 widths/s sideways;
+76 to 90 land at <= 6, 108/162 at 6 to 9, 0/270 above 9.
